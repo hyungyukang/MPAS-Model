@@ -444,6 +444,11 @@ llvm:
 	"OPENMP = $(OPENMP)" \
 	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI" )
 
+FORTRILINOS_ROOT    = /Users/3hk/home/programs/Trilinos_MPI_Release_test
+FORTRILINOS_BUILD   = $(FORTRILINOS_ROOT)/build
+FORTRILINOS_INSTALL = $(FORTRILINOS_ROOT)/build/Trilinos_install
+FORTRILINOS_INCLUDES = -I$(FORTRILINOS_INSTALL)/include -I/$(FORTRILINOS_INSTALL)/lib  -I/$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src -I/$(FORTRILINOS_ROOT)/build/ForTrilinos/src/interface -I$(FORTRILINOS_BUILD)/packages/nox/src
+
 CPPINCLUDES = 
 FCINCLUDES = 
 LIBS = 
@@ -526,6 +531,14 @@ endif
 RM = rm -f
 CPP = cpp -P -traditional
 RANLIB = ranlib
+
+
+ifeq "$(FORTRILINOS)" "true"
+        LIBS += -Wl,-rpath,$(FORTRILINOS_BUILD)/ForTrilinos/src/interface/src:$(FORTRILINOS_BUILD)/packages/ifpack2:$(FORTRILINOS_BUILD)/ForTrilinos/src/tpetra/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/teuchos/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src:$(FORTRILINOS_BUILD)/packages/nox/src:$(FORTRILINOS_INSTALL)/lib
+        LIBS += -dynamic -L$(FORTRILINOS_INSTALL)/lib
+        LIBS += -lfortrilinos -lforteuchos -lfortpetra -lnox -lforerror -lforutils -lstratimikos -lstratimikosbelos
+endif
+
 
 ifdef CORE
 
@@ -669,6 +682,13 @@ ifeq "$(GEN_F90)" "true"
 else
 	override GEN_F90=false
 	GEN_F90_MESSAGE="MPAS was built with .F files."
+endif
+
+ifeq "$(FORTRILINOS)" "true"
+        FORTRILINOS_MESSAGE="ForTrilinos is on."
+else
+        override FORTRILINOS=false
+        FORTRILINOS_MESSAGE="ForTrilinos is off."
 endif
 
 ifeq "$(OPENMP)" "true"
@@ -841,6 +861,8 @@ endif
                  CORE="$(CORE)"\
                  AUTOCLEAN="$(AUTOCLEAN)" \
                  GEN_F90="$(GEN_F90)" \
+                 FORTRILINOS="$(FORTRILINOS)" \
+                 FORTRILINOS_INCLUDES="$(FORTRILINOS_INCLUDES)" \
                  NAMELIST_SUFFIX="$(NAMELIST_SUFFIX)" \
                  EXE_NAME="$(EXE_NAME)"
 
@@ -859,6 +881,7 @@ ifeq "$(AUTOCLEAN)" "true"
 	@echo $(AUTOCLEAN_MESSAGE)
 endif
 	@echo $(GEN_F90_MESSAGE)
+        @echo $(FORTRILINOS_MESSAGE)
 	@echo $(TIMER_MESSAGE)
 	@echo $(PIO_MESSAGE)
 	@echo "*******************************************************************************"
@@ -939,6 +962,7 @@ errmsg:
 	@echo "    USE_PIO2=true - links with the PIO 2 library. Default is to use the PIO 1.x library."
 	@echo "    PRECISION=single - builds with default single-precision real kind. Default is to use double-precision."
 	@echo "    SHAREDLIB=true - generate position-independent code suitable for use in a shared library. Default is false."
+	@echo "    ORTRILINOS=true - ENABLE ForTrilinos" 
 	@echo ""
 	@echo "Ensure that NETCDF, PNETCDF, PIO, and PAPI (if USE_PAPI=true) are environment variables"
 	@echo "that point to the absolute paths for the libraries."
