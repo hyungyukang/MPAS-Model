@@ -881,7 +881,7 @@ ifeq "$(AUTOCLEAN)" "true"
 	@echo $(AUTOCLEAN_MESSAGE)
 endif
 	@echo $(GEN_F90_MESSAGE)
-        @echo $(FORTRILINOS_MESSAGE)
+	@echo $(FORTRILINOS_MESSAGE)
 	@echo $(TIMER_MESSAGE)
 	@echo $(PIO_MESSAGE)
 	@echo "*******************************************************************************"
