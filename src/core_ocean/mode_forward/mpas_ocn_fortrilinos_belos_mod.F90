@@ -85,34 +85,34 @@ contains
 
     ! Sometimes, ydata may be unitialized (when beta is 0), potentially containing
     ! signaling NaNs. Therefore, for beta = 0, we explicitly zero it out.
-!   if (beta .eq. 0) then
-!     do i = 1, n
-!       ydata(i) = 0
-!     end do
-!   else
-!     do i = 1, n
-!       ydata(i) = beta * ydata(i)
-!     end do
-!   end if
+    if (beta .eq. 0) then
+      do i = 1, n
+        ydata(i) = 0
+      end do
+    else
+      do i = 1, n
+        ydata(i) = beta * ydata(i)
+      end do
+    end if
 
     ! y = alpha * A*x + beta * y
-!   do i = 1, n
-!     gid = self%range_map%getGlobalElement(i)
+    do i = 1, n
+      gid = self%range_map%getGlobalElement(i)
 
-!     ! A has [-1 2 -1] stencil
-!     if (i > 1 .or. my_rank > 0) then
-!       lid = self%col_map%getLocalElement(gid-1)
-!       ydata(i) = ydata(i) - alpha*xdata(lid)
-!     end if
+      ! A has [-1 2 -1] stencil
+      if (i > 1 .or. my_rank > 0) then
+        lid = self%col_map%getLocalElement(gid-1)
+        ydata(i) = ydata(i) - alpha*xdata(lid)
+      end if
 
-!     lid = self%col_map%getLocalElement(gid)
-!     ydata(i) = ydata(i) + 2*alpha*xdata(lid)
+      lid = self%col_map%getLocalElement(gid)
+      ydata(i) = ydata(i) + 2*alpha*xdata(lid)
 
-!     if (i < n .or. my_rank .ne. num_procs-1) then
-!       lid = self%col_map%getLocalElement(gid+1)
-!       ydata(i) = ydata(i) - alpha*xdata(lid)
-!     end if
-!   end do
+      if (i < n .or. my_rank .ne. num_procs-1) then
+        lid = self%col_map%getLocalElement(gid+1)
+        ydata(i) = ydata(i) - alpha*xdata(lid)
+      end if
+    end do
 
     ! Residual --------------------------------------------------------
 
@@ -122,7 +122,7 @@ contains
     nullify(ydata)
 
     call x_ghosted%release()
-!   call comm%release()
+    call comm%release()
 
   end subroutine
 

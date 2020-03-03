@@ -23,7 +23,6 @@ module ocn_fortrilinos_imp_mod
 
   public :: ocn_time_integration_imp_btrmode
 
-
 !*********************************************************************
   contains
 !*********************************************************************
@@ -72,7 +71,10 @@ module ocn_fortrilinos_imp_mod
     init_belos = .false.
     dminfo = domain % dminfo
     comm = TeuchosComm(dminfo % comm)
+    my_rank = comm%getRank()
+    num_procs = comm%getSize()
   endif
+
 
   ! Read in the parameterList
   plist = ParameterList("Stratimikos"); FORTRILINOS_CHECK_IERR()
@@ -87,9 +89,166 @@ module ocn_fortrilinos_imp_mod
   tol = krylov_list%get_real("Convergence Tolerance")
 
 
+  ! ------------------------------------------------------------------
+  ! Step 0: Construct tri-diagonal matrix
+  n_global = -1
+  map = TpetraMap(n_global, n, comm); FORTRILINOS_CHECK_IERR()
 
+  max_entries_per_row = 3
+  A = TpetraCrsMatrix(map, max_entries_per_row, TpetraStaticProfile)
 
+  allocate(cols(max_entries_per_row))
+  allocate(vals(max_entries_per_row))
+  offset = n * my_rank
+  do i = 1, n
+    row_nnz = 1
+    if (i .ne. 1 .or. my_rank > 0) then
+      cols(row_nnz) = offset + i-1
+      vals(row_nnz) = -1.0
+      row_nnz = row_nnz + 1
+    end if
+    cols(row_nnz) = offset + i
+    vals(row_nnz) = 2.0
+    row_nnz = row_nnz + 1
+    if (i .ne. n .or. my_rank .ne. num_procs-1) then
+      cols(row_nnz) = offset + i+1
+      vals(row_nnz) = -1.0
+      row_nnz = row_nnz + 1
+    end if
 
+    call A%insertGlobalValues(offset + i, cols(1:row_nnz-1), vals(1:row_nnz-1)); FORTRILINOS_CHECK_IERR()
+  end do
+  call A%fillComplete(); FORTRILINOS_CHECK_IERR()
+
+  ! The solution X(i) = i-1
+  allocate(lhs(n))
+  allocate(rhs(n))
+  if (my_rank > 0) then
+    rhs(1) = 0.0
+  else
+    rhs(1) = -1.0
+  end if
+  if (my_rank .ne. num_procs-1) then
+    rhs(n) = 0.0
+  else
+    rhs(n) = offset+n
+  end if
+  do i = 2, n-1
+    rhs(i) = 0.0
+  end do
+  lda = n
+
+  B = TpetraMultiVector(map, rhs, lda, num_vecs); FORTRILINOS_CHECK_IERR()
+  X = TpetraMultiVector(map, num_vecs); FORTRILINOS_CHECK_IERR()
+  residual = TpetraMultiVector(map, num_vecs, .false.); FORTRILINOS_CHECK_IERR()
+
+  allocate(norms(1))
+
+  ! Step 0: create a handle
+  solver_handle = TrilinosSolver(); FORTRILINOS_CHECK_IERR()
+
+  ! ------------------------------------------------------------------
+  ! Explicit setup and solve
+  ! ------------------------------------------------------------------
+
+  ! Step 1: initialize a handle
+  call solver_handle%init(comm); FORTRILINOS_CHECK_IERR()
+
+  ! Step 2: setup the problem
+  call solver_handle%setup_matrix(A); FORTRILINOS_CHECK_IERR()
+
+  ! Step 3: setup the solver
+  call solver_handle%setup_solver(plist); FORTRILINOS_CHECK_IERR()
+
+  ! Step 4: solve the system
+  call X%randomize()
+  ! Calculate initial residual
+  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero); FORTRILINOS_CHECK_IERR()
+  call residual%update(sone, B, -sone); FORTRILINOS_CHECK_IERR()
+  call residual%norm2(norms); FORTRILINOS_CHECK_IERR()
+  r0 = norms(1)
+  call solver_handle%solve(B, X); FORTRILINOS_CHECK_IERR()
+
+  ! Check the solution
+  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero); FORTRILINOS_CHECK_IERR()
+  call residual%update(sone, B, -sone); FORTRILINOS_CHECK_IERR()
+  call residual%norm2(norms); FORTRILINOS_CHECK_IERR()
+
+  if (norms(1)/r0 > tol) then
+    write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
+    stop 1
+  end if
+
+  ! Step 5: clean up
+  call solver_handle%finalize(); FORTRILINOS_CHECK_IERR()
+
+  ! ------------------------------------------------------------------
+  ! Implicit (inversion-of-control) setup [ no solve ]
+  ! ------------------------------------------------------------------
+  ! We cannot use most preconditioners without a matrix, so we remove any from
+  ! the parameter list. We also adjust the number of iterations so that it is
+  ! sufficient for convergence
+  call plist%set('Preconditioner Type', 'None')
+  call krylov_list%set('Maximum Iterations', 333)
+
+  allocate(op, source=TriDiagOperator(map, A%getColMap()))
+  call init_ForTpetraOperator(op); FORTRILINOS_CHECK_IERR()
+
+  ! Step 1: initialize a handle
+  call solver_handle%init(comm); FORTRILINOS_CHECK_IERR()
+  ! Step 2: setup the problem
+  ! Implicit (inversion-of-control) setup
+  call solver_handle%setup_operator(op); FORTRILINOS_CHECK_IERR()
+
+  ! Step 3: setup the solver
+
+  call solver_handle%setup_solver(plist); FORTRILINOS_CHECK_IERR()
+
+  call krylov_list%release()
+
+  ! Step 4: solve the system
+  call X%randomize()
+  ! Calculate initial residual
+  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero); FORTRILINOS_CHECK_IERR()
+  call residual%update(sone, B, -sone); FORTRILINOS_CHECK_IERR()
+  call residual%norm2(norms); FORTRILINOS_CHECK_IERR()
+  r0 = norms(1)
+  call solver_handle%solve(B, X); FORTRILINOS_CHECK_IERR()
+
+  ! Check the solution
+  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero); FORTRILINOS_CHECK_IERR()
+  call residual%update(sone, B, -sone); FORTRILINOS_CHECK_IERR()
+  call residual%norm2(norms); FORTRILINOS_CHECK_IERR()
+  if (norms(1)/r0 > tol) then
+    write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
+    stop 666
+  end if
+
+  ! Step 5: clean up
+  call solver_handle%finalize(); FORTRILINOS_CHECK_IERR()
+
+  call krylov_list%release; FORTRILINOS_CHECK_IERR()
+  call solver_list%release; FORTRILINOS_CHECK_IERR()
+  call belos_list%release; FORTRILINOS_CHECK_IERR()
+  call linear_solver_list%release; FORTRILINOS_CHECK_IERR()
+  call op%release(); FORTRILINOS_CHECK_IERR()
+  deallocate(op)
+  ! ------------------------------------------------------------------
+
+  call solver_handle%release(); FORTRILINOS_CHECK_IERR()
+  call plist%release(); FORTRILINOS_CHECK_IERR()
+  call X%release(); FORTRILINOS_CHECK_IERR()
+  call B%release(); FORTRILINOS_CHECK_IERR()
+  call A%release(); FORTRILINOS_CHECK_IERR()
+  call map%release(); FORTRILINOS_CHECK_IERR()
+  call comm%release(); FORTRILINOS_CHECK_IERR()
+  deallocate(norms)
+  deallocate(cols)
+  deallocate(vals)
+  deallocate(lhs)
+  deallocate(rhs)
+
+  stop
 ! n_global_vec = nvec
 ! n_total_vec  = n_tot_vec
 ! !--- Only for initial
@@ -97,11 +256,7 @@ module ocn_fortrilinos_imp_mod
 ! print*, 'PRINT in init'
 ! init_nox = .false.
 
-
   end subroutine ocn_time_integration_imp_btrmode
-
-
-
 
 end module
 
