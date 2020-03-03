@@ -39,6 +39,7 @@ contains
     use, intrinsic :: ISO_C_BINDING
     type(TpetraMap), intent(in) :: row_map, col_map
     type(BtrOperator) :: self
+
     self = ForTpetraOperator()
     self%row_map = row_map
     self%col_map = col_map
@@ -58,7 +59,7 @@ contains
     integer :: lid
     integer(global_ordinal_type) :: gid
 
-!   type(TeuchosComm) :: comm
+    type(TeuchosComm) :: comm
     type(TpetraImport) :: import
     type(TpetraMultiVector) :: x_ghosted
     integer :: my_rank, num_procs
@@ -70,9 +71,9 @@ contains
 
     counter = counter + 1
 
-!   comm = self%row_map%getComm()
-!   my_rank = comm%getRank()
-!   num_procs = comm%getSize()
+    comm = self%row_map%getComm()
+    my_rank = comm%getRank()
+    num_procs = comm%getSize()
 
     import = TpetraImport(self%domain_map, self%col_map)
     x_ghosted = TpetraMultiVector(self%col_map, 1_size_type)

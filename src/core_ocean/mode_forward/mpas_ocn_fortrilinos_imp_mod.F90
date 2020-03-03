@@ -2,7 +2,7 @@ module ocn_fortrilinos_imp_mod
 !---------------------------
 #include "ForTrilinosInterface_config.hpp"
 #include "ForTrilinos.h"
-  use ISO_FORTRAN_ENV
+  !use ISO_FORTRAN_ENV
   use,intrinsic :: iso_c_binding
   use fortrilinos
   use forteuchos
@@ -36,7 +36,6 @@ module ocn_fortrilinos_imp_mod
   integer(size_type) :: max_entries_per_row, num_vecs = 1, lda
   integer(int_type) :: row_nnz
 
-  integer :: ierr
   integer :: i, n
   integer(global_ordinal_type) :: offset
 
@@ -79,6 +78,7 @@ module ocn_fortrilinos_imp_mod
   ! Read in the parameterList
   plist = ParameterList("Stratimikos"); FORTRILINOS_CHECK_IERR()
   call load_from_xml(plist, "stratimikos.xml"); FORTRILINOS_CHECK_IERR()
+
 
   ! Get tolerance from the parameter list
   linear_solver_list = plist%sublist('Linear Solver Types')
@@ -191,7 +191,7 @@ module ocn_fortrilinos_imp_mod
   call plist%set('Preconditioner Type', 'None')
   call krylov_list%set('Maximum Iterations', 333)
 
-  allocate(op, source=TriDiagOperator(map, A%getColMap()))
+  allocate(op, source=BtrOperator(map, A%getColMap()))
   call init_ForTpetraOperator(op); FORTRILINOS_CHECK_IERR()
 
   ! Step 1: initialize a handle
