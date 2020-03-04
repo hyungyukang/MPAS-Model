@@ -24,128 +24,128 @@ module ocn_belos_mod
   type, extends(ForTpetraOperator) :: BtrOperator
     type(TpetraMap) :: row_map, col_map, domain_map, range_map
   contains
-    procedure :: apply => my_apply
-    procedure :: getDomainMap => my_getDomainMap
-    procedure :: getRangeMap => my_getRangeMap
+!   procedure :: apply => my_apply
+!   procedure :: getDomainMap => my_getDomainMap
+!   procedure :: getRangeMap => my_getRangeMap
     procedure :: release => delete_BtrOperator
   end type
-  interface BtrOperator
-    procedure new_BtrOperator
-  end interface
+! interface BtrOperator
+!   procedure new_BtrOperator
+! end interface
 
 contains
-  function new_BtrOperator(row_map, col_map) &
-      result(self)
-    use, intrinsic :: ISO_C_BINDING
-    type(TpetraMap), intent(in) :: row_map, col_map
-    type(BtrOperator) :: self
+! function new_BtrOperator(row_map, col_map) &
+!     result(self)
+!   use, intrinsic :: ISO_C_BINDING
+!   type(TpetraMap), intent(in) :: row_map, col_map
+!   type(BtrOperator) :: self
 
-    self = ForTpetraOperator()
-    self%row_map = row_map
-    self%col_map = col_map
-    self%domain_map = row_map
-    self%range_map = row_map
-  end function
+!   self = ForTpetraOperator()
+!   self%row_map = row_map
+!   self%col_map = col_map
+!   self%domain_map = row_map
+!   self%range_map = row_map
+! end function
 
-  subroutine my_apply(self, x, y, mode, alpha, beta)
-    use, intrinsic :: ISO_C_BINDING
-    implicit none
-    class(BtrOperator), intent(in) :: self
-    class(TpetraMultiVector), intent(in) :: x
-    class(TpetraMultiVector), intent(in) :: y
-    integer(kind(TeuchosETransp)), intent(in) :: mode
-    real(scalar_type), intent(in) :: alpha
-    real(scalar_type), intent(in) :: beta
-    integer :: lid
-    integer(global_ordinal_type) :: gid
+! subroutine my_apply(self, x, y, mode, alpha, beta)
+!   use, intrinsic :: ISO_C_BINDING
+!   implicit none
+!   class(BtrOperator), intent(in) :: self
+!   class(TpetraMultiVector), intent(in) :: x
+!   class(TpetraMultiVector), intent(in) :: y
+!   integer(kind(TeuchosETransp)), intent(in) :: mode
+!   real(scalar_type), intent(in) :: alpha
+!   real(scalar_type), intent(in) :: beta
+!   integer :: lid
+!   integer(global_ordinal_type) :: gid
 
-    type(TeuchosComm) :: comm
-    type(TpetraImport) :: import
-    type(TpetraMultiVector) :: x_ghosted
-    integer :: my_rank, num_procs
-    integer :: i, n
-    real(scalar_type), dimension(:), pointer :: xdata
-    real(scalar_type), dimension(:), pointer :: ydata
+!   type(TeuchosComm) :: comm
+!   type(TpetraImport) :: import
+!   type(TpetraMultiVector) :: x_ghosted
+!   integer :: my_rank, num_procs
+!   integer :: i, n
+!   real(scalar_type), dimension(:), pointer :: xdata
+!   real(scalar_type), dimension(:), pointer :: ydata
 
-    integer, save :: counter = 0
+!   integer, save :: counter = 0
 
-    counter = counter + 1
+!   counter = counter + 1
 
-    comm = self%row_map%getComm()
-    my_rank = comm%getRank()
-    num_procs = comm%getSize()
+!   comm = self%row_map%getComm()
+!   my_rank = comm%getRank()
+!   num_procs = comm%getSize()
 
-    import = TpetraImport(self%domain_map, self%col_map)
-    x_ghosted = TpetraMultiVector(self%col_map, 1_size_type)
-    call x_ghosted%doImport(x, import, TpetraINSERT)
-    call import%release()
+!   import = TpetraImport(self%domain_map, self%col_map)
+!   x_ghosted = TpetraMultiVector(self%col_map, 1_size_type)
+!   call x_ghosted%doImport(x, import, TpetraINSERT)
+!   call import%release()
 
-    xdata => x_ghosted%getData        (1_size_type)
-    ydata => y        %getDataNonConst(1_size_type)
-    n = y%getLocalLength()
+!   xdata => x_ghosted%getData        (1_size_type)
+!   ydata => y        %getDataNonConst(1_size_type)
+!   n = y%getLocalLength()
 
-    ! Sometimes, ydata may be unitialized (when beta is 0), potentially containing
-    ! signaling NaNs. Therefore, for beta = 0, we explicitly zero it out.
-    if (beta .eq. 0) then
-      do i = 1, n
-        ydata(i) = 0
-      end do
-    else
-      do i = 1, n
-        ydata(i) = beta * ydata(i)
-      end do
-    end if
+!   ! Sometimes, ydata may be unitialized (when beta is 0), potentially containing
+!   ! signaling NaNs. Therefore, for beta = 0, we explicitly zero it out.
+!   if (beta .eq. 0) then
+!     do i = 1, n
+!       ydata(i) = 0
+!     end do
+!   else
+!     do i = 1, n
+!       ydata(i) = beta * ydata(i)
+!     end do
+!   end if
 
-    ! y = alpha * A*x + beta * y
-    do i = 1, n
-      gid = self%range_map%getGlobalElement(i)
+!   ! y = alpha * A*x + beta * y
+!   do i = 1, n
+!     gid = self%range_map%getGlobalElement(i)
 
-      ! A has [-1 2 -1] stencil
-      if (i > 1 .or. my_rank > 0) then
-        lid = self%col_map%getLocalElement(gid-1)
-        ydata(i) = ydata(i) - alpha*xdata(lid)
-      end if
+!     ! A has [-1 2 -1] stencil
+!     if (i > 1 .or. my_rank > 0) then
+!       lid = self%col_map%getLocalElement(gid-1)
+!       ydata(i) = ydata(i) - alpha*xdata(lid)
+!     end if
 
-      lid = self%col_map%getLocalElement(gid)
-      ydata(i) = ydata(i) + 2*alpha*xdata(lid)
+!     lid = self%col_map%getLocalElement(gid)
+!     ydata(i) = ydata(i) + 2*alpha*xdata(lid)
 
-      if (i < n .or. my_rank .ne. num_procs-1) then
-        lid = self%col_map%getLocalElement(gid+1)
-        ydata(i) = ydata(i) - alpha*xdata(lid)
-      end if
-    end do
+!     if (i < n .or. my_rank .ne. num_procs-1) then
+!       lid = self%col_map%getLocalElement(gid+1)
+!       ydata(i) = ydata(i) - alpha*xdata(lid)
+!     end if
+!   end do
 
-    ! Residual --------------------------------------------------------
+!   ! Residual --------------------------------------------------------
 
-    ! -----------------------------------------------------------------
+!   ! -----------------------------------------------------------------
 
-    nullify(xdata)
-    nullify(ydata)
+!   nullify(xdata)
+!   nullify(ydata)
 
-    call x_ghosted%release()
-    call comm%release()
+!   call x_ghosted%release()
+!   call comm%release()
 
-  end subroutine
+! end subroutine
 
-  function my_getDomainMap(self) &
-      result(domain_map)
-    use, intrinsic :: ISO_C_BINDING
-    implicit none
-    class(BtrOperator), intent(in) :: self
-    type(TpetraMap) :: domain_map
+! function my_getDomainMap(self) &
+!     result(domain_map)
+!   use, intrinsic :: ISO_C_BINDING
+!   implicit none
+!   class(BtrOperator), intent(in) :: self
+!   type(TpetraMap) :: domain_map
 
-    domain_map = self%domain_map
-  end function
+!   domain_map = self%domain_map
+! end function
 
-  function my_getRangeMap(self) &
-      result(range_map)
-    use, intrinsic :: ISO_C_BINDING
-    implicit none
-    class(BtrOperator), intent(in) :: self
-    type(TpetraMap) :: range_map
+! function my_getRangeMap(self) &
+!     result(range_map)
+!   use, intrinsic :: ISO_C_BINDING
+!   implicit none
+!   class(BtrOperator), intent(in) :: self
+!   type(TpetraMap) :: range_map
 
-    range_map = self%range_map
-  end function
+!   range_map = self%range_map
+! end function
 
   subroutine delete_BtrOperator(self)
     class(BtrOperator), intent(inout) :: self
