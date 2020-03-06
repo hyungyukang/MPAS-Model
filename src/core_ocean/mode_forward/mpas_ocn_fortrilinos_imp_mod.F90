@@ -27,13 +27,13 @@ module ocn_fortrilinos_imp_mod
   contains
 !*********************************************************************
 
-  subroutine ocn_time_integration_imp_btrmode(domain,dt,xstate,nvec,n_tot_vec)
+  subroutine ocn_time_integration_imp_btrmode(domain,dt,n_tot_vec)
    
   implicit none
   integer :: my_rank, num_procs
 
   integer(global_size_type) :: n_global
-  integer(size_type) :: max_entries_per_row, num_vecs = 1, lda
+  integer(size_type) :: max_entries_per_row, num_vecs = 1, lda,ione = 1,itwo=2,izero=0
   integer(int_type) :: row_nnz
 
   integer :: n,numvalid
@@ -48,9 +48,12 @@ module ocn_fortrilinos_imp_mod
 ! class(ForTpetraOperator), allocatable :: op
 
   real(scalar_type), dimension(:), allocatable :: lhs, rhs
-  real(norm_type), dimension(:), allocatable :: norms
-  integer(global_ordinal_type), dimension(1) :: cols
-  real(scalar_type), dimension(1) :: vals
+  real(scalar_type), dimension(:), pointer :: solvec
+  real(norm_type), dimension(:) :: norms(1)
+  integer(global_ordinal_type) :: cols(1)
+  real(scalar_type) :: vals(1)
+  integer(global_ordinal_type),dimension(:),allocatable :: acols
+  real(scalar_type),dimension(:),allocatable :: avals
   real(scalar_type) :: r0, sone = 1., szero = 0., tol, val
 
   ! For MPAS-O -----------------------------------------------------------------
@@ -67,7 +70,7 @@ module ocn_fortrilinos_imp_mod
 ! type (mpas_pool_type), pointer :: tracersTendPool
 
   integer :: nCells, nEdges
-  integer :: i,j,iCell,iEdge,cell1,cell2
+  integer :: i,j,iCell,iEdge,cell1,cell2,isum
   integer :: sshEdgeLag1,sshEdgeLag2
   integer :: thicknessSumLag1,thicknessSumLag2
   integer :: sshDiffNew1, sshDiffNew2,sshDiffNew
@@ -97,8 +100,8 @@ module ocn_fortrilinos_imp_mod
 
 
   ! For User defined variables -------------------------------------------------
-  real (c_double), dimension(nvec) :: xstate
-  integer (c_int) :: ierr,nvec,n_tot_vec
+! real (c_double), dimension(nvec) :: xstate
+  integer :: ierr,nvec,n_tot_vec
   integer, dimension(:), allocatable :: globalIdx
   integer :: sCellIdx,eCellIdx,mpi_ierr
   logical :: init_belos = .true.
@@ -107,7 +110,7 @@ module ocn_fortrilinos_imp_mod
   ! INIT belos -----------------------------------------------------------------
   if ( init_belos ) then
     print*, 'PRINT in init'
-    init_belos = .false.
+!   init_belos = .false.
     dminfo = domain % dminfo
     comm = TeuchosComm(dminfo % comm)
     my_rank = comm%getRank()
@@ -119,25 +122,31 @@ module ocn_fortrilinos_imp_mod
         call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
         call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0 )
-        nCells = nCellsArray(1)
-        n = nCells
-        block => block % next
+
+        call MPI_BARRIER(dminfo%comm,mpi_ierr)
+
+
+    if (num_procs == 1) then
+
+      allocate(globalIdx(nCellsArray(4)))
+      do iCell = 1,nCellsArray(4)
+        globalIdx(iCell) = iCell
       end do
 
-      call MPI_BARRIER(dminfo%comm,mpi_ierr)
+    else
 
       do i = 0,num_procs - 1
         if ( my_rank == i ) then
 
           if ( my_rank == 0 ) then
-            call MPI_SEND(nCells,1,MPI_INTEGER,my_rank+1,1,dminfo%comm,mpi_ierr)
-            eCellIdx = nCells
+            call MPI_SEND(nCellsArray(1),1,MPI_INTEGER,my_rank+1,1,dminfo%comm,mpi_ierr)
+            eCellIdx = nCellsArray(1)
           elseif ( my_rank == num_procs-1 ) then
             call MPI_RECV(eCellIdx,1,MPI_INTEGER,my_rank-1,1,dminfo%comm,MPI_STATUS_IGNORE,mpi_ierr)
-            eCellIdx = eCellIdx + nCells
+            eCellIdx = eCellIdx + nCellsArray(1)
           else
             call MPI_RECV(eCellIdx,1,MPI_INTEGER,my_rank-1,1,dminfo%comm,MPI_STATUS_IGNORE,mpi_ierr)
-            eCellIdx = eCellIdx + nCells 
+            eCellIdx = eCellIdx + nCellsArray(1)
             call MPI_SEND(eCellIdx,1,MPI_INTEGER,my_rank+1,1,dminfo%comm,mpi_ierr)
           endif
         
@@ -147,14 +156,14 @@ module ocn_fortrilinos_imp_mod
 
       do i = 0,num_procs - 1
         if ( my_rank == i ) then
-          sCellIdx = eCellIdx - nCells + 1
+          sCellIdx = eCellIdx - nCellsArray(1) + 1
         endif 
         call MPI_BARRIER(dminfo%comm,mpi_ierr)
       end do
 
       ! My global cell ID ------------------------------------------------------
       allocate(globalIdx(nCellsArray(4)))
-      do iCell = 1,nCells
+      do iCell = 1,nCellsArray(1)
         globalIdx(iCell) = sCellIdx + iCell - 1
         CGvec_r0(iCell) = real(globalIdx(iCell))
       end do
@@ -169,12 +178,30 @@ module ocn_fortrilinos_imp_mod
         globalIdx(iCell) = int(CGvec_r0(iCell)) 
       end do
 
+      CGvec_r0(:) = 0.0
+
+    endif ! num_procs
+
+        block => block % next
+      end do
+
       ! ------------------------------------------------------------------------
+
+      lda = nCellsArray(1)
+
+!     allocate(norms(1))
 
   endif ! INIT_belos
 
-  ! ----------------------------------------------------------------------------
 
+! print*, 'AAAA'
+  ! ----------------------------------------------------------------------------
+!   dminfo = domain % dminfo
+!   comm = TeuchosComm(dminfo % comm)
+!   my_rank = comm%getRank()
+!   num_procs = comm%getSize()
+
+! print*, 'BBBB'
 
   ! Read in the parameterList
   plist = ParameterList("Stratimikos"); FORTRILINOS_CHECK_IERR()
@@ -193,13 +220,10 @@ module ocn_fortrilinos_imp_mod
   ! ------------------------------------------------------------------
   ! Step 0: Construct tri-diagonal matrix
   n_global = -1
-  map = TpetraMap(n_global, n, comm); FORTRILINOS_CHECK_IERR()
+  map = TpetraMap(n_global, nCellsArray(1), comm); FORTRILINOS_CHECK_IERR()
 
   max_entries_per_row = 8
   A = TpetraCrsMatrix(map, max_entries_per_row, TpetraStaticProfile)
-
-! allocate(cols(max_entries_per_row))
-! allocate(vals(max_entries_per_row))
 
 
   ! -- MPAS-O SpMV -------------------------------------------------------------
@@ -233,16 +257,47 @@ module ocn_fortrilinos_imp_mod
      call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0 )
      call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1 )
 
+  print*, '********** Before ************'
+  print*, minval(sshSubcycleCur(1:nCellsArray(1))),maxval(sshSubcycleCur(1:nCellsArray(1)))
+
      nCells = nCellsArray(1)
      nEdges = nEdgesArray(2)
 
-     call A%setAllToScalar(szero)
+!    call A%setAllToScalar(szero)
+!    call A%setAllToScalar(sone)
+!    call A%scale(sone)
 
-     do iCell = 1, nCells
+     vals(1) = szero
+     do iCell = 1, nCellsArray(1)
 
         gblrow  = globalIdx(iCell)
 
         do i = 1, nEdgesOnCell(iCell)
+          iEdge = edgesOnCell(i, iCell)
+          cell1 = cellsOnEdge(1, iEdge)
+          cell2 = cellsOnEdge(2, iEdge)
+
+          cols(1) = globalIdx(cell1)
+          call A%insertGlobalValues(gblrow, cols, vals)
+
+          cols(1) = globalIdx(cell2)
+          call A%insertGlobalValues(gblrow, cols, vals)
+        end do ! i
+
+        cols(1) = globalIdx(iCell)
+        call A%insertGlobalValues(gblrow, cols, vals)
+     end do ! iCell
+
+  call A%fillComplete(); FORTRILINOS_CHECK_IERR()
+
+  call A%resumeFill(); FORTRILINOS_CHECK_IERR()
+
+     do iCell = 1, nCellsArray(1)
+
+        gblrow  = globalIdx(iCell)
+
+        do i = 1, nEdgesOnCell(iCell)
+
           iEdge = edgesOnCell(i, iCell)
           cell1 = cellsOnEdge(1, iEdge)
           cell2 = cellsOnEdge(2, iEdge)
@@ -253,35 +308,124 @@ module ocn_fortrilinos_imp_mod
           ! method 1, matches method 0 without pbcs, works with pbcs.
           thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1), bottomDepth(cell2))
 
-          !--------------------------------------------------------------!
           fluxAx = edgeSignOnCell(i,iCell)*dvEdge(iEdge)*thicknessSumLag / dcEdge(iEdge)
 
-!         CGvec_r0(cell1) = CGvec_r0(cell1) + fluxAx
-!         CGvec_r0(cell2) = CGvec_r0(cell2) - fluxAx
-          !--------------------------------------------------------------!
-     
-            cols(1) = globalIdx(cell1)
-            vals(1) = fluxAx 
-            numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+          cols(1) = globalIdx(cell1)
+          vals(1) = -fluxAx 
+          numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
 
-            cols(1) = globalIdx(cell2)
-            vals(1) = -fluxAx 
-            numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+          cols(1) = globalIdx(cell2)
+          vals(1) = +fluxAx 
+          numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
         end do ! i
 
-!       CGvec_r0(iCell) = CGvec_r0(iCell) - (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
-!       call A%insertGlobalValues(offset + i, cols(1:row_nnz-1), vals(1:row_nnz-1))  
-
         cols(1) = globalIdx(iCell)
-        vals(1) = - (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+        vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
         numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
 
      end do ! iCell
-
+   
      ! End reduction ----------------------------------------------------------!
 
-     block => block % next
-  end do  ! block
+  call A%fillComplete(); FORTRILINOS_CHECK_IERR()
+
+  ! Residual ------------------------------------------------------------------!
+
+               ! SpMV ------------------------!
+
+
+               do iCell = 1, nCellsArray(1)
+
+                 sshTendb1 = 0.0_RKIND
+                 sshTendb2 = 0.0_RKIND
+                 sshTendAx = 0.0_RKIND
+
+                 do i = 1, nEdgesOnCell(iCell)
+                   iEdge = edgesOnCell(i, iCell)
+
+                   cell1 = cellsOnEdge(1, iEdge)
+                   cell2 = cellsOnEdge(2, iEdge)
+
+                   ! Interpolation sshEdge
+                   sshEdgeCur = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
+                   sshEdgeLag = 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2))
+                   sshEdgeMid = 0.5_RKIND * (           sshEdgeLag + sshEdgeCur           )
+
+                   ! method 1, matches method 0 without pbcs, works with pbcs.
+                   thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
+                   thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1), bottomDepth(cell2))
+                   thicknessSumMid = sshEdgeMid + min(bottomDepth(cell1), bottomDepth(cell2))
+
+                   ! nabla (ssh^0)
+                   sshDiffCur = (        sshCur(cell2)-        sshCur(cell1)) / dcEdge(iEdge)
+                   sshDiffLag = (sshSubcycleCur(cell2)-sshSubcycleCur(cell1)) / dcEdge(iEdge)
+
+                   !--------------------------------------------------------------!
+                   fluxb1 = thicknessSumMid * normalBarotropicVelocityCur(iEdge)
+                   fluxb2 = thicknessSumLag * (0.5*gravity*sshDiffCur + (-barotropicCoriolisTerm(iEdge)-barotropicForcing(iEdge)) )
+!                  fluxAx = thicknessSumLag * sshDiffLag
+
+                   sshTendb1 = sshTendb1 + edgeSignOnCell(i, iCell) * fluxb1 * dvEdge(iEdge)
+                   sshTendb2 = sshTendb2 + edgeSignOnCell(i, iCell) * fluxb2 * dvEdge(iEdge)
+!                  sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
+                   !--------------------------------------------------------------!
+
+                 end do ! i
+
+                   sshTendb1 = (1.0_RKIND/(gravity*dt*0.5**2.0)) * sshTendb1
+                   sshTendb2 = (1.0_RKIND/(gravity   *0.5     )) * sshTendb2
+
+                   sshCurArea = (1.0_RKIND/(gravity*dt**2.0*0.5**2.0)) * sshCur(iCell) * areaCell(iCell)
+!                  sshLagArea = (1.0_RKIND/(gravity*dt**2.0*0.5**2.0)) * sshSubcycleCur(iCell) * areaCell(iCell)
+
+                   CGvec_r0(iCell) =-(-sshCurArea - sshTendb1 + sshTendb2) 
+!                                   -(-sshLagArea - sshTendAx)
+               end do ! iCell
+
+
+               ! SpMV ------------------------!
+!              do iCell = 1, nCellsArray(1)
+!                sshTendb1 = 0.0_RKIND
+!                sshTendb2 = 0.0_RKIND
+!                sshTendAx = 0.0_RKIND
+!                do i = 1, nEdgesOnCell(iCell)
+!                  iEdge = edgesOnCell(i, iCell)
+
+!                  cell1 = cellsOnEdge(1, iEdge)
+!                  cell2 = cellsOnEdge(2, iEdge)
+
+!                  ! Interpolation sshEdge
+!                  sshEdgeCur = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
+
+!                  ! method 1, matches method 0 without pbcs, works with pbcs.
+!                  thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
+
+!                  ! nabla (ssh^0)
+!                  sshDiffCur = (  sshCur(cell2) -   sshCur(cell1)) / dcEdge(iEdge)
+
+!                  !--------------------------------------------------------------!
+!                  fluxb1 = thicknessSumCur * normalBarotropicVelocityCur(iEdge)
+!                  fluxb2 = thicknessSumCur * (0.5*gravity*sshDiffCur + (-barotropicCoriolisTerm(iEdge)-barotropicForcing(iEdge)))
+!                  fluxAx = thicknessSumCur * sshDiffCur
+
+!                  sshTendb1 = sshTendb1 + edgeSignOnCell(i, iCell) * fluxb1 * dvEdge(iEdge)
+!                  sshTendb2 = sshTendb2 + edgeSignOnCell(i, iCell) * fluxb2 * dvEdge(iEdge)
+!                  sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
+!                  !--------------------------------------------------------------!
+
+!                end do ! i
+
+!                  sshTendb1 = (1.0_RKIND/(gravity*dt*0.5**2.0)) * sshTendb1
+!                  sshTendb2 = (1.0_RKIND/(gravity   *0.5     )) * sshTendb2
+
+!                  sshCurArea = (1.0_RKIND/(gravity*dt**2.0*0.5**2.0)) *   sshCur(iCell) * areaCell(iCell)
+
+!                  CGvec_r0(iCell) =-(-sshCurArea - sshTendb1 + sshTendb2) 
+
+!              end do ! iCell
+
+
+  ! ---------------------------------------------------------------------------!
 
   ! ---------------------------------------------------------------------------!
 
@@ -303,13 +447,16 @@ module ocn_fortrilinos_imp_mod
 
 !   call A%insertGlobalValues(offset + i, cols(1:row_nnz-1), vals(1:row_nnz-1)); FORTRILINOS_CHECK_IERR()
 ! end do
-  call A%fillComplete(); FORTRILINOS_CHECK_IERR()
-
 
   ! The solution X(i) = i-1
-  allocate(lhs(nCells))
-  allocate(rhs(nCells))
+! allocate(lhs(nCellsArray(1)))
+! allocate(rhs(nCellsArray(1)))
+! lhs(:) = sshSubcycleCur(1:nCellsArray(1))
 
+! rhs(:) = sshSubcycleCur(1:nCellsArray(1))
+! lhs(:) = xstate(:)
+! call MPI_BARRIER(dminfo%comm,mpi_ierr)
+! stop
 
 ! if (my_rank > 0) then
 !   rhs(1) = 0.0
@@ -325,17 +472,22 @@ module ocn_fortrilinos_imp_mod
 !   rhs(i) = 0.0
 ! end do
 
-  lda = nCells
-  B = TpetraMultiVector(map, rhs, lda, num_vecs); FORTRILINOS_CHECK_IERR()
-  X = TpetraMultiVector(map, num_vecs); FORTRILINOS_CHECK_IERR()
-  residual = TpetraMultiVector(map, num_vecs, .false.); FORTRILINOS_CHECK_IERR()
+! xstate(:) = 1.d0
+! sshSubcycleCur(:) = 1.d0
 
-  allocate(norms(1))
+! CGvec_r0(:) = 0.d0
+  B = TpetraMultiVector(map, CGvec_r0(1:nCellsArray(1)), lda, num_vecs); FORTRILINOS_CHECK_IERR()
+! B = TpetraMultiVector(map, sshSubcycleCur(1:nCellsArray(1)), lda, num_vecs); FORTRILINOS_CHECK_IERR()
+! B = TpetraMultiVector(map, sshSubcycleCur(1:nCellsArray(1)), lda, num_vecs); FORTRILINOS_CHECK_IERR()
+! B = TpetraMultiVector(map, num_vecs); FORTRILINOS_CHECK_IERR()
+  X = TpetraMultiVector(map, sshSubcycleCur(1:nCellsArray(1)), lda, num_vecs); FORTRILINOS_CHECK_IERR()
+! X = TpetraMultiVector(map, CGvec_r0(1:nCellsArray(1)), lda, num_vecs); FORTRILINOS_CHECK_IERR()
 
+  residual = TpetraMultiVector(map,num_vecs,.false.); FORTRILINOS_CHECK_IERR()
+! residual = TpetraMultiVector(map,CGvec_r0(1:nCellsArray(1)), lda, num_vecs); FORTRILINOS_CHECK_IERR()
 
   ! Step 0: create a handle
   solver_handle = TrilinosSolver(); FORTRILINOS_CHECK_IERR()
-
 
   ! ------------------------------------------------------------------
   ! Explicit setup and solve
@@ -352,31 +504,36 @@ module ocn_fortrilinos_imp_mod
 
   ! Step 4: solve the system
 ! call X%randomize()
-  call X%putScalar(szero)
+! call X%putScalar(szero)
 
   ! Calculate initial residual
   call A%apply(X, residual, TeuchosNO_TRANS, sone, szero); FORTRILINOS_CHECK_IERR()
-
   call residual%update(sone, B, -sone); FORTRILINOS_CHECK_IERR()
   call residual%norm2(norms); FORTRILINOS_CHECK_IERR()
   r0 = norms(1)
 
-  print*, r0
-  call MPI_BARRIER(dminfo%comm,mpi_ierr)
-  stop
-
   call solver_handle%solve(B, X); FORTRILINOS_CHECK_IERR()
-
 
   ! Check the solution
   call A%apply(X, residual, TeuchosNO_TRANS, sone, szero); FORTRILINOS_CHECK_IERR()
   call residual%update(sone, B, -sone); FORTRILINOS_CHECK_IERR()
   call residual%norm2(norms); FORTRILINOS_CHECK_IERR()
 
-  if (norms(1)/r0 > tol) then
+  if ( norms(1)/r0 > tol) then
     write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
     stop 1
   end if
+
+  ! Get solution
+  solvec => X%getData(ione)
+  sshSubcycleCur(1:nCellsArray(1)) = solvec(1:nCellsArray(1))
+  nullify(solvec)
+  print*, '********** After ************'
+  print*, minval(sshSubcycleCur(1:nCellsArray(1))),maxval(sshSubcycleCur(1:nCellsArray(1)))
+
+     block => block % next
+  end do  ! block
+
 
   ! Step 5: clean up
   call solver_handle%finalize(); FORTRILINOS_CHECK_IERR()
@@ -390,13 +547,17 @@ module ocn_fortrilinos_imp_mod
   call A%release(); FORTRILINOS_CHECK_IERR()
   call map%release(); FORTRILINOS_CHECK_IERR()
   call comm%release(); FORTRILINOS_CHECK_IERR()
-  deallocate(norms)
+
+  deallocate(globalIdx)
+! deallocate(norms)
 ! deallocate(cols)
 ! deallocate(vals)
-  deallocate(lhs)
-  deallocate(rhs)
+! deallocate(lhs)
+! deallocate(rhs)
 
-  stop
+! call MPI_BARRIER(dminfo%comm,mpi_ierr)
+! stop
+
 ! n_global_vec = nvec
 ! n_total_vec  = n_tot_vec
 ! !--- Only for initial
@@ -408,140 +569,3 @@ module ocn_fortrilinos_imp_mod
 
 end module
 
-
-
-
-
-
-
-
-
-
-!  public :: noxsolve,noxfinish
-!  class(ForModelEvaluator),private,allocatable :: model_evaluator
-!
-!!*********************************************************************
-!                                contains
-!!*********************************************************************
-!
-!  subroutine ocn_time_integration_imp_btrmode(domain,dt,xstate,nvec,n_tot_vec)
-!   
-!    implicit none
-!    !--------------
-!    type (TeuchosComm) :: comm
-!    type (ParameterList) :: params
-!    !--------------
-!    type (domain_type) :: domain
-!    type (dm_info) :: dminfo
-!    real (kind=RKIND)  :: dt
-!    real (c_double), dimension(nvec) :: xstate
-!    integer (c_int) :: ierr,nvec,n_tot_vec
-!    integer(global_size_type) :: n_global_vec,n_global2_vec,n_total_vec
-!    integer(global_size_type) :: nCells1_vec,nCells4_vec
-!    logical :: init_nox = .true.
-!    ! -------------------------------------------------------------------
-!   
-!    n_global_vec = nvec
-!     n_total_vec = n_tot_vec
-!
-!    !--- Only for initial
-!    if ( init_nox ) then
-!   
-!!     print*, 'PRINT in init'
-!
-!      init_nox = .false.
-!
-!      dminfo = domain % dminfo
-!
-!      comm = TeuchosComm(dminfo % comm)
-!      params = ParameterList("ocnModelEvaluator")
-!      call load_from_xml(params,'nox_params.xml')
-!
-!      allocate(model_evaluator, source=ocnModelEvaluator(comm,domain,xstate,dt,n_global_vec,n_total_vec))
-!      call init_ForModelEvaluator(model_evaluator)
-!      call model_evaluator%setup(params)
-!      call params%release()
-!    endif ! init_nox
-!    
-!
-!    call noxsolve(comm,domain,dt,params,xstate,nvec,ierr)
-!
-!  end subroutine ocn_time_integration_imp_btrmode
-!
-!!------------------------------------------------------------------------
-!
-!  subroutine noxsolve(comm,domain,dt,params,xstate,nvec,ierr)
-!    ! -------------------------------------------------------------------
-!    use,intrinsic :: iso_c_binding
-!    implicit none
-!
-!    type (TeuchosComm) :: comm
-!    type (domain_type) :: domain
-!    real (kind=RKIND)  :: dt
-!    integer(c_int) :: vector_size,ierr,nvec
-!    real(c_double),dimension(nvec) :: xstate
-!
-!    type(NOXSolver) :: nox_solver
-!    type(ocnModelEvaluator) :: self
-!    integer(kind(NOXStatusType)) :: status
-!    type(ParameterList) :: params
-!    integer(global_size_type) :: n_global_vec
-!    ! -------------------------------------------------------------------
-!
-!    ierr = 0
-!
-!    n_global_vec = nvec
-!
-!!     print*, 'PRINT in noxsolve'
-!    
-!    ! ------------------------------------------------- !
-!    call mpas_timer_start("si fortrilinos params")
-!    params = ParameterList("ocnModelEvaluator")
-!    call load_from_xml(params,'nox_params.xml')
-!    call mpas_timer_stop ("si fortrilinos params")
-!    ! ------------------------------------------------- !
-!
-!    ! ------------------------------------------------- !
-!    call mpas_timer_start("si fortrilinos evalse")
-!    call model_evaluator%setup(params)
-!    call mpas_timer_stop ("si fortrilinos evalse")
-!    ! ------------------------------------------------- !
-!
-!    nox_solver = NOXSolver(model_evaluator)
-!
-!    ! ------------------------------------------------- !
-!    call mpas_timer_start("si fortrilinos nox setup")
-!    call nox_solver%setup(params)
-!    call mpas_timer_stop ("si fortrilinos nox setup")
-!    ! ------------------------------------------------- !
-!
-!    ! ------------------------------------------------- !
-!    call mpas_timer_start("si fortrilinos nox solver")
-!    status = nox_solver%solve()
-!    call mpas_timer_stop ("si fortrilinos nox solver")
-!    ! ------------------------------------------------- !
-!
-!    ! ------------------------------------------------- !
-!    call mpas_timer_start("si fortrilinos nox release")
-!    call nox_solver%release()
-!    call mpas_timer_stop ("si fortrilinos nox release")
-!    ! ------------------------------------------------- !
-!
-!    if (status /= NOXConverged) ierr = 1
-!!   print*, "Status@@",status,NOXConverged
-!
-!    !--- Get the final solution
-!    call getFinalSolution(self,xstate,n_global_vec)
-!
-!    call params%release()
-!
-!  end subroutine noxsolve
-!
-!!------------------------------------------------------------------------
-!
-!  subroutine noxfinish()
-!    call model_evaluator%release()
-!    deallocate(model_evaluator)
-!  end subroutine noxfinish
-!
-!end module

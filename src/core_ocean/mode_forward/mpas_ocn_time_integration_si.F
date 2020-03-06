@@ -338,8 +338,8 @@ module ocn_time_integration_si
       !--- Backward-Euler at the 1st time step only to remove spurious oscillation caused by CN method
       if ( first_step ) then
          first_step = .false.
-         alpha1 = 1.0
-         alpha2 = 0.0
+         alpha1 = 0.5
+         alpha2 = 0.5
       else
          alpha1 = 0.5
          alpha2 = 0.5
@@ -756,6 +756,7 @@ module ocn_time_integration_si
    
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(1)
+
    
                if (config_filter_btr_mode) then
                   !$omp do schedule(runtime)
@@ -919,41 +920,19 @@ module ocn_time_integration_si
          !
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-          call mpas_timer_start("si fortrilinos btrmode")
+         call mpas_timer_start("si fortrilinos btrmode")
+   
+         call ocn_time_integration_imp_btrmode(domain,dt,itotal_num_cells)
 
-          block => domain % blocklist
-            do while (associated(block))
+         call mpas_timer_stop ("si fortrilinos btrmode")
 
-              call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-              call mpas_pool_get_subpool(block % structs, 'state', statePool)
-              call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
-              call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
-              call mpas_pool_get_array(statePool, 'layerThickness', layerThicknessCur, 1)
-
-              nCells = nCellsArray(1)
-
-              allocate(xstate(1:nCells))
-
-              xstate(1:nCells) = sshSubcycleCur(1:nCells)
-
-              call ocn_time_integration_imp_btrmode(domain,dt,xstate,nCells,itotal_num_cells)
-
-              sshSubcycleCur(1:nCells) = xstate(1:nCells)
-
-              deallocate(xstate)
-
-            block => block % next
-          end do  ! block
-
-          call mpas_timer_stop ("si fortrilinos btrmode")
-
-          call mpas_timer_start("si halo ssh")
-          call mpas_dmpar_exch_group_create(domain, iterGroupName)
-          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
-          call mpas_threading_barrier()
-          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-          call mpas_timer_stop("si halo ssh")
+         call mpas_timer_start("si halo ssh")
+         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
+         call mpas_threading_barrier()
+         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+         call mpas_timer_stop("si halo ssh")
 
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
