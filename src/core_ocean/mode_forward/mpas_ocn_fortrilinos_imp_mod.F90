@@ -159,7 +159,7 @@ module ocn_fortrilinos_imp_mod
   
         ! My global cell ID ------------------------------------------------------
         allocate(globalIdx(nCellsArray(4)+1))
-        globalIdx(:) = -1
+        globalIdx(:) = 0
         CGvec_r0(:) = 0.0
         do iCell = 1,nCellsArray(1)
           globalIdx(iCell) = sCellIdx + iCell - 1
@@ -253,21 +253,20 @@ module ocn_fortrilinos_imp_mod
      nCells = nCellsArray(1)
      nEdges = nEdgesArray(2)
 
-     vals(:) = szero
+     vals(1) = szero
 
-     allocate(acol(1:nCellsArray(4)))
-     allocate(aval(1:nCellsArray(4)))
-     allocate(colent(max_entries_per_row))
-     allocate(valent(max_entries_per_row))
-
-     valent(:) = szero
+!    allocate(acol(1:nCellsArray(4)))
+!    allocate(aval(1:nCellsArray(4)))
+!    allocate(colent(max_entries_per_row))
+!    allocate(valent(max_entries_per_row))
+!    valent(:) = szero
  
      do iCell = 1, nCellsArray(1)
 
-        acol(:) = 0
-        aval(:) = 0.d0
-        colent(:) = 0
-        valent(:) = 0.d0
+!       acol(:) = 0
+!       aval(:) = 0.d0
+!       colent(:) = 0
+!       valent(:) = 0.d0
         gblrow  = globalIdx(iCell)
 
         do i = 1, nEdgesOnCell(iCell)
@@ -279,84 +278,81 @@ module ocn_fortrilinos_imp_mod
           thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1),bottomDepth(cell2))
           fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
 
-!         if ( globalIdx(cell2) >  0 ) then
-!         cols(1) = globalIdx(cell1)
-!         call A%insertGlobalValues(gblrow, cols, vals)
-!         cols(1) = globalIdx(cell2)
-!         call A%insertGlobalValues(gblrow, cols, vals)
-          acol(cell1) = globalIdx(cell1)
-          acol(cell2) = globalIdx(cell2)
-          aval(cell1) = aval(cell1) - fluxAx
-          aval(cell2) = aval(cell2) + fluxAx
-!         endif
+          if ( globalIdx(cell2) >  0 ) then
+          cols(1) = globalIdx(cell1)
+          call A%insertGlobalValues(gblrow, cols, vals)
+
+          cols(1) = globalIdx(cell2)
+          call A%insertGlobalValues(gblrow, cols, vals)
+          endif
+!         acol(cell1) = globalIdx(cell1)
+!         acol(cell2) = globalIdx(cell2)
+!         aval(cell1) = aval(cell1) - fluxAx
+!         aval(cell2) = aval(cell2) + fluxAx
 
         end do ! i
 
-          acol(iCell) = globalIdx(iCell)
-          aval(iCell) = aval(iCell) + (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+!         acol(iCell) = globalIdx(iCell)
+!         aval(iCell) = aval(iCell) + (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
 
-        isum = 0
-        do i = 1,nCellsArray(4)
-          if ( acol(i) > 0 ) then
-            isum = isum + 1
-            colent(isum) = acol(i)
-            valent(isum) = aval(i)
-          endif
-        end do
+!       isum = 0
+!       do i = 1,nCellsArray(4)
+!         if ( acol(i) > 0 ) then
+!           isum = isum + 1
+!           colent(isum) = acol(i)
+!           valent(isum) = aval(i)
+!         endif
+!       end do
+!       call A%insertGlobalValues(gblrow, colent(1:isum), valent(1:isum))
 
-!       cols(1) = globalIdx(iCell)
-!       call A%insertGlobalValues(gblrow, cols, vals)
-        call A%insertGlobalValues(gblrow, colent(1:isum), valent(1:isum))
+        cols(1) = globalIdx(iCell)
+        call A%insertGlobalValues(gblrow, cols, vals)
           
      end do ! iCell
 
      call A%fillComplete(); FORTRILINOS_CHECK_IERR()
-!  call MPI_BARRIER(dminfo%comm,mpi_ierr)
-!  stop
 
-!    call A%resumeFill(); FORTRILINOS_CHECK_IERR()
+     call A%resumeFill(); FORTRILINOS_CHECK_IERR()
 
-!    call A%setAllToScalar(szero)
+     call A%setAllToScalar(szero)
 
-!    do iCell = 1, nCellsArray(1)
+     do iCell = 1, nCellsArray(1)
 
-!       gblrow  = globalIdx(iCell)
+        gblrow  = globalIdx(iCell)
 
-!       do i = 1, nEdgesOnCell(iCell)
-!         iEdge = edgesOnCell(i, iCell)
-!         cell1 = cellsOnEdge(1, iEdge)
-!         cell2 = cellsOnEdge(2, iEdge)
+        do i = 1, nEdgesOnCell(iCell)
+          iEdge = edgesOnCell(i, iCell)
+          cell1 = cellsOnEdge(1, iEdge)
+          cell2 = cellsOnEdge(2, iEdge)
 
-!         ! Interpolation sshEdge
-!         sshEdgeLag = 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2))
-!         thicknessSumLag = sshEdgeLag + 0.5*(bottomDepth(cell1)+bottomDepth(cell2))
-!         fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
+          ! Interpolation sshEdge
+          sshEdgeLag = 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2))
+          thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1),bottomDepth(cell2))
+          fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
 
 
 !         if ( globalIdx(cell2) > 0) then
-!         print*, my_rank,iCell,nCells,nCellsArray(4),cell1,cell2
-!         cols(1) = globalIdx(cell1)
-!         vals(1) = -fluxAx 
-!         numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+          cols(1) = globalIdx(cell1)
+          vals(1) = -fluxAx 
+          numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
 
-!         cols(1) = globalIdx(cell2)
-!         vals(1) = +fluxAx 
-!         numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+          cols(1) = globalIdx(cell2)
+          vals(1) = +fluxAx 
+          numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
 !         endif
 
-!       end do ! i
+        end do ! i
 
-!       cols(1) = globalIdx(iCell)
-!       vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
-!       numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+        cols(1) = globalIdx(iCell)
+        vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+        numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
 
-!    end do ! iCell
-!  call MPI_BARRIER(dminfo%comm,mpi_ierr)
-!  stop
-   
+     end do ! iCell
+
+
      ! End reduction ----------------------------------------------------------!
 
-! call A%fillComplete(); FORTRILINOS_CHECK_IERR()
+  call A%fillComplete(); FORTRILINOS_CHECK_IERR()
 
      ! Residual ---------------------------------------------------------------!
 
@@ -458,6 +454,7 @@ module ocn_fortrilinos_imp_mod
   call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
   call mpas_timer_stop("si halo ssh")
        
+
   ! Step 5: clean up
   call solver_handle%finalize(); FORTRILINOS_CHECK_IERR()
 
@@ -477,10 +474,11 @@ module ocn_fortrilinos_imp_mod
   call comm%release(); FORTRILINOS_CHECK_IERR()
 
   deallocate(globalIdx)
-  deallocate(aval)
-  deallocate(acol)
-  deallocate(colent)
-  deallocate(valent)
+! deallocate(aval)
+! deallocate(acol)
+! deallocate(colent)
+! deallocate(valent)
+
 ! deallocate(norms)
 ! deallocate(cols)
 ! deallocate(vals)

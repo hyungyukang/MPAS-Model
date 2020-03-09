@@ -7,19 +7,23 @@
 !
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !
-!  ocn_time_integration_split
+!  ocn_time_integration_si
 !
-!> \brief MPAS ocean split explicit time integration scheme
+!> \brief MPAS ocean semi-implicit time integration scheme
 !> \author Mark Petersen, Doug Jacobsen, Todd Ringler
-!> \date   September 2011
-!> \details
-!>  This module contains the routine for the split explicit
-!>  time integration scheme
+!> \date   September 2011 (split explicit base code)
 !
+!> \author Hyun-Gyu Kang (Oak Ridge National Laboratory)
+!> \date   September 2019 (semi-implicit code)
+!> \details
+!>  This module contains the routine for the semi-implicit
+!>  time integration scheme based on the split-explicit code.
+!>  Only stage 2 (barotropic mode) is changed from the explicit
+!>  subcycling scheme to the semi-implicit scheme.
 !-----------------------------------------------------------------------
 
 
-module ocn_time_integration_split
+module ocn_time_integration_si
 
    use mpas_derived_types
    use mpas_pool_routines
@@ -42,6 +46,9 @@ module ocn_time_integration_split
 
    use ocn_effective_density_in_land_ice
 
+   use,intrinsic :: iso_c_binding
+   use ocn_fortrilinos_imp_mod
+
    implicit none
    private
    save
@@ -58,28 +65,36 @@ module ocn_time_integration_split
    !
    !--------------------------------------------------------------------
 
-   public :: ocn_time_integrator_split, ocn_time_integration_split_init
+   public :: ocn_time_integrator_si, ocn_time_integration_si_init
+   public :: ocn_time_integrator_si_preconditioner
 
-   character (len=*), parameter :: subcycleGroupName = 'subcycleFields'
+   character (len=*), parameter :: iterGroupName = 'iterFields'
    character (len=*), parameter :: finalBtrGroupName = 'finalBtrFields'
    integer :: nBtrSubcycles
+
+   ! Global variables for the semi-implicit time stepper ---------------
+   real (kind=RKIND), allocatable,dimension(:,:) :: prec_ivmat
+   real (kind=RKIND) :: total_num_cells,mean_num_cells,area_mean
+   integer :: nPrecVec,itotal_num_cells
 
    contains
 
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !
-!  ocn_time_integration_split
+!  ocn_time_integration_si
 !
 !> \brief MPAS ocean split explicit time integration scheme
 !> \author Mark Petersen, Doug Jacobsen, Todd Ringler
-!> \date   September 2011
+!> \date   September 2011 (split explicit base code)
+!> \author Hyun-Gyu Kang (Oak Ridge National Laboratory)
+!> \date   JAN 2019 (semi-implicit code)
 !> \details
 !>  This routine integrates a master time step (dt) using a
-!>  split explicit time integrator.
+!>  semi-implicit time integrator.
 !
 !-----------------------------------------------------------------------
 
-    subroutine ocn_time_integrator_split(domain, dt)!{{{
+    subroutine ocn_time_integrator_si(domain, dt)!{{{
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     ! Advance model state forward in time by the specified time step using
     !   Split_Explicit timestepping scheme
@@ -107,13 +122,18 @@ module ocn_time_integration_split
       type (mpas_pool_type), pointer :: swForcingPool
 
       type (dm_info) :: dminfo
-      integer :: iCell, i,k,j, iEdge, cell1, cell2, split_explicit_step, split, &
+      integer :: iCell, i,k,j, iEdge, cell1, cell2, split_implicit_step, split, &
                  eoe, oldBtrSubcycleTime, newBtrSubcycleTime, uPerpTime, BtrCorIter, &
-                 stage1_tend_time
+                 stage1_tend_time,iter,iter_u,iter_max
       integer, dimension(:), allocatable :: n_bcl_iter
       type (block_type), pointer :: block
-      real (kind=RKIND) :: normalThicknessFluxSum, thicknessSum, flux, sshEdge, hEdge1, &
-                 CoriolisTerm, normalVelocityCorrection, temp, temp_h, coef, barotropicThicknessFlux_coeff, sshCell1, sshCell2
+
+      real (kind=RKIND) :: normalThicknessFluxSum, thicknessSum,thicknessSumCur,thicknessSumLag,thicknessSumMid,  &
+                           flux,flux1,flux2, sshEdge,sshEdgeCur,sshEdgeLag,sshEdgeMid, hEdge1, &
+                           CoriolisTerm, normalVelocityCorrection, temp, temp_h, coef, barotropicThicknessFlux_coeff, &
+                           sshDiffCur,sshDiffNew,sshDiffLag,sshDiffMid
+      real (kind=RKIND) :: fluxb1,fluxb2,fluxAx,sshTendb1,sshTendb2,sshTendAx
+
       integer :: useVelocityCorrection, err
       real (kind=RKIND), dimension(:,:), pointer :: &
                  vertViscTopOfEdge, vertDiffTopOfCell
@@ -121,7 +141,7 @@ module ocn_time_integration_split
       real (kind=RKIND), dimension(:), allocatable:: uTemp
       real (kind=RKIND), dimension(:), pointer :: btrvel_temp
       type (field1DReal), pointer :: btrvel_tempField
-      logical :: activeTracersOnly ! if true only compute tendencies for active tracers
+      logical :: activeTracersOnly ! if true only compute tendencies for active tracers  
       integer :: tsIter
       integer :: edgeHaloComputeCounter, cellHaloComputeCounter
       integer :: neededHalos
@@ -150,6 +170,11 @@ module ocn_time_integration_split
       real (kind=RKIND), pointer :: config_mom_del4, config_btr_gam1_velWt1, config_btr_gam2_SSHWt1
       real (kind=RKIND), pointer :: config_btr_gam3_velWt2
       real (kind=RKIND), pointer :: config_self_attraction_and_loading_beta
+
+      ! Configs for the semi-implicit solver 
+      character (len=StrKIND), pointer :: config_btr_si_preconditioner
+      real (kind=RKIND), pointer :: config_btr_si_tolerance
+      integer, pointer :: config_n_btr_si_outer_iter
 
       ! Dimensions
       integer :: nCells, nEdges
@@ -201,6 +226,29 @@ module ocn_time_integration_split
       real (kind=RKIND), dimension(:,:), pointer :: surfaceVelocity, SSHGradient
       real (kind=RKIND), dimension(:), pointer :: tidalPotentialEta
 
+
+      ! Semi-implicit Array Pointers
+      real (kind=RKIND), dimension(:), pointer :: CGvec_r0,CGvec_r00,CGvec_r1,CGvec_rh0,CGvec_rh1,CGvec_ph0,CGvec_ph1
+      real (kind=RKIND), dimension(:), pointer :: CGvec_v0,CGvec_v1,CGvec_s0,CGvec_s1,CGvec_sh0,CGvec_sh1
+      real (kind=RKIND), dimension(:), pointer :: CGvec_w0,CGvec_w1,CGvec_wh0,CGvec_wh1
+      real (kind=RKIND), dimension(:), pointer :: CGvec_t0,CGvec_t1,CGvec_q0,CGvec_q1,CGvec_qh0
+      real (kind=RKIND), dimension(:), pointer :: CGvec_z0,CGvec_z1,CGvec_zh0,CGvec_zh1
+      real (kind=RKIND), dimension(:), pointer :: CGvec_y0
+      real (kind=RKIND), dimension(:), pointer :: barotropicCoriolisTerm
+      ! Semi-implicit variables
+      real (kind=RKIND), dimension(5) :: CGcst_allreduce,CGcst_allreduce_global
+      real (kind=RKIND) :: CGcst_r00r0,CGcst_r00w0,CGcst_r00r1,CGcst_r00w1
+      real (kind=RKIND) :: CGcst_r00r0_global,CGcst_r00w0_global,CGcst_r00r1_global,CGcst_r00w1_global
+
+      real (kind=RKIND) :: CGcst_r0r0,CGcst_r1r1
+      real (kind=RKIND) :: CGcst_r0r0_global,CGcst_r1r1_global
+
+      real (kind=RKIND) :: CGcst_r00s0,CGcst_r00z0,CGcst_q0y0,CGcst_y0y0
+      real (kind=RKIND) :: CGcst_r00s0_global,CGcst_r00z0_global,CGcst_q0y0_global,CGcst_y0y0_global
+
+      real (kind=RKIND) :: CGcst_alpha0,CGcst_alpha1,CGcst_beta0,CGcst_beta1,CGcst_omega0,CGcst_omega1
+      real (kind=RKIND) :: sshCurArea,sshLagArea,sshTendA,sshTendB,sshTendC,temp1,temp2,crit_main,resid,wgt
+
       ! Diagnostics Field Pointers
       type (field2DReal), pointer :: normalizedRelativeVorticityEdgeField, divergenceField, relativeVorticityField
       type (field1DReal), pointer :: barotropicThicknessFluxField, boundaryLayerDepthField, effectiveDensityField
@@ -230,7 +278,15 @@ module ocn_time_integration_split
       integer :: temp_mask
       real (kind=RKIND) :: tracer2_value, lat
 
-      call mpas_timer_start("se timestep")
+      real (c_double), allocatable, dimension(:) :: xstate
+
+      real(kind=RKIND) :: alpha1,alpha2
+      logical :: first_step = .true.
+
+
+      dminfo = domain % dminfo
+
+      call mpas_timer_start("si timestep")
 
       call mpas_pool_get_config(domain % configs, 'config_n_bcl_iter_beg', config_n_bcl_iter_beg)
       call mpas_pool_get_config(domain % configs, 'config_n_bcl_iter_mid', config_n_bcl_iter_mid)
@@ -270,6 +326,25 @@ module ocn_time_integration_split
       call mpas_pool_get_config(domain % configs, 'config_compute_active_tracer_budgets', config_compute_active_tracer_budgets)
       call mpas_pool_get_config(domain % configs, 'config_reset_debugTracers_near_surface', config_reset_debugTracers_near_surface)
       call mpas_pool_get_config(domain % configs, 'config_reset_debugTracers_top_nLayers', config_reset_debugTracers_top_nLayers)
+
+      ! configurations for the semi-implicit barotropic mode solver
+      call mpas_pool_get_config(domain % configs, 'config_btr_si_preconditioner', config_btr_si_preconditioner)
+      call mpas_pool_get_config(domain % configs, 'config_btr_si_tolerance'     , config_btr_si_tolerance     )
+      call mpas_pool_get_config(domain % configs, 'config_n_btr_si_outer_iter'  , config_n_btr_si_outer_iter  )
+
+      ! Tolerance for main iteration -- !
+      crit_main  = config_btr_si_tolerance * area_mean
+
+      !--- Backward-Euler at the 1st time step only to remove spurious oscillation caused by CN method
+      if ( first_step ) then
+         first_step = .false.
+         alpha1 = 0.5
+         alpha2 = 0.5
+      else
+         alpha1 = 0.5
+         alpha2 = 0.5
+      endif
+
       allocate(n_bcl_iter(config_n_ts_iter))
 
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -277,7 +352,7 @@ module ocn_time_integration_split
       !  Prep variables before first iteration
       !
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-      call mpas_timer_start("se prep")
+      call mpas_timer_start("si prep")
       block => domain % blocklist
       do while (associated(block))
          call mpas_pool_get_dimension(block % dimensions, 'nCells', nCellsPtr)
@@ -389,7 +464,8 @@ module ocn_time_integration_split
          block => block % next
       end do
 
-      call mpas_timer_stop("se prep")
+      call mpas_timer_stop("si prep")
+
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       ! BEGIN large iteration loop
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -397,34 +473,34 @@ module ocn_time_integration_split
       n_bcl_iter(1) = config_n_bcl_iter_beg
       n_bcl_iter(config_n_ts_iter) = config_n_bcl_iter_end
 
-      do split_explicit_step = 1, config_n_ts_iter
+      do split_implicit_step = 1, config_n_ts_iter
 
          if (config_disable_thick_all_tend .and. config_disable_vel_all_tend .and. config_disable_tr_all_tend) then
            exit ! don't compute in loop meant to update velocity, thickness, and tracers
          end if
 
-         call mpas_timer_start('se loop')
+         call mpas_timer_start('si loop')
 
-         stage1_tend_time = min(split_explicit_step,2)
+         stage1_tend_time = min(split_implicit_step,2)
 
          call mpas_pool_get_subpool(domain % blocklist % structs, 'diagnostics', diagnosticsPool)
 
          ! ---  update halos for diagnostic ocean boundary layer depth
          if (config_use_cvmix_kpp) then
-            call mpas_timer_start("se halo diag obd")
+            call mpas_timer_start("si halo diag obd")
             call mpas_dmpar_field_halo_exch(domain, 'boundaryLayerDepth')
-            call mpas_timer_stop("se halo diag obd")
+            call mpas_timer_stop("si halo diag obd")
          end if
 
          ! ---  update halos for diagnostic variables
-         call mpas_timer_start("se halo diag")
+         call mpas_timer_start("si halo diag")
 
          call mpas_dmpar_field_halo_exch(domain, 'normalizedRelativeVorticityEdge')
          if (config_mom_del4 > 0.0_RKIND) then
            call mpas_dmpar_field_halo_exch(domain, 'divergence')
            call mpas_dmpar_field_halo_exch(domain, 'relativeVorticity')
          end if
-         call mpas_timer_stop("se halo diag")
+         call mpas_timer_stop("si halo diag")
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
@@ -433,7 +509,8 @@ module ocn_time_integration_split
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
          if (config_use_freq_filtered_thickness) then
-            call mpas_timer_start("se freq-filtered-thick computations")
+            call mpas_timer_start("si freq-filtered-thick computations")
+
 
             block => domain % blocklist
             do while (associated(block))
@@ -447,14 +524,15 @@ module ocn_time_integration_split
                call ocn_tend_freq_filtered_thickness(tendPool, statePool, diagnosticsPool, meshPool, stage1_tend_time)
                block => block % next
             end do
-            call mpas_timer_stop("se freq-filtered-thick computations")
+            call mpas_timer_stop("si freq-filtered-thick computations")
 
-            call mpas_timer_start("se freq-filtered-thick halo update")
+
+            call mpas_timer_start("si freq-filtered-thick halo update")
 
             call mpas_dmpar_field_halo_exch(domain, 'tendHighFreqThickness')
             call mpas_dmpar_field_halo_exch(domain, 'tendLowFreqDivergence')
 
-            call mpas_timer_stop("se freq-filtered-thick halo update")
+            call mpas_timer_stop("si freq-filtered-thick halo update")
 
             block => domain % blocklist
             do while (associated(block))
@@ -491,9 +569,9 @@ module ocn_time_integration_split
          endif
 
          ! compute velocity tendencies, T(u*,w*,p*)
-         call mpas_timer_start("se bcl vel")
+         call mpas_timer_start("si bcl vel")
 
-         call mpas_timer_start('se bcl vel tend')
+         call mpas_timer_start('si bcl vel tend')
          block => domain % blocklist
          do while (associated(block))
            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
@@ -518,19 +596,15 @@ module ocn_time_integration_split
 
            block => block % next
          end do
-         call mpas_timer_stop('se bcl vel tend')
+         call mpas_timer_stop('si bcl vel tend')
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          ! BEGIN baroclinic iterations on linear Coriolis term
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-         do j=1,n_bcl_iter(split_explicit_step)
+         do j=1,n_bcl_iter(split_implicit_step)
 
             ! Use this G coefficient to avoid an if statement within the iEdge loop.
-            if (trim(config_time_integrator) == 'unsplit_explicit') then
-               split = 0
-            elseif (trim(config_time_integrator) == 'split_explicit') then
-               split = 1
-            endif
+            split = 1
 
             call mpas_timer_start('bcl iters on linear Coriolis')
             block => domain % blocklist
@@ -606,9 +680,7 @@ module ocn_time_integration_split
                      ! so that normalBaroclinicVelocityNew is at time n+1/2
                      normalBaroclinicVelocityNew(k,iEdge) = 0.5_RKIND*( &
                        normalBaroclinicVelocityCur(k,iEdge) + uTemp(k) - dt * barotropicForcing(iEdge))
-
                   enddo
-
                enddo ! iEdge
                !$omp end do
 
@@ -617,110 +689,75 @@ module ocn_time_integration_split
                block => block % next
             end do
 
-            call mpas_timer_start("se halo normalBaroclinicVelocity")
+            call mpas_timer_start("si halo normalBaroclinicVelocity")
             call mpas_dmpar_field_halo_exch(domain, 'normalBaroclinicVelocity', timeLevel=2)
-            call mpas_timer_stop("se halo normalBaroclinicVelocity")
+            call mpas_timer_stop("si halo normalBaroclinicVelocity")
 
             call mpas_timer_stop('bcl iters on linear Coriolis')
 
          end do  ! do j=1,config_n_bcl_iter
 
-         call mpas_timer_start('se halo barotropicForcing')
+         call mpas_timer_start('si halo barotropicForcing')
          call mpas_dmpar_field_halo_exch(domain, 'barotropicForcing')
-         call mpas_timer_stop('se halo barotropicForcing')
+         call mpas_timer_stop('si halo barotropicForcing')
 
-         call mpas_timer_stop("se bcl vel")
+         call mpas_timer_stop("si bcl vel")
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          ! END baroclinic iterations on linear Coriolis term
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
-         !  Stage 2: Barotropic velocity (2D) prediction, explicitly subcycled
+         !  Stage 2: Barotropic velocity (2D) prediction, semi-implicit
          !
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-         call mpas_timer_start("se btr vel")
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+         !
+         ! Stage 2.1 : Preparation of varibales before outer two iterations
+         !
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-         oldBtrSubcycleTime = 1
-         newBtrSubcycleTime = 2
+         call mpas_timer_start("si btr vel")
 
-         if (trim(config_time_integrator) == 'unsplit_explicit') then
+         cellHaloComputeCounter = config_num_halos
+         edgeHaloComputeCounter = config_num_halos + 1
 
-            call mpas_timer_start('btr vel ue')
-            block => domain % blocklist
-            do while (associated(block))
-               call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdgesPtr)
-               call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-               call mpas_pool_get_dimension(block % dimensions, 'nVertLevels', nVertLevels)
-
-               call mpas_pool_get_subpool(block % structs, 'state', statePool)
-               call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-               call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-               call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-
-               call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityNew, 2)
-               call mpas_pool_get_array(statePool, 'normalVelocity', normalVelocityNew, 2)
-               call mpas_pool_get_array(statePool, 'normalBaroclinicVelocity', normalBaroclinicVelocityNew, 2)
-
-               call mpas_pool_get_array(diagnosticsPool, 'normalTransportVelocity', normalTransportVelocity)
-               call mpas_pool_get_array(diagnosticsPool, 'normalGMBolusVelocity', normalGMBolusVelocity)
-
-               call mpas_pool_get_array(meshPool, 'edgeMask', edgeMask)
-
-               nEdges = nEdgesPtr
-
-               ! For Split_Explicit unsplit, simply set normalBarotropicVelocityNew=0, normalBarotropicVelocitySubcycle=0, and
-               ! uNew=normalBaroclinicVelocityNew
-
-               !$omp do schedule(runtime) private(k)
-               do iEdge = 1, nEdges
-                  normalBarotropicVelocityNew(iEdge) = 0.0_RKIND
-                  do k = 1, nVertLevels
-                     normalVelocityNew(k, iEdge)  = normalBaroclinicVelocityNew(k, iEdge)
-
-                     ! normalTransportVelocity = normalBaroclinicVelocity + normalGMBolusVelocity
-                     ! This is u used in advective terms for layerThickness and tracers
-                     ! in tendency calls in stage 3.
-                     normalTransportVelocity(k,iEdge) = edgeMask(k,iEdge) &
-                           *( normalBaroclinicVelocityNew(k,iEdge) + normalGMBolusVelocity(k,iEdge) )
-
-                  enddo
-               end do  ! iEdge
-               !$omp end do
-
-               block => block % next
-            end do  ! block
-            call mpas_timer_stop('btr vel ue')
-
-         elseif (trim(config_time_integrator) == 'split_explicit') then
-
+         if ( split_implicit_step == 1 ) then
+   
             ! Initialize variables for barotropic subcycling
-            call mpas_timer_start('btr vel se init')
+            call mpas_timer_start('btr vel si init')
+
             block => domain % blocklist
             do while (associated(block))
-               call mpas_pool_get_dimension(block % dimensions, 'nCells', nCellsPtr)
-               call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdgesPtr)
                call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
                call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
+   
+               call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
                call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
                call mpas_pool_get_subpool(block % structs, 'state', statePool)
+               call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
                call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-
+               call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+   
+               call mpas_pool_get_array(meshPool, 'nEdgesOnEdge', nEdgesOnEdge)
+               call mpas_pool_get_array(meshPool, 'edgesOnEdge', edgesOnEdge)
+               call mpas_pool_get_array(meshPool, 'weightsOnEdge', weightsOnEdge)
+               call mpas_pool_get_array(meshPool, 'fEdge' , fEdge)
+   
                call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
-               call mpas_pool_get_array(diagnosticsPool, 'barotropicThicknessFlux', barotropicThicknessFlux)
-
+               call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
+   
                call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
-               call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, oldBtrSubcycleTime)
-               call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, &
-                                      oldBtrSubcycleTime)
+               call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
+               call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, 1)
                call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur, 1)
-               call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityNew, 2)
+   
+               nCells = nCellsArray(1)
+               nEdges = nEdgesArray(2)
 
-               nCells = nCellsPtr
-               nEdges = nEdgesPtr
-
+   
                if (config_filter_btr_mode) then
                   !$omp do schedule(runtime)
                   do iEdge = 1, nEdges
@@ -728,702 +765,541 @@ module ocn_time_integration_split
                   end do
                   !$omp end do
                endif
-
-               !$omp do schedule(runtime)
+   
                do iCell = 1, nCells
                   ! sshSubcycleOld = sshOld
                   sshSubcycleCur(iCell) = sshCur(iCell)
                end do
-               !$omp end do
 
-               !$omp do schedule(runtime)
                do iEdge = 1, nEdges
-
-                  ! normalBarotropicVelocitySubcycleOld = normalBarotropicVelocityOld
                   normalBarotropicVelocitySubcycleCur(iEdge) = normalBarotropicVelocityCur(iEdge)
 
-                  ! normalBarotropicVelocityNew = BtrOld  This is the first for the summation
-                  normalBarotropicVelocityNew(iEdge) = normalBarotropicVelocityCur(iEdge)
+                  ! Compute the barotropic Coriolis term, -f*uPerp
+                  barotropicCoriolisTerm(iEdge) = 0.0_RKIND
 
-                  ! barotropicThicknessFlux = 0
-                  barotropicThicknessFlux(iEdge) = 0.0_RKIND
-               end do
-               !$omp end do
-
+                  do i = 1, nEdgesOnEdge(iEdge)
+                     eoe = edgesOnEdge(i,iEdge)
+                     barotropicCoriolisTerm(iEdge) =    barotropicCoriolisTerm(iEdge) + weightsOnEdge(i,iEdge) &
+                                                      * normalBarotropicVelocityCur(eoe) * fEdge(eoe)
+                  end do ! i
+               end do ! iEdge
+   
                block => block % next
             end do  ! block
-            call mpas_timer_stop('btr vel se init')
+   
+            call mpas_timer_start("si halo init")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'barotropicCoriolisTerm', 1 )
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocitySubcycle', 1 )
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo init")
+   
+            call mpas_timer_stop('btr vel si init')
 
-            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            ! BEGIN Barotropic subcycle loop
-            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+         else ! split_implicit_step
 
-            ! Allocate subcycled scratch fields before starting subcycle loop
-            call mpas_pool_get_subpool(domain % blocklist % structs, 'scratch', scratchPool)
-            call mpas_pool_get_field(scratchPool, 'btrvel_temp', btrvel_tempField)
-            call mpas_allocate_scratch_field(btrvel_tempField, .false.)
+            call mpas_timer_start('btr vel si init')
 
-            cellHaloComputeCounter = 0
-            edgeHaloComputeCounter = 0
-            neededHalos = 1 + config_n_btr_cor_iter
-
-            call mpas_timer_start('btr se subcycle loop')
-            do j = 1, nBtrSubcycles * config_btr_subcycle_loop_factor
-               if(cellHaloComputeCounter < neededHalos) then
-
-                 call mpas_timer_start('se halo subcycle')
-                 call mpas_dmpar_exch_group_reuse_halo_exch(domain, subcycleGroupName, timeLevel=oldBtrSubcycleTime)
-                 call mpas_timer_stop('se halo subcycle')
-
-                 cellHaloComputeCounter = config_num_halos     - mod( config_num_halos, neededHalos )
-                 edgeHaloComputeCounter = config_num_halos + 1 - mod( config_num_halos, neededHalos )
-               end if
-
-               !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-               ! Barotropic subcycle: VELOCITY PREDICTOR STEP
-               !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-               if (config_btr_gam1_velWt1 > 1.0e-12_RKIND) then  ! only do this part if it is needed in next SSH solve
-                  uPerpTime = oldBtrSubcycleTime
-
-                  block => domain % blocklist
-                  do while (associated(block))
-                     call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdgesPtr)
-                     call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
-                     call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-                     call mpas_pool_get_subpool(block % structs, 'state', statePool)
-                     call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-                     call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-                     call mpas_pool_get_subpool(block % structs, 'forcing', forcingPool)
-
-                     call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
-                     call mpas_pool_get_array(meshPool, 'nEdgesOnEdge', nEdgesOnEdge)
-                     call mpas_pool_get_array(meshPool, 'edgesOnEdge', edgesOnEdge)
-                     call mpas_pool_get_array(meshPool, 'weightsOnEdge', weightsOnEdge)
-                     call mpas_pool_get_array(meshPool, 'fEdge', fEdge)
-                     call mpas_pool_get_array(meshPool, 'dcEdge', dcEdge)
-                     call mpas_pool_get_array(meshPool, 'edgeMask', edgeMask)
-
-                     call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, &
-                                              uPerpTime)
-                     call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleNew, &
-                                              newBtrSubcycleTime)
-                     call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, oldBtrSubcycleTime)
-
-                     call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
-
-                     ! Subtract tidal potential from ssh, if needed
-                     !   Subtract the tidal potential from the current subcycle ssh and store and a work array.
-                     !   Then point sshSubcycleCur to the work array so the tidal potential terms are included
-                     !   in the grad operator inside the edge loop.
-                     if (config_use_tidal_potential_forcing) then
-                       call mpas_pool_get_array(forcingPool, 'sshSubcycleCurWithTides', sshSubcycleCurWithTides)
-                       call mpas_pool_get_array(forcingPool, 'tidalPotentialEta', tidalPotentialEta)
-                       call mpas_pool_get_dimension(block % dimensions, 'nCells', nCellsPtr)
-
-                       nCells = nCellsPtr
-                       do iCell = 1, nCells
-                         sshSubcycleCurWithTides(iCell) = sshSubcycleCur(iCell) - tidalPotentialEta(iCell) &
-                                                        - config_self_attraction_and_loading_beta * sshSubcycleCur(iCell)
-                       end do
-
-                       call mpas_pool_get_array(forcingPool, 'sshSubcycleCurWithTides', sshSubcycleCur)
-                     end if
-
-                     nEdges = nEdgesPtr
-                     nEdges = nEdgesArray( edgeHaloComputeCounter )
-
-                     !$omp do schedule(runtime)
-                     do iEdge = 1, nEdges
-
-                        temp_mask = edgeMask(1, iEdge)
-
-                          cell1 = cellsOnEdge(1,iEdge)
-                          cell2 = cellsOnEdge(2,iEdge)
-
-                          ! Compute the barotropic Coriolis term, -f*uPerp
-                          CoriolisTerm = 0.0_RKIND
-                          do i = 1, nEdgesOnEdge(iEdge)
-                             eoe = edgesOnEdge(i,iEdge)
-                             CoriolisTerm = CoriolisTerm + weightsOnEdge(i,iEdge) &
-                                          * normalBarotropicVelocitySubcycleCur(eoe) * fEdge(eoe)
-                          end do
-
-                          normalBarotropicVelocitySubcycleNew(iEdge) &
-                            = temp_mask &
-                            * (normalBarotropicVelocitySubcycleCur(iEdge) &
-                            + dt / nBtrSubcycles * (CoriolisTerm - gravity &
-                            * (sshSubcycleCur(cell2) - sshSubcycleCur(cell1) ) &
-                            / dcEdge(iEdge) + barotropicForcing(iEdge)))
-
-                     end do
-                     !$omp end do
-
-                     block => block % next
-                  end do  ! block
-              endif ! config_btr_gam1_velWt1>1.0e-12
-
-              ! 1 Halo from edges is corrupted here, so reduce the edge halo layers by 1
-              edgeHaloComputeCounter = edgeHaloComputeCounter - 1
-
-              !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-              ! Barotropic subcycle: SSH PREDICTOR STEP
-              !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-              block => domain % blocklist
-              do while (associated(block))
-                call mpas_pool_get_dimension(block % dimensions, 'nCells', nCellsPtr)
-                call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdgesPtr)
-                call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-                call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
-                call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
-                call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
-                call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-                call mpas_pool_get_subpool(block % structs, 'state', statePool)
-                call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-                call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-
-                call mpas_pool_get_array(tendPool, 'ssh', sshTend)
-
-                call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
-                call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
-                call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
-                call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
-                call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
-                call mpas_pool_get_array(meshPool, 'refBottomDepthTopOfCell', refBottomDepthTopOfCell)
-                call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
-                call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
-                call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
-
-                call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, oldBtrSubcycleTime)
-                call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, newBtrSubcycleTime)
-                call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, &
-                                            oldBtrSubcycleTime)
-                call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleNew, &
-                                            newBtrSubcycleTime)
-
-                call mpas_pool_get_array(diagnosticsPool, 'barotropicThicknessFlux', barotropicThicknessFlux)
-
-                nCells = nCellsPtr
-                nEdges = nEdgesPtr
-
-                nCells = nCellsArray( cellHaloComputeCounter )
-                nEdges = nEdgesArray( edgeHaloComputeCounter )
-
-                ! config_btr_gam1_velWt1 sets the forward weighting of velocity in the SSH computation
-                ! config_btr_gam1_velWt1=  1     flux = normalBarotropicVelocityNew*H
-                ! config_btr_gam1_velWt1=0.5     flux = 1/2*(normalBarotropicVelocityNew+normalBarotropicVelocityOld)*H
-                ! config_btr_gam1_velWt1=  0     flux = normalBarotropicVelocityOld*H
-
-                !$omp do schedule(runtime) private(i, iEdge, cell1, cell2, sshEdge, thicknessSum, flux)
-                do iCell = 1, nCells
-                  sshTend(iCell) = 0.0_RKIND
-                  do i = 1, nEdgesOnCell(iCell)
-                    iEdge = edgesOnCell(i, iCell)
-
-                    cell1 = cellsOnEdge(1, iEdge)
-                    cell2 = cellsOnEdge(2, iEdge)
-
-                    sshEdge = 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2) )
-
-                   ! method 0: orig, works only without pbc:
-                   !thicknessSum = sshEdge + refBottomDepthTopOfCell(maxLevelEdgeTop(iEdge)+1)
-
-                   ! method 1, matches method 0 without pbcs, works with pbcs.
-                   thicknessSum = sshEdge + min(bottomDepth(cell1), bottomDepth(cell2))
-
-                   ! method 2: may be better than method 1.
-                   ! Take average  of full thickness at two neighboring cells.
-                   !thicknessSum = sshEdge + 0.5 *( bottomDepth(cell1) + bottomDepth(cell2) )
-
-
-                    flux = ((1.0-config_btr_gam1_velWt1) * normalBarotropicVelocitySubcycleCur(iEdge) &
-                           + config_btr_gam1_velWt1 * normalBarotropicVelocitySubcycleNew(iEdge)) &
-                           * thicknessSum
-
-                    sshTend(iCell) = sshTend(iCell) + edgeSignOncell(i, iCell) * flux * dvEdge(iEdge)
-
-                  end do
-
-                  ! SSHnew = SSHold + dt/J*(-div(Flux))
-                  sshSubcycleNew(iCell) = sshSubcycleCur(iCell) &
-                                          + dt / nBtrSubcycles * sshTend(iCell) / areaCell(iCell)
-                end do
-                !$omp end do
-
-                !! asarje: changed to avoid redundant computations when config_btr_solve_SSH2 is true
-
-                if (config_btr_solve_SSH2) then
-
-                  ! If config_btr_solve_SSH2=.true.,
-                  ! then do NOT accumulate barotropicThicknessFlux in this SSH predictor
-                  ! section, because it will be accumulated in the SSH corrector section.
-                  barotropicThicknessFlux_coeff = 0.0_RKIND
-
-                  ! othing else to do
-
-                else
-
-                  ! otherwise, DO accumulate barotropicThicknessFlux in this SSH predictor section
-                  barotropicThicknessFlux_coeff = 1.0_RKIND
-
+            block => domain % blocklist
+            do while (associated(block))
+               call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+               call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+   
+               call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+               call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+               call mpas_pool_get_subpool(block % structs, 'state', statePool)
+               call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+               call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+               call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+   
+               call mpas_pool_get_array(meshPool, 'nEdgesOnEdge', nEdgesOnEdge)
+               call mpas_pool_get_array(meshPool, 'edgesOnEdge', edgesOnEdge)
+               call mpas_pool_get_array(meshPool, 'weightsOnEdge', weightsOnEdge)
+               call mpas_pool_get_array(meshPool, 'fEdge' , fEdge)
+   
+               call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
+               call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
+   
+               call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
+               call mpas_pool_get_array(statePool, 'ssh', sshNew, 2)
+               call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
+               call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur, 1)
+               call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, 1)
+   
+               nCells = nCellsArray(1)
+               nEdges = nEdgesArray(2)
+   
+               if (config_filter_btr_mode) then
                   !$omp do schedule(runtime)
                   do iEdge = 1, nEdges
-                     cell1 = cellsOnEdge(1,iEdge)
-                     cell2 = cellsOnEdge(2,iEdge)
-
-                     sshEdge = 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2))
-
-                     ! method 1, matches method 0 without pbcs, works with pbcs.
-                     thicknessSum = sshEdge + min(bottomDepth(cell1), bottomDepth(cell2))
-
-                     flux = ((1.0-config_btr_gam1_velWt1) * normalBarotropicVelocitySubcycleCur(iEdge) &
-                            + config_btr_gam1_velWt1 * normalBarotropicVelocitySubcycleNew(iEdge)) &
-                            * thicknessSum
-
-                     barotropicThicknessFlux(iEdge) = barotropicThicknessFlux(iEdge) + flux
+                     barotropicForcing(iEdge) = 0.0_RKIND
                   end do
                   !$omp end do
+               endif
+   
+               do iCell = 1, nCells
+                          sshCur(iCell) = sshNew(iCell)
+                  sshSubcycleCur(iCell) = sshCur(iCell)
+               end do
 
-                endif
+               do iEdge = 1, nEdges
+                  normalBarotropicVelocityCur(iEdge) = normalBarotropicVelocitySubcycleCur(iEdge)
 
-                block => block % next
-              end do  ! block
+                  ! Compute the barotropic Coriolis term, -f*uPerp
+                  barotropicCoriolisTerm(iEdge) = 0.0_RKIND
 
-              ! 1 cell halo layer is now corrupted, so remove one from computing on.
-              cellHaloComputeCounter = cellHaloComputeCounter - 1
+                  do i = 1, nEdgesOnEdge(iEdge)
+                     eoe = edgesOnEdge(i,iEdge)
+                     barotropicCoriolisTerm(iEdge) =    barotropicCoriolisTerm(iEdge) + weightsOnEdge(i,iEdge) &
+                                                      * normalBarotropicVelocitySubcycleCur(eoe) * fEdge(eoe)
+                  end do ! i
+               end do ! iEdge
+   
+               block => block % next
+            end do  ! block
 
-              !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-              ! Barotropic subcycle: VELOCITY CORRECTOR STEP
-              !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-              ! 1 edge halo is already corrupted from the predictor step.
-              do BtrCorIter = 1, config_n_btr_cor_iter
-                uPerpTime = newBtrSubcycleTime
-
-                block => domain % blocklist
-                do while (associated(block))
-                   call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdgesPtr)
-                   call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
-                   call mpas_pool_get_subpool(block % structs, 'state', statePool)
-                   call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-                   call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-                   call mpas_pool_get_subpool(block % structs, 'forcing', forcingPool)
-                   call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-                   call mpas_pool_get_subpool(block % structs, 'scratch', scratchPool)
-
-                   call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, &
-                                            oldBtrSubcycleTime)
-                   call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleNew, &
-                                            newBtrSubcycleTime)
-                   call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, oldBtrSubcycleTime)
-                   call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, newBtrSubcycleTime)
-
-                   call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
-                   call mpas_pool_get_array(meshPool, 'nEdgesOnEdge', nEdgesOnEdge)
-                   call mpas_pool_get_array(meshPool, 'edgesOnEdge', edgesOnEdge)
-                   call mpas_pool_get_array(meshPool, 'weightsOnEdge', weightsOnEdge)
-                   call mpas_pool_get_array(meshPool, 'fEdge', fEdge)
-                   call mpas_pool_get_array(meshPool, 'dcEdge', dcEdge)
-                   call mpas_pool_get_array(meshPool, 'edgeMask', edgeMask)
-
-                   call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
-
-                   call mpas_pool_get_field(scratchPool, 'btrvel_temp', btrvel_tempField)
-                   btrvel_temp => btrvel_tempField % array
-
-                   ! Subtract tidal potential from ssh, if needed
-                   !   Subtract the tidal potential from the current and new subcycle ssh and store and a work arrays.
-                   !   Then point sshSubcycleCur and  ssh SubcycleNew to the work arrays so the tidal potential terms
-                   !   are included in the grad operator inside the edge loop.
-                   if (config_use_tidal_potential_forcing) then
-                     call mpas_pool_get_array(forcingPool,'sshSubcycleCurWithTides', sshSubcycleCurWithTides)
-                     call mpas_pool_get_array(forcingPool,'sshSubcycleNewWithTides', sshSubcycleNewWithTides)
-                     call mpas_pool_get_array(forcingPool, 'tidalPotentialEta', tidalPotentialEta)
-                     call mpas_pool_get_dimension(block % dimensions, 'nCells', nCellsPtr)
-
-                     nCells = nCellsPtr
-                     do iCell = 1, nCells
-                       sshSubcycleCurWithTides(iCell) = sshSubcycleCur(iCell) - tidalPotentialEta(iCell) &
-                                                      - config_self_attraction_and_loading_beta * sshSubcycleCur(iCell)
-                       sshSubcycleNewWithTides(iCell) = sshSubcycleNew(iCell) - tidalPotentialEta(iCell) &
-                                                      - config_self_attraction_and_loading_beta * sshSubcycleNew(iCell)
-                     end do
-
-                     call mpas_pool_get_array(forcingPool,'sshSubcycleCurWithTides', sshSubcycleCur)
-                     call mpas_pool_get_array(forcingPool,'sshSubcycleNewWithTides', sshSubcycleNew)
-                   end if
-
-                   ! Need to initialize btr_vel_temp over the one more halo than we're computing over
-                   nEdges = nEdgesPtr
-
-                   nEdges = nEdgesArray( min(edgeHaloComputeCounter + 1, config_num_halos + 1) )
-
-                   !$omp do schedule(runtime)
-                   do iEdge = 1, nEdges+1
-                      btrvel_temp(iEdge) = normalBarotropicVelocitySubcycleNew(iEdge)
-                   end do
-                   !$omp end do
-
-                   nEdges = nEdgesArray( edgeHaloComputeCounter )
-
-                   !$omp do schedule(runtime)
-                   do iEdge = 1, nEdges
-
-                     ! asarje: added to avoid redundant computations based on mask
-                     temp_mask = edgeMask(1,iEdge)
-
-                       cell1 = cellsOnEdge(1,iEdge)
-                       cell2 = cellsOnEdge(2,iEdge)
-
-                       ! Compute the barotropic Coriolis term, -f*uPerp
-                       CoriolisTerm = 0.0_RKIND
-                       do i = 1, nEdgesOnEdge(iEdge)
-                         eoe = edgesOnEdge(i,iEdge)
-                         CoriolisTerm = CoriolisTerm &
-                                        + weightsOnEdge(i,iEdge) * btrvel_temp(eoe) * fEdge(eoe)
-                       end do
-
-                       ! In this final solve for velocity, SSH is a linear
-                       ! combination of SSHold and SSHnew.
-                       sshCell1 = (1 - config_btr_gam2_SSHWt1) * sshSubcycleCur(cell1) &
-                                  + config_btr_gam2_SSHWt1 * sshSubcycleNew(cell1)
-                       sshCell2 = (1 - config_btr_gam2_SSHWt1) * sshSubcycleCur(cell2) &
-                                  + config_btr_gam2_SSHWt1 * sshSubcycleNew(cell2)
-
-                       ! normalBarotropicVelocityNew = normalBarotropicVelocityOld + dt/J*(-f*normalBarotropicVelocityoldPerp
-                       !                             - g*grad(SSH) + G)
-                       normalBarotropicVelocitySubcycleNew(iEdge) = temp_mask &
-                            * (normalBarotropicVelocitySubcycleCur(iEdge) &
-                            + dt / nBtrSubcycles &
-                            * (CoriolisTerm - gravity * (sshCell2 - sshCell1) / dcEdge(iEdge) &
-                            + barotropicForcing(iEdge)))
-
-                   end do
-                   !$omp end do
-
-                   block => block % next
-                end do  ! block
-
-                edgeHaloComputeCounter = edgeHaloComputeCounter - 1
-                if ( BtrCorIter >= 1 .or. config_btr_solve_SSH2 .eqv. .false.) then
-                  cellHaloComputeCounter = cellHaloComputeCounter - 1
-                end if
-
-              end do !do BtrCorIter=1,config_n_btr_cor_iter
-
-              !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-              ! Barotropic subcycle: SSH CORRECTOR STEP
-              !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-              if (config_btr_solve_SSH2) then
-
-                block => domain % blocklist
-                do while (associated(block))
-                   call mpas_pool_get_dimension(block % dimensions, 'nCells', nCellsPtr)
-                   call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdgesPtr)
-                   call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-                   call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
-                   call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
-                   call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
-                   call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-                   call mpas_pool_get_subpool(block % structs, 'state', statePool)
-                   call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-                   call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-
-                   call mpas_pool_get_array(tendPool, 'ssh', sshTend)
-
-                   call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
-                   call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
-                   call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
-                   call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
-                   call mpas_pool_get_array(meshPool, 'refBottomDepthTopOfCell', refBottomDepthTopOfCell)
-                   call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
-                   call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
-                   call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
-
-                   call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, oldBtrSubcycleTime)
-                   call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, newBtrSubcycleTime)
-                   call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, &
-                                            oldBtrSubcycleTime)
-                   call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleNew, &
-                                            newBtrSubcycleTime)
-
-                   call mpas_pool_get_array(diagnosticsPool, 'barotropicThicknessFlux', barotropicThicknessFlux)
-
-                   nCells = nCellsPtr
-                   nEdges = nEdgesPtr
-
-                   nCells = nCellsArray( cellHaloComputeCounter )
-                   nEdges = nEdgesArray( edgeHaloComputeCounter )
-
-                   ! config_btr_gam3_velWt2 sets the forward weighting of velocity in the SSH computation
-                   ! config_btr_gam3_velWt2=  1     flux = normalBarotropicVelocityNew*H
-                   ! config_btr_gam3_velWt2=0.5     flux = 1/2*(normalBarotropicVelocityNew+normalBarotropicVelocityOld)*H
-                   ! config_btr_gam3_velWt2=  0     flux = normalBarotropicVelocityOld*H
-
-                   !$omp do schedule(runtime) private(i, iEdge, cell1, cell2, sshCell1, sshCell2, sshEdge, thicknessSum, flux)
-                   do iCell = 1, nCells
-                     sshTend(iCell) = 0.0_RKIND
-                     do i = 1, nEdgesOnCell(iCell)
-                       iEdge = edgesOnCell(i, iCell)
-
-                       cell1 = cellsOnEdge(1,iEdge)
-                       cell2 = cellsOnEdge(2,iEdge)
-
-                       ! SSH is a linear combination of SSHold and SSHnew.
-                       sshCell1 = (1-config_btr_gam2_SSHWt1)* sshSubcycleCur(cell1) &
-                                 +   config_btr_gam2_SSHWt1 * sshSubcycleNew(cell1)
-                       sshCell2 = (1-config_btr_gam2_SSHWt1)* sshSubcycleCur(cell2) &
-                                 +   config_btr_gam2_SSHWt1 * sshSubcycleNew(cell2)
-
-                       sshEdge = 0.5_RKIND * (sshCell1 + sshCell2)
-
-                      ! method 0: orig, works only without pbc:
-                      !thicknessSum = sshEdge + refBottomDepthTopOfCell(maxLevelEdgeTop(iEdge)+1)
-
-                      ! method 1, matches method 0 without pbcs, works with pbcs.
-                      thicknessSum = sshEdge + min(bottomDepth(cell1), bottomDepth(cell2))
-
-                      ! method 2: may be better than method 1.
-                      ! take average  of full thickness at two neighboring cells
-                      !thicknessSum = sshEdge + 0.5 *( bottomDepth(cell1) + bottomDepth (cell2) )
-
-                       flux = ((1.0-config_btr_gam3_velWt2) * normalBarotropicVelocitySubcycleCur(iEdge) &
-                              + config_btr_gam3_velWt2 * normalBarotropicVelocitySubcycleNew(iEdge)) &
-                              * thicknessSum
-
-                       sshTend(iCell) = sshTend(iCell) + edgeSignOnCell(i, iCell) * flux &
-                              * dvEdge(iEdge)
-
-                     end do
-
-                     ! SSHnew = SSHold + dt/J*(-div(Flux))
-                     sshSubcycleNew(iCell) = sshSubcycleCur(iCell) &
-                          + dt / nBtrSubcycles * sshTend(iCell) / areaCell(iCell)
-                   end do
-                   !$omp end do
-
-                   !$omp do schedule(runtime) private(cell1, cell2, sshCell1, sshCell2, sshEdge, thicknessSum, flux)
-                   do iEdge = 1, nEdges
-                      cell1 = cellsOnEdge(1,iEdge)
-                      cell2 = cellsOnEdge(2,iEdge)
-
-                      ! SSH is a linear combination of SSHold and SSHnew.
-                      sshCell1 = (1-config_btr_gam2_SSHWt1)* sshSubcycleCur(cell1) + config_btr_gam2_SSHWt1 * sshSubcycleNew(cell1)
-                      sshCell2 = (1-config_btr_gam2_SSHWt1)* sshSubcycleCur(cell2) + config_btr_gam2_SSHWt1 * sshSubcycleNew(cell2)
-                      sshEdge = 0.5_RKIND * (sshCell1 + sshCell2)
-
-                      ! method 0: orig, works only without pbc:
-                      !thicknessSum = sshEdge + refBottomDepthTopOfCell(maxLevelEdgeTop(iEdge)+1)
-
-                      ! method 1, matches method 0 without pbcs, works with pbcs.
-                      thicknessSum = sshEdge + min(bottomDepth(cell1), bottomDepth(cell2))
-
-                      ! method 2, better, I think.
-                      ! take average  of full thickness at two neighboring cells
-                      !thicknessSum = sshEdge + 0.5 *( bottomDepth(cell1) + bottomDepth(cell2) )
-
-                      flux = ((1.0-config_btr_gam3_velWt2) * normalBarotropicVelocitySubcycleCur(iEdge) &
-                             + config_btr_gam3_velWt2 * normalBarotropicVelocitySubcycleNew(iEdge)) &
-                             * thicknessSum
-
-                      barotropicThicknessFlux(iEdge) = barotropicThicknessFlux(iEdge) + flux
-                   end do
-                   !$omp end do
-
-                   block => block % next
-                end do  ! block
-                edgeHaloComputeCounter = config_num_halos + 1
-               endif ! config_btr_solve_SSH2
-
-               !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-               ! Barotropic subcycle: Accumulate running sums, advance timestep pointers
-               !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            ! Subtract tidal potential from ssh, if needed
+            !   Subtract the tidal potential from the current subcycle ssh and store and a work array.
+            !   Then point sshSubcycleCur to the work array so the tidal potential terms are included
+            !   in the grad operator inside the edge loop.
+            if (config_use_tidal_potential_forcing) then
 
                block => domain % blocklist
                do while (associated(block))
                   call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdgesPtr)
                   call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
 
+                  call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
                   call mpas_pool_get_subpool(block % structs, 'state', statePool)
                   call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+                  call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+                  call mpas_pool_get_subpool(block % structs, 'forcing', forcingPool)
 
-                  call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityNew, 2)
-                  call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleNew, &
-                                           newBtrSubcycleTime)
+                  call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
+                  call mpas_pool_get_array(forcingPool, 'sshSubcycleCurWithTides', sshSubcycleCurWithTides)
+                  call mpas_pool_get_array(forcingPool, 'tidalPotentialEta', tidalPotentialEta)
+                  call mpas_pool_get_dimension(block % dimensions, 'nCells', nCellsPtr)
 
-                  ! normalBarotropicVelocityNew = normalBarotropicVelocityNew + normalBarotropicVelocitySubcycleNEW
-                  ! This accumulates the sum.
-                  ! If the Barotropic Coriolis iteration is limited to one, this could
-                  ! be merged with the above code.
+                  nCells = nCellsPtr
+                  do iCell = 1, nCells
+                    sshSubcycleCurWithTides(iCell) = sshSubcycleCur(iCell) - tidalPotentialEta(iCell) &
+                                                   - config_self_attraction_and_loading_beta * sshSubcycleCur(iCell)
+                  end do
 
-                  nEdges = nEdgesPtr
-
-                  !$omp do schedule(runtime)
-                  do iEdge = 1, nEdges
-                       normalBarotropicVelocityNew(iEdge) = normalBarotropicVelocityNew(iEdge) &
-                                                          + normalBarotropicVelocitySubcycleNew(iEdge)
-                  end do  ! iEdge
-                  !$omp end do
+                  call mpas_pool_get_array(forcingPool, 'sshSubcycleCurWithTides', sshSubcycleCur)
 
                   block => block % next
                end do  ! block
 
-               ! advance time pointers
-               oldBtrSubcycleTime = mod(oldBtrSubcycleTime,2)+1
-               newBtrSubcycleTime = mod(newBtrSubcycleTime,2)+1
+            endif !config_use_tidal_potential_forcing
 
-            end do ! j=1,nBtrSubcycles
-            call mpas_timer_stop('btr se subcycle loop')
+            call mpas_timer_start("si halo init")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'barotropicCoriolisTerm', 1 )
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocity', 1 )
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'ssh', 1 )
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo init")
 
-            call mpas_pool_get_subpool(domain % blocklist % structs, 'scratch', scratchPool)
-            call mpas_pool_get_field(scratchPool, 'btrvel_temp', btrvel_tempField)
-            call mpas_deallocate_scratch_field(btrvel_tempField, .false.)
-            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            ! END Barotropic subcycle loop
-            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            call mpas_timer_stop('btr vel si init')
 
-            ! Normalize Barotropic subcycle sums: ssh, normalBarotropicVelocity, and F
-            call mpas_timer_start('btr se norm')
-            block => domain % blocklist
-            do while (associated(block))
-               call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdgesPtr)
-               call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+         endif ! split_implicit_step
 
-               call mpas_pool_get_subpool(block % structs, 'state', statePool)
-               call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-               call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
 
-               call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityNew, 2)
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+         !
+         ! Stage 2.2 : A semi-implicit barotropic mode solver using ForTrilinos
+         !
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-               call mpas_pool_get_array(diagnosticsPool, 'barotropicThicknessFlux', barotropicThicknessFlux)
+         call mpas_timer_start("si fortrilinos btrmode")
 
-               nEdges = nEdgesPtr
+         ! Outer loop -----------------------------------------------------------------------------!
 
-               nEdges = nEdgesArray(1)
+         call ocn_time_integration_imp_btrmode(domain,dt,itotal_num_cells,'o')
 
-               !$omp do schedule(runtime)
-               do iEdge = 1, nEdges
-                  barotropicThicknessFlux(iEdge) = barotropicThicknessFlux(iEdge) &
-                      / (nBtrSubcycles * config_btr_subcycle_loop_factor)
 
-                  normalBarotropicVelocityNew(iEdge) = normalBarotropicVelocityNew(iEdge) &
-                     / (nBtrSubcycles * config_btr_subcycle_loop_factor + 1)
+!        call mpas_timer_start("si halo ssh")
+!        call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!        call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
+!        call mpas_threading_barrier()
+!        call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!        call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!        call mpas_timer_stop("si halo ssh")
+
+
+         call mpas_timer_start("si btr vel update")
+
+         ! Update normalBarotropicVelocitySubcycle ------------------------------------------------!
+
+         block => domain % blocklist
+         do while (associated(block))
+
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+
+            call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
+            call mpas_pool_get_array(meshPool, 'nEdgesOnEdge', nEdgesOnEdge)
+            call mpas_pool_get_array(meshPool, 'edgesOnEdge', edgesOnEdge)
+            call mpas_pool_get_array(meshPool, 'weightsOnEdge', weightsOnEdge)
+            call mpas_pool_get_array(meshPool, 'fEdge', fEdge)
+            call mpas_pool_get_array(meshPool, 'dcEdge', dcEdge)
+            call mpas_pool_get_array(meshPool, 'edgeMask', edgeMask)
+
+            call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, 1)
+            call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleNew, 2)
+            call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur,1)
+            call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
+            call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
+
+            call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
+            call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
+
+            nCells = nCellsArray(1) 
+            nEdges = nEdgesArray(2)
+
+            !$omp do schedule(runtime) private(cell1, cell2, CoriolisTerm, i, eoe)
+            do iEdge = 1, nEdges
+
+               temp_mask = edgeMask(1, iEdge)
+
+               cell1 = cellsOnEdge(1,iEdge)
+               cell2 = cellsOnEdge(2,iEdge)
+
+               ! Compute the barotropic Coriolis term, -f*uPerp
+!              CoriolisTerm = 0.0_RKIND
+
+!              do i = 1, nEdgesOnEdge(iEdge)
+!                 eoe = edgesOnEdge(i,iEdge)
+!                 wgt = weightsOnEdge(i,iEdge)
+!                 CoriolisTerm = CoriolisTerm + wgt  &
+!                              * normalBarotropicVelocityCur(eoe) * fEdge(eoe)
+!              end do
+!                   barotropicCoriolisTerm(iEdge) = CoriolisTerm
+
+               normalBarotropicVelocitySubcycleNew(iEdge) &
+                  = temp_mask &
+                  * (normalBarotropicVelocityCur(iEdge) &
+                  - dt * (-barotropicCoriolisTerm(iEdge) + gravity &
+                  * ( (alpha1*sshSubcycleCur(cell2)+alpha2*sshCur(cell2)) - (alpha1*sshSubcycleCur(cell1)+alpha2*sshCur(cell1))) &
+                  / dcEdge(iEdge) - barotropicForcing(iEdge)))
+            end do ! iEdge
+
+            do iEdge = 1, nEdges
+               normalBarotropicVelocitySubcycleCur(iEdge) =  alpha1* normalBarotropicVelocitySubcycleNew(iEdge)  &
+                                                           + alpha2* normalBarotropicVelocityCur(iEdge)
+            end do ! iEdge
+
+            block => block % next
+         end do  ! block
+
+
+         call mpas_timer_start("si halo btr vel")
+         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocitySubcycle',1)
+         call mpas_threading_barrier()
+         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+         call mpas_timer_stop("si halo btr vel")
+
+
+         ! Update barotropicCoriolisTerm ----------------------------------------------------------!
+
+         block => domain % blocklist
+         do while (associated(block))
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+            call mpas_pool_get_subpool(block % structs, 'tend'       , tendPool       )
+
+            call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
+            call mpas_pool_get_array(meshPool, 'nEdgesOnEdge', nEdgesOnEdge)
+            call mpas_pool_get_array(meshPool, 'edgesOnEdge', edgesOnEdge)
+            call mpas_pool_get_array(meshPool, 'weightsOnEdge', weightsOnEdge)
+            call mpas_pool_get_array(meshPool, 'fEdge', fEdge)
+
+            call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, 1)
+            call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm', barotropicCoriolisTerm)
+
+            nCells = nCellsArray(1)
+            nEdges = nCellsArray(2)
+
+            !$omp do schedule(runtime) private(cell1, cell2, CoriolisTerm, i, eoe)
+            do iEdge = 1, nEdges
+
+               cell1 = cellsOnEdge(1,iEdge)
+               cell2 = cellsOnEdge(2,iEdge)
+
+               ! Compute the barotropic Coriolis term, -f*uPerp
+               temp1 = 0.0_RKIND
+               do i = 1, nEdgesOnEdge(iEdge)
+                  eoe = edgesOnEdge(i,iEdge)
+                  temp1 = temp1 + weightsOnEdge(i,iEdge)  &
+                                * normalBarotropicVelocitySubcycleCur(eoe) * fEdge(eoe)
                end do
-               !$omp end do
 
-               block => block % next
-            end do  ! block
-            call mpas_timer_stop('btr se norm')
+               barotropicCoriolisTerm(iEdge) = temp1
+            end do
+            !$omp end do
 
-            ! boundary update on F
-            call mpas_timer_start("se halo F and btr vel")
-            call mpas_dmpar_exch_group_create(domain, finalBtrGroupName)
+            block => block % next
+         end do  ! block
 
-            call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'barotropicThicknessFlux')
-            call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocity', timeLevel=2)
+         call mpas_timer_start("si halo btr vel")
+         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'barotropicCoriolisTerm', 1 )
+         call mpas_threading_barrier()
+         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+         call mpas_timer_stop("si halo btr vel")
 
-            call mpas_threading_barrier()
-            call mpas_dmpar_exch_group_full_halo_exch(domain, finalBtrGroupName)
-            call mpas_threading_barrier()
+         call mpas_timer_stop("si btr vel update")
 
-            call mpas_dmpar_exch_group_destroy(domain, finalBtrGroupName)
-            call mpas_timer_stop("se halo F and btr vel")
 
-            ! Check that you can compute SSH using the total sum or the individual increments
-            ! over the barotropic subcycles.
-            ! efficiency: This next block of code is really a check for debugging, and can
-            ! be removed later.
-            call mpas_timer_start('btr se ssh verif')
-            block => domain % blocklist
-            do while (associated(block))
-               call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdgesPtr)
-               call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-               call mpas_pool_get_dimension(block % dimensions, 'nVertLevels', nVertLevels)
+         ! Main loop ------------------------------------------------------------------------------!
 
-               call mpas_pool_get_subpool(block % structs, 'state', statePool)
-               call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-               call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-               call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+         call ocn_time_integration_imp_btrmode(domain,dt,itotal_num_cells,'m')
+   
+         call mpas_timer_stop ("si fortrilinos btrmode")
 
-               call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityNew, 2)
-               call mpas_pool_get_array(statePool, 'normalBaroclinicVelocity', normalBaroclinicVelocityNew, 2)
+!        call mpas_timer_start("si halo ssh")
+!        call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!        call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
+!        call mpas_threading_barrier()
+!        call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!        call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!        call mpas_timer_stop("si halo ssh")
 
-               call mpas_pool_get_array(diagnosticsPool, 'normalTransportVelocity', normalTransportVelocity)
-               call mpas_pool_get_array(diagnosticsPool, 'normalGMBolusVelocity', normalGMBolusVelocity)
-               call mpas_pool_get_array(diagnosticsPool, 'layerThicknessEdge', layerThicknessEdge)
-               call mpas_pool_get_array(diagnosticsPool, 'barotropicThicknessFlux', barotropicThicknessFlux)
 
-               call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
-               call mpas_pool_get_array(meshPool, 'edgeMask', edgeMask)
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+         !
+         ! Stage 2.6 : Barotropic velocity update
+         !
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-               nEdges = nEdgesPtr
+         call mpas_timer_start("si btr vel update")
 
-               nEdges = nEdgesArray( config_num_halos )
+         block => domain % blocklist
+         do while (associated(block))
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
 
-               allocate(uTemp(nVertLevels))
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
 
-               ! Correction velocity    normalVelocityCorrection = (Flux - Sum(h u*))/H
-               ! or, for the full latex version:
-               !{\bf u}^{corr} = \left( {\overline {\bf F}}
-               !  - \sum_{k=1}^{N^{edge}} h_{k,*}^{edge}  {\bf u}_k^{avg} \right)
-               ! \left/ \sum_{k=1}^{N^{edge}} h_{k,*}^{edge}   \right.
+            call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
+            call mpas_pool_get_array(meshPool, 'nEdgesOnEdge', nEdgesOnEdge)
+            call mpas_pool_get_array(meshPool, 'edgesOnEdge', edgesOnEdge)
+            call mpas_pool_get_array(meshPool, 'weightsOnEdge', weightsOnEdge)
+            call mpas_pool_get_array(meshPool, 'fEdge', fEdge)
+            call mpas_pool_get_array(meshPool, 'dcEdge', dcEdge)
+            call mpas_pool_get_array(meshPool, 'edgeMask', edgeMask)
+            call mpas_pool_get_array(meshPool, 'bottomDepth',             bottomDepth            )
 
-               if (config_vel_correction) then
-                  useVelocityCorrection = 1
-               else
-                  useVelocityCorrection = 0
-               endif
+            call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
+            call mpas_pool_get_array(statePool, 'ssh', sshNew, 2)
+            call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
+            call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, 1)
+            call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleNew, 2)
+            call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur,1)
+            call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityNew,2)
 
-               !$omp do schedule(runtime)
-               do iEdge = 1, nEdges
+            call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
+            call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
+            call mpas_pool_get_array(diagnosticsPool, 'barotropicThicknessFlux', barotropicThicknessFlux)
 
-                  ! velocity for normalVelocityCorrectionection is normalBarotropicVelocity + normalBaroclinicVelocity + uBolus
-                  uTemp(:) = normalBarotropicVelocityNew(iEdge) + normalBaroclinicVelocityNew(:,iEdge) &
-                           + normalGMBolusVelocity(:,iEdge)
+            nCells = nCellsArray(1)
+            nEdges = nEdgesArray(2)
 
-                  ! thicknessSum is initialized outside the loop because on land boundaries
-                  ! maxLevelEdgeTop=0, but I want to initialize thicknessSum with a
-                  ! nonzero value to avoid a NaN.
-                  normalThicknessFluxSum = layerThicknessEdge(1,iEdge) * uTemp(1)
-                  thicknessSum  = layerThicknessEdge(1,iEdge)
+            do iEdge = 1, nEdges
 
-                  do k = 2, maxLevelEdgeTop(iEdge)
-                     normalThicknessFluxSum = normalThicknessFluxSum + layerThicknessEdge(k,iEdge) * uTemp(k)
-                     thicknessSum  =  thicknessSum + layerThicknessEdge(k,iEdge)
-                  enddo
+               temp_mask = edgeMask(1, iEdge)
 
-                  normalVelocityCorrection = useVelocityCorrection * (( barotropicThicknessFlux(iEdge) - normalThicknessFluxSum) &
-                                           / thicknessSum)
+               cell1 = cellsOnEdge(1,iEdge)
+               cell2 = cellsOnEdge(2,iEdge)
 
-                  do k = 1, nVertLevels
+               ! Compute the barotropic Coriolis term, -f*uPerp
+!              CoriolisTerm = 0.0_RKIND
 
-                     ! normalTransportVelocity = normalBarotropicVelocity + normalBaroclinicVelocity + normalGMBolusVelocity
-                     !                         + normalVelocityCorrection
-                     ! This is u used in advective terms for layerThickness and tracers
-                     ! in tendency calls in stage 3.
-                     !mrp note: in QC version, there is an if (config_use_GM) on adding normalGMBolusVelocity
-                     ! I think it is not needed because normalGMBolusVelocity=0 when GM not on.
-                     normalTransportVelocity(k,iEdge) &
-                           = edgeMask(k,iEdge) &
-                           *( normalBarotropicVelocityNew(iEdge) + normalBaroclinicVelocityNew(k,iEdge) &
-                           + normalGMBolusVelocity(k,iEdge) + normalVelocityCorrection )
-                  enddo
+!              do i = 1, nEdgesOnEdge(iEdge)
+!                 eoe = edgesOnEdge(i,iEdge)
+!                 wgt = weightsOnEdge(i,iEdge)
+!                 CoriolisTerm = Coriolisterm + wgt  &
+!                              * normalBarotropicVelocityCur(eoe) * fEdge(eoe)
+!              end do
+!              barotropicCoriolisTerm(iEdge) = CoriolisTerm
 
-               end do ! iEdge
-               !$omp end do
+               normalBarotropicVelocitySubcycleNew(iEdge) &
+                  = temp_mask &
+                  * (normalBarotropicVelocityCur(iEdge) &
+                  - (dt) * (-barotropicCoriolisTerm(iEdge) + gravity &
+                  * ( (alpha1*sshSubcycleCur(cell2)+alpha2*sshCur(cell2)) - (alpha1*sshSubcycleCur(cell1)+alpha2*sshCur(cell1)) ) &
+                  / dcEdge(iEdge) - barotropicForcing(iEdge)))
 
-               deallocate(uTemp)
+            end do ! iEdge
 
-               block => block % next
-            end do  ! block
-            call mpas_timer_stop('btr se ssh verif')
+            do iEdge = 1, nEdges
+               normalBarotropicVelocitySubcycleCur(iEdge) =   0.5*normalBarotropicVelocitySubcycleNew(iEdge)  &
+                                                            + 0.5*normalBarotropicVelocityCur(iEdge)
+            end do ! iEdge
 
-         endif ! split_explicit
+            do iEdge = 1, nEdges
+               cell1 = cellsOnEdge(1,iEdge)
+               cell2 = cellsOnEdge(2,iEdge)
 
-         call mpas_timer_stop("se btr vel")
+               sshEdge =  0.5*( 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))) &
+                        + 0.5*( 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2)))
+
+               thicknessSum = sshEdge + min(bottomDepth(cell1), bottomDepth(cell2))
+
+               flux =normalBarotropicVelocitySubcycleCur(iEdge) * thicknessSum
+
+               barotropicThicknessFlux(iEdge) = flux
+
+               normalBarotropicVelocityNew(iEdge) = normalBarotropicVelocitySubcycleCur(iEdge)
+            end do ! iEdge
+
+            ! #Iteration  check
+!           if ( split_implicit_step == 2 ) then
+!           call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
+!           endif
+
+            block => block % next
+         end do  ! block
+
+         ! boundary update on F
+         call mpas_timer_start("si halo btr vel")
+         call mpas_dmpar_exch_group_create(domain, finalBtrGroupName)
+         call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'barotropicThicknessFlux')
+         call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocity',2)
+         call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'ssh',2)
+         call mpas_threading_barrier()
+         call mpas_dmpar_exch_group_full_halo_exch(domain, finalBtrGroupName)
+         call mpas_dmpar_exch_group_destroy(domain, finalBtrGroupName)
+         call mpas_timer_stop("si halo btr vel")
+         call mpas_threading_barrier()
+
+         call mpas_timer_stop("si btr vel update")
+
+         call mpas_threading_barrier()
+
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+         !
+         ! u correct and transport velocity
+         !
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+         ! Check that you can compute SSH using the total sum or the individual increments
+         ! over the barotropic subcycles.
+         ! efficiency: This next block of code is really a check for debugging, and can
+         ! be removed later.
+         call mpas_timer_start('btr si ssh verif')
+
+         block => domain % blocklist
+         do while (associated(block))
+            call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdgesPtr)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nVertLevels', nVertLevels)
+
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+
+            call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityNew, 2)
+            call mpas_pool_get_array(statePool, 'normalBaroclinicVelocity', normalBaroclinicVelocityNew, 2)
+
+            call mpas_pool_get_array(diagnosticsPool, 'normalTransportVelocity', normalTransportVelocity)
+            call mpas_pool_get_array(diagnosticsPool, 'normalGMBolusVelocity', normalGMBolusVelocity)
+            call mpas_pool_get_array(diagnosticsPool, 'layerThicknessEdge', layerThicknessEdge)
+            call mpas_pool_get_array(diagnosticsPool, 'barotropicThicknessFlux', barotropicThicknessFlux)
+
+            call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
+            call mpas_pool_get_array(meshPool, 'edgeMask', edgeMask)
+
+            nEdges = nEdgesPtr
+
+            nEdges = nEdgesArray( config_num_halos )
+
+            allocate(uTemp(nVertLevels))
+
+            ! Correction velocity    normalVelocityCorrection = (Flux - Sum(h u*))/H
+            ! or, for the full latex version:
+            !{\bf u}^{corr} = \left( {\overline {\bf F}}
+            !  - \sum_{k=1}^{N^{edge}} h_{k,*}^{edge}  {\bf u}_k^{avg} \right)
+            ! \left/ \sum_{k=1}^{N^{edge}} h_{k,*}^{edge}   \right.
+
+            if (config_vel_correction) then
+               useVelocityCorrection = 1
+            else
+               useVelocityCorrection = 0
+            endif
+
+            !$omp do schedule(runtime)
+            do iEdge = 1, nEdges
+
+               ! velocity for normalVelocityCorrectionection is normalBarotropicVelocity + normalBaroclinicVelocity + uBolus
+               uTemp(:) = normalBarotropicVelocityNew(iEdge) + normalBaroclinicVelocityNew(:,iEdge) &
+                        + normalGMBolusVelocity(:,iEdge)
+
+               ! thicknessSum is initialized outside the loop because on land boundaries
+               ! maxLevelEdgeTop=0, but I want to initialize thicknessSum with a
+               ! nonzero value to avoid a NaN.
+               normalThicknessFluxSum = layerThicknessEdge(1,iEdge) * uTemp(1)
+               thicknessSum  = layerThicknessEdge(1,iEdge)
+
+               do k = 2, maxLevelEdgeTop(iEdge)
+                  normalThicknessFluxSum = normalThicknessFluxSum + layerThicknessEdge(k,iEdge) * uTemp(k)
+                  thicknessSum  =  thicknessSum + layerThicknessEdge(k,iEdge)
+               enddo
+
+               normalVelocityCorrection = useVelocityCorrection * (( barotropicThicknessFlux(iEdge) - normalThicknessFluxSum) &
+                                        / thicknessSum)
+
+               do k = 1, nVertLevels
+
+
+                  ! normalTransportVelocity = normalBarotropicVelocity + normalBaroclinicVelocity + normalGMBolusVelocity
+                  !                         + normalVelocityCorrection
+                  ! This is u used in advective terms for layerThickness and tracers
+                  ! in tendency calls in stage 3.
+                  !mrp note: in QC version, there is an if (config_use_GM) on adding normalGMBolusVelocity
+                  ! I think it is not needed because normalGMBolusVelocity=0 when GM not on.
+                  normalTransportVelocity(k,iEdge) &
+                        = edgeMask(k,iEdge) &
+                        *( normalBarotropicVelocityNew(iEdge) + normalBaroclinicVelocityNew(k,iEdge) &
+                         + normalGMBolusVelocity(k,iEdge) + normalVelocityCorrection )
+               enddo
+
+            end do ! iEdge
+            !$omp end do
+
+            deallocate(uTemp)
+
+            block => block % next
+         end do  ! block
+         call mpas_timer_stop('btr si ssh verif')
+
+         call mpas_timer_stop("si btr vel")
+
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
@@ -1432,7 +1308,7 @@ module ocn_time_integration_split
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
          ! only compute tendencies for active tracers on last large iteration
-         if (split_explicit_step < config_n_ts_iter) then
+         if (split_implicit_step < config_n_ts_iter) then
             activeTracersOnly = .true.
          else
             activeTracersOnly = .false.
@@ -1440,7 +1316,7 @@ module ocn_time_integration_split
 
          ! Thickness tendency computations and thickness halo updates are completed before tracer
          ! tendency computations to allow monotonic advection.
-         call mpas_timer_start('se thick tend')
+         call mpas_timer_start('si thick tend')
          block => domain % blocklist
          do while (associated(block))
             call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
@@ -1480,16 +1356,16 @@ module ocn_time_integration_split
 
             block => block % next
          end do
-         call mpas_timer_stop('se thick tend')
+         call mpas_timer_stop('si thick tend')
 
          ! update halo for thickness tendencies
-         call mpas_timer_start("se halo thickness")
+         call mpas_timer_start("si halo thickness")
 
          call mpas_dmpar_field_halo_exch(domain, 'tendLayerThickness')
 
-         call mpas_timer_stop("se halo thickness")
+         call mpas_timer_stop("si halo thickness")
 
-         call mpas_timer_start('se tracer tend', .false.)
+         call mpas_timer_start('si tracer tend', .false.)
          block => domain % blocklist
          do while (associated(block))
             call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
@@ -1506,10 +1382,10 @@ module ocn_time_integration_split
 
             block => block % next
          end do
-         call mpas_timer_stop('se tracer tend')
+         call mpas_timer_stop('si tracer tend')
 
          ! update halo for tracer tendencies
-         call mpas_timer_start("se halo tracers")
+         call mpas_timer_start("si halo tracers")
          call mpas_pool_get_subpool(domain % blocklist % structs, 'tend', tendPool)
          call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
 
@@ -1522,9 +1398,9 @@ module ocn_time_integration_split
                end if
             end if
          end do
-         call mpas_timer_stop("se halo tracers")
+         call mpas_timer_stop("si halo tracers")
 
-         call mpas_timer_start('se loop fini')
+         call mpas_timer_start('si loop fini')
          block => domain % blocklist
          do while (associated(block))
             call mpas_pool_get_dimension(block % dimensions, 'nCells', nCellsPtr)
@@ -1576,7 +1452,7 @@ module ocn_time_integration_split
             !  If iterating, reset variables for next iteration
             !
             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            if (split_explicit_step < config_n_ts_iter) then
+            if (split_implicit_step < config_n_ts_iter) then
 
                ! Get indices for dynamic tracers (Includes T&S).
                call mpas_pool_get_dimension(tracersPool, 'activeGRP_start', startIndex)
@@ -1649,12 +1525,13 @@ module ocn_time_integration_split
                ! in this diagnostics solve.
                call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, diagnosticsPool, scratchPool, tracersPool, 2)
 
+
             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             !
             !  If large iteration complete, compute all variables at time n+1
             !
             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            elseif (split_explicit_step == config_n_ts_iter) then
+            elseif (split_implicit_step == config_n_ts_iter) then
 
                !$omp do schedule(runtime) private(k)
                do iCell = 1, nCells
@@ -1817,6 +1694,7 @@ module ocn_time_integration_split
                   !$omp end do
                end if
 
+
                ! Recompute final u to go on to next step.
                ! u_{n+1} = normalBarotropicVelocity_{n+1} + normalBaroclinicVelocity_{n+1}
                ! Right now normalBaroclinicVelocityNew is at time n+1/2, so back compute to get normalBaroclinicVelocity
@@ -1835,20 +1713,20 @@ module ocn_time_integration_split
                end do ! iEdges
                !$omp end do
 
-            endif ! split_explicit_step
+            endif ! split_implicit_step
 
             block => block % next
          end do
 
-         call mpas_timer_stop('se loop fini')
-         call mpas_timer_stop('se loop')
+         call mpas_timer_stop('si loop fini')
+         call mpas_timer_stop('si loop')
 
-      end do  ! split_explicit_step = 1, config_n_ts_iter
+      end do  ! split_implicit_step = 1, config_n_ts_iter
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       ! END large iteration loop
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-      call mpas_timer_start("se implicit vert mix")
+      call mpas_timer_start("si implicit vert mix")
 
       block => domain % blocklist
       do while(associated(block))
@@ -1896,14 +1774,14 @@ module ocn_time_integration_split
       ! this leads to lack of volume conservation.  It is required because halo updates in stage 3 are only
       ! conducted on tendencies, not on the velocity and tracer fields.  So this update is required to
       ! communicate the change due to implicit vertical mixing across the boundary.
-      call mpas_timer_start('se vmix halos')
+      call mpas_timer_start('si vmix halos')
       call mpas_pool_get_subpool(domain % blocklist % structs, 'state', statePool)
       call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
 
 
-      call mpas_timer_start('se vmix halos normalVelFld')
+      call mpas_timer_start('si vmix halos normalVelFld')
       call mpas_dmpar_field_halo_exch(domain, 'normalVelocity', timeLevel=2)
-      call mpas_timer_stop('se vmix halos normalVelFld')
+      call mpas_timer_stop('si vmix halos normalVelFld')
 
       call mpas_pool_begin_iteration(tracersPool)
       do while ( mpas_pool_get_next_member(tracersPool, groupItr) )
@@ -1911,11 +1789,11 @@ module ocn_time_integration_split
             call mpas_dmpar_field_halo_exch(domain, groupItr % memberName, timeLevel=2)
          end if
       end do
-      call mpas_timer_stop('se vmix halos')
+      call mpas_timer_stop('si vmix halos')
 
-      call mpas_timer_stop("se implicit vert mix")
+      call mpas_timer_stop("si implicit vert mix")
 
-      call mpas_timer_start('se fini')
+      call mpas_timer_start('si fini')
       block => domain % blocklist
       do while (associated(block))
          call mpas_pool_get_subpool(block % structs, 'state', statePool)
@@ -1982,12 +1860,12 @@ module ocn_time_integration_split
          call ocn_effective_density_in_land_ice_update(meshPool, forcingPool, statePool, scratchPool, err)
 
          ! Compute normalGMBolusVelocity; it will be added to normalVelocity in Stage 2 of the next cycle.
-         if (config_use_GM.or.config_use_Redi) then
-            call ocn_gm_compute_Bolus_velocity(statePool, diagnosticsPool, &
-               meshPool, scratchPool, timeLevelIn=2)
-         end if
+        if (config_use_GM.or.config_use_Redi) then
+           call ocn_gm_compute_Bolus_velocity(statePool, diagnosticsPool, &
+              meshPool, scratchPool, timeLevelIn=2)
+        end if
 
-         call mpas_timer_start('se final mpas reconstruct', .false.)
+         call mpas_timer_start('si final mpas reconstruct', .false.)
 
          call mpas_reconstruct(meshPool, normalVelocityNew,  &
                           velocityX, velocityY, velocityZ,   &
@@ -1999,7 +1877,7 @@ module ocn_time_integration_split
                           gradSSHZonal, gradSSHMeridional, &
                           includeHalos = .true.)
 
-         call mpas_timer_stop('se final mpas reconstruct')
+         call mpas_timer_stop('si final mpas reconstruct')
 
          !$omp do schedule(runtime)
          do iCell = 1, nCells
@@ -2021,23 +1899,23 @@ module ocn_time_integration_split
       end do
 
       if (trim(config_land_ice_flux_mode) == 'coupled') then
-         call mpas_timer_start("se effective density halo")
+         call mpas_timer_start("si effective density halo")
          call mpas_pool_get_subpool(domain % blocklist % structs, 'state', statePool)
          call mpas_pool_get_field(statePool, 'effectiveDensityInLandIce', effectiveDensityField, 2)
          call mpas_dmpar_exch_halo_field(effectiveDensityField)
          call mpas_timer_stop("se effective density halo")
       end if
 
-      call mpas_timer_stop('se fini')
-      call mpas_timer_stop("se timestep")
+      call mpas_timer_stop('si fini')
+      call mpas_timer_stop("si timestep")
 
       deallocate(n_bcl_iter)
 
-   end subroutine ocn_time_integrator_split!}}}
+   end subroutine ocn_time_integrator_si!}}}
 
 !***********************************************************************
 !
-!  routine ocn_time_integration_split_init
+!  routine ocn_time_integration_si_init
 !
 !> \brief   Initialize split-explicit time stepping within MPAS-Ocean core
 !> \author  Mark Petersen
@@ -2047,7 +1925,7 @@ module ocn_time_integration_split
 !>  stepper.
 !
 !-----------------------------------------------------------------------
-   subroutine ocn_time_integration_split_init(domain)!{{{
+   subroutine ocn_time_integration_si_init(domain)!{{{
    ! Initialize splitting variables
 
       type (domain_type), intent(inout) :: domain
@@ -2056,6 +1934,7 @@ module ocn_time_integration_split
       type (block_type), pointer :: block
 
       type (mpas_pool_type), pointer :: statePool, meshPool, tracersPool
+      type (dm_info) :: dminfo
 
       integer :: iTracer, cell, cell1, cell2
       integer, dimension(:), pointer :: maxLevelEdgeTop
@@ -2074,6 +1953,14 @@ module ocn_time_integration_split
 
       integer :: iErr
       integer (kind=I8KIND) :: nBtrSubcyclesI8
+
+      integer, dimension(:), pointer :: nCellsArray, nEdgesArray
+      real (kind=RKIND) :: local_num_cells,sum1,total_area_sum,local_area_sum
+      real (kind=RKIND), dimension(:), pointer :: areaCell
+      integer :: ncpus
+
+      dminfo = domain % dminfo
+      ncpus = dminfo % nprocs
 
       call mpas_pool_get_config(domain % configs, 'config_do_restart', config_do_restart)
 
@@ -2097,12 +1984,9 @@ module ocn_time_integration_split
          nBtrSubcycles = nBtrSubcycles + 1
       end if
 
-      if (trim(config_time_integrator) == 'split_explicit') then
-         call mpas_log_write( '*******************************************************************************')
-         call mpas_log_write( 'The split explicit time integration is configured to use: $i barotropic subcycles', &
-            intArgs=(/ nBtrSubcycles /) )
-         call mpas_log_write( '*******************************************************************************')
-      end if
+      call mpas_log_write( '*******************************************************************************')
+      call mpas_log_write( 'The semi-implicit time integration is configured')
+      call mpas_log_write( '*******************************************************************************')
 
       if ( .not. config_do_restart ) then
          ! Initialize z-level mesh variables from h, read in from input file.
@@ -2117,6 +2001,8 @@ module ocn_time_integration_split
             call mpas_pool_get_dimension(block % dimensions, 'nVertLevels', nVertLevels)
             call mpas_pool_get_dimension(block % dimensions, 'nCells', nCells)
             call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdges)
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
 
             call mpas_pool_get_array(statePool, 'layerThickness', layerThickness, 1)
             call mpas_pool_get_array(statePool, 'normalVelocity', normalVelocity, 1)
@@ -2126,23 +2012,13 @@ module ocn_time_integration_split
             call mpas_pool_get_array(meshPool, 'refBottomDepth', refBottomDepth)
             call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
             call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
+            call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
+
+           
 
             ! Compute barotropic velocity at first timestep
             ! This is only done upon start-up.
-            if (trim(config_time_integrator) == 'unsplit_explicit') then
-               call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocity)
-
-               do iEdge = 1, nEdges
-                  normalBarotropicVelocity(iEdge) = 0.0_RKIND
-                  normalBaroclinicVelocity(:, iEdge) = normalVelocity(:, iEdge)
-               end do
-
-            elseif (trim(config_time_integrator) == 'split_explicit') then
-
-               call mpas_log_write( '*******************************************************************************')
-               call mpas_log_write( 'The split explicit time integration is configured to use: $i barotropic subcycles', &
-                  intArgs=(/ nBtrSubcycles /) )
-               call mpas_log_write( '*******************************************************************************')
+            if (trim(config_time_integrator) == 'semi_implicit') then
 
                if (config_filter_btr_mode) then
                   do iCell = 1, nCells
@@ -2187,6 +2063,7 @@ module ocn_time_integration_split
                      normalBaroclinicVelocity(k,iEdge) = 0.0_RKIND
                      normalVelocity(k,iEdge) = 0.0_RKIND
                   enddo
+
                enddo
 
                if (config_filter_btr_mode) then
@@ -2199,12 +2076,311 @@ module ocn_time_integration_split
 
             endif
 
+              !--- RMS of mean area
+              local_num_cells = nCellsArray(1)
+              call mpas_dmpar_sum_real(dminfo,local_num_cells,total_num_cells)
+
+              local_area_sum = 0.0_RKIND
+              do iCell = 1,nCellsArray(1)
+                local_area_sum = local_area_sum + areaCell(iCell)**2.0
+              end do
+              call mpas_dmpar_sum_real(dminfo,local_area_sum,total_area_sum)
+
+              area_mean = dsqrt(total_area_sum / total_num_cells)
+              mean_num_cells = total_num_cells/ncpus
+              itotal_num_cells = int(total_num_cells)
+
          block => block % next
          end do
       end if
 
-   end subroutine ocn_time_integration_split_init!}}}
+   end subroutine ocn_time_integration_si_init!}}}
 
-end module ocn_time_integration_split
+!***********************************************************************
+!
+!  routine ocn_time_integration_si_preconditioner
+!
+!> \brief   Construct a Block-Jacobi preconditioning matrix
+!> \author  Hyun-Gyu Kang (Oak Ridge National Laboratory)
+!> \date    September 2019
+!> \details
+!>  This routine constructs a Block-Jacobi preconditioner for the
+!>  split-implicit time stepper.
+!
+!-----------------------------------------------------------------------
+   subroutine ocn_time_integrator_si_preconditioner(domain, dt)!{{{
+
+      implicit none
+
+      type (domain_type), intent(inout) :: domain
+      real (kind=RKIND) , intent(in)    :: dt
+
+      type (mpas_pool_type), pointer :: statePool
+      type (mpas_pool_type), pointer :: tracersPool
+      type (mpas_pool_type), pointer :: meshPool
+      type (mpas_pool_type), pointer :: diagnosticsPool
+      type (mpas_pool_type), pointer :: tendPool
+      type (mpas_pool_type), pointer :: tracersTendPool
+
+      type (dm_info) :: dminfo
+      type (block_type), pointer :: block
+      real (kind=RKIND) :: thicknessSum,fluxAx
+      integer :: iCell, i,k,j, iEdge, cell1, cell2
+      character (len=StrKIND), pointer :: config_btr_si_preconditioner
+
+      ! Dimensions
+      integer :: nCells, nEdges
+      integer, pointer :: nCellsPtr, nEdgesPtr
+      integer, dimension(:), pointer :: nCellsArray, nEdgesArray
+
+      ! Mesh array pointers
+      integer, dimension(:)  , pointer :: maxLevelCell, maxLevelEdgeTop, nEdgesOnEdge, nEdgesOnCell
+      integer, dimension(:,:), pointer :: cellsOnEdge, edgeMask, edgesOnEdge
+      integer, dimension(:,:), pointer :: edgesOnCell, edgeSignOnCell
+
+      real (kind=RKIND), dimension(:)  , pointer :: dcEdge,bottomDepth
+      real (kind=RKIND), dimension(:)  , pointer :: dvEdge,areaCell
+      real (kind=RKIND), dimension(:)  , pointer :: CGvec_u1
+      real (kind=RKIND) :: temp1,temp2
+      !------------------------------------------!
+      integer,dimension(:)  ,pointer     :: globalCellId
+      integer,dimension(:)  ,allocatable :: numCellRank,numCellRankA2,myGlobalCellId
+      integer,dimension(:,:),allocatable :: rankCellId,myLocalStartEndId,iTmpArray
+      integer :: rank,ncpus,mpi_ierr
+      integer :: local_num_cells,total_num_cells,itmp1,itmp2
+      integer :: maxNumCell,maxNumCellA2,isum1,isum2
+      integer :: local_start,local_end,nCellsA2,nCellsA3
+      !include 'mpif.h'
+      !------------------------------------------!
+
+      dminfo = domain % dminfo
+        rank = dminfo % my_proc_id
+       ncpus = dminfo % nprocs
+
+      call mpas_pool_get_config(domain % configs, 'config_btr_si_preconditioner', config_btr_si_preconditioner)
+
+
+      block => domain % blocklist
+      do while (associated(block))
+
+         call mpas_pool_get_dimension(block % dimensions, 'nCells'     , nCellsPtr  )
+         call mpas_pool_get_dimension(block % dimensions, 'nEdges'     , nEdgesPtr  )
+         call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+         call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+ 
+         call mpas_pool_get_subpool(block % structs, 'tend'       , tendPool       )
+         call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
+         call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
+         call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+ 
+         call mpas_pool_get_subpool(statePool, 'tracers'    , tracersPool    )
+         call mpas_pool_get_subpool(tendPool , 'tracersTend', tracersTendPool)
+ 
+         call mpas_pool_get_array(meshPool, 'nEdgesOnCell',    nEdgesOnCell    )
+         call mpas_pool_get_array(meshPool, 'edgesOnCell',     edgesOnCell     )
+         call mpas_pool_get_array(meshPool, 'cellsOnEdge',     cellsOnEdge     )
+         call mpas_pool_get_array(meshPool, 'dcEdge',          dcEdge          )
+         call mpas_pool_get_array(meshPool, 'bottomDepth',     bottomDepth     )
+         call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop )
+         call mpas_pool_get_array(meshPool, 'edgeSignOnCell',  edgeSignOnCell  )
+         call mpas_pool_get_array(meshPool, 'dvEdge',          dvEdge          )
+         call mpas_pool_get_array(meshPool, 'areaCell',        areaCell        )
+         call mpas_pool_get_array(meshPool, 'nEdgesOnEdge',    nEdgesOnEdge    )
+         call mpas_pool_get_array(meshPool, 'edgesOnEdge',     edgesOnEdge     )
+         call mpas_pool_get_array(meshPool, 'indexToCellID',   globalCellId    )
+ 
+         nCells   = nCellsArray(1)
+         nEdges   = nEdgesArray(1)
+         nCellsA2 = nCellsArray(2)
+         nCellsA3 = nCellsArray(3)
+ 
+         call mpas_log_write('   config_btr_si_preconditioner: ' // trim(config_btr_si_preconditioner))
+ 
+         local_num_cells = nCellsArray(1)
+         call mpas_dmpar_sum_int(dminfo,local_num_cells,total_num_cells)
+
+
+         ! Restricted Additive Schwarz preconditioner ---------------------------------------------!
+         if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+ 
+!           nPrecVec = nCellsA2
+            nPrecVec = nCellsA3
+  
+            allocate(prec_ivmat(1:nPrecVec,1:nPrecVec))
+                     prec_ivmat(:,:) = 0.0_RKIND
+  
+            do iCell = 1, nPrecVec
+  
+               do i = 1, nEdgesOnCell(iCell)
+                  iEdge = edgesOnCell(i, iCell)
+                  cell1 = cellsOnEdge(1, iEdge)
+                  cell2 = cellsOnEdge(2, iEdge)
+    
+                  ! method 1, matches method 0 without pbcs, works with pbcs.
+                  thicknessSum = min(bottomDepth(cell1), bottomDepth(cell2))
+                        fluxAx = edgeSignOnCell(i,iCell)*dvEdge(iEdge)*thicknessSum / dcEdge(iEdge)
+    
+                  !-------------------------------------------------------------------------------!
+                  if ( globalCellId(cell1) > 0 .and. globalCellId(cell1) < total_num_cells+1 ) then
+                     if ( cell1 <= nPrecVec) then
+                        prec_ivmat(iCell,cell1) = prec_ivmat(iCell,cell1) + fluxAx
+                     endif
+                  endif
+    
+                  if ( globalCellId(cell2) > 0 .and. globalCellId(cell2) < total_num_cells+1 ) then
+                     if ( cell2 <= nPrecVec) then
+                        prec_ivmat(iCell,cell2) = prec_ivmat(iCell,cell2) - fluxAx
+                     endif
+                  endif
+                  !-------------------------------------------------------------------------------!
+   
+               end do ! i
+  
+               prec_ivmat(iCell,iCell) = prec_ivmat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0)) * areaCell(iCell)
+  
+            end do ! iCell
+  
+           ! Preconditioning matrix inversion
+            call inverse(nPrecVec,prec_ivmat)
+  
+
+         ! Block-Jacobi preconditioner ------------------------------------------------------------!
+         elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
+ 
+            nPrecVec = nCells ! length of preconditioning vector
+  
+            allocate(prec_ivmat(1:nPrecVec,1:nPrecVec))
+                     prec_ivmat(:,:) = 0.0_RKIND
+  
+            do iCell = 1, nPrecVec
+  
+               do i = 1, nEdgesOnCell(iCell)
+                  iEdge = edgesOnCell(i, iCell)
+                  cell1 = cellsOnEdge(1, iEdge)
+                  cell2 = cellsOnEdge(2, iEdge)
+    
+                  ! method 1, matches method 0 without pbcs, works with pbcs.
+                  thicknessSum = min(bottomDepth(cell1), bottomDepth(cell2))
+                        fluxAx = edgeSignOnCell(i,iCell)*dvEdge(iEdge)*thicknessSum / dcEdge(iEdge)
+    
+                  !-------------------------------------------------------------------------------!
+                  if ( globalCellId(cell1) > 0 .and. globalCellId(cell1) < total_num_cells+1 ) then
+                     if ( cell1 <= nPrecVec) then
+                        prec_ivmat(iCell,cell1) = prec_ivmat(iCell,cell1) + fluxAx
+                     endif
+                  endif
+    
+                  if ( globalCellId(cell2) > 0 .and. globalCellId(cell2) < total_num_cells+1 ) then
+                     if ( cell2 <= nPrecVec) then
+                        prec_ivmat(iCell,cell2) = prec_ivmat(iCell,cell2) - fluxAx
+                     endif
+                  endif
+                  !-------------------------------------------------------------------------------!
+               end do ! i
+   
+               prec_ivmat(iCell,iCell) = prec_ivmat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+  
+            end do ! iCell
+  
+            ! Preconditioning matrix inversion
+            call inverse(nPrecVec,prec_ivmat)
+ 
+
+         ! Jacobi preconditioner ------------------------------------------------------------------!
+         else if ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
+ 
+            nPrecVec = nCells ! length of preconditioning vector
+    
+            allocate(prec_ivmat(1:nPrecVec,1))
+                     prec_ivmat(:,:) = 0.0_RKIND
+    
+            do iCell = 1, nPrecVec
+  
+               do i = 1, nEdgesOnCell(iCell)
+                  iEdge = edgesOnCell(i, iCell)
+                  cell1 = cellsOnEdge(1, iEdge)
+                  cell2 = cellsOnEdge(2, iEdge)
+  
+                  ! method 1, matches method 0 without pbcs, works with pbcs.
+                  thicknessSum =  min(bottomDepth(cell1), bottomDepth(cell2))
+  
+                  !-------------------------------------------------------------------------!
+                  fluxAx = edgeSignOnCell(i,iCell)*dvEdge(iEdge)*thicknessSum / dcEdge(iEdge)
+  
+                  if (cell1 == iCell) then
+                     prec_ivmat(iCell,1) = prec_ivmat(iCell,1) + fluxAx  ! reversed sign
+                  elseif ( cell2 == iCell) then
+                     prec_ivmat(iCell,1) = prec_ivmat(iCell,1) - fluxAx  ! reversed sign
+                  endif
+                  !-------------------------------------------------------------------------!
+               end do ! i
+  
+               temp1 = prec_ivmat(iCell,1) - (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+  
+               prec_ivmat(iCell,1) = 1.0_RKIND / temp1
+  
+            end do ! iCell
+   
+   
+         ! No preconditioner ----------------------------------------------------------------------!
+         else if ( trim(config_btr_si_preconditioner) == 'none' ) then
+ 
+            nPrecVec = nCells ! length of preconditioning vector
+ 
+            allocate(prec_ivmat(1,1))
+            prec_ivmat(:,:) = 1.0_RKIND ! This array is not used only for 'none'.
+ 
+         else
+ 
+            call mpas_log_write('Incorrect choice for config_btr_si_preconditioner: ' // trim(config_btr_si_preconditioner) // &
+                                '   choices are: ras, block_jacobi, jacobi, none',MPAS_LOG_CRIT)
+ 
+         endif ! config_btr_si_preconditioner
+ 
+         block => block % next
+      end do  ! block
+
+   end subroutine ocn_time_integrator_si_preconditioner !}}}
+
+end module ocn_time_integration_si
+
+!***********************************************************************
+!
+!  routine inverse
+!
+!> \brief   Inverte a square matrix using the LAPACK
+!> \author  Hyun-Gyu Kang (Oak Ridge National Laboratory)
+!> \date    September 2019
+!> \details
+!>  This routine inverts a square matrix.
+!>  Matrix (A) is destroyed and changed to its inversion.
+!
+!----------------------------------------------------------------------
+subroutine inverse (n,Ainv) !{{{
+    implicit none
+    real(kind=8),dimension(n,n) :: Ainv
+    real(kind=8),dimension(n)   :: work
+    integer     ,dimension(n)   :: ipiv
+    integer                     :: n,info,i,j
+
+    ! (-) sign for positivie definite matrix
+    Ainv = -Ainv
+
+    ! DPOTRF computes the Cholesky factorizaton of a symmetric positive
+    ! defnitie matrix.
+    call DPOTRF('U',n,Ainv,n,info)
+!   call DGETRF(n,n,Ainv,n,ipiv,info) ! For unsymmetric matrix
+
+    if (info.lt.0) stop 'ERROR in inverse routine: Matrix is numerically singular!'
+    if (info.gt.0) stop 'ERROR in inverse routine: Matrix is not positive definite!'
+
+    ! DPOTRI computes the inverse of a symmetric positive definite matrix,
+    ! using the Cholesky factorization computed by DPOTRF
+    call DPOTRI('U',n,Ainv,n,info)
+!   call DGETRI(n,Ainv,n,ipiv,work,n,info) ! For unsymmetric matrix
+
+    Ainv = -Ainv ! (-) sign to restore a matrix sign
+    if (info.ne.0) stop 'ERROR in inverse routine: Matrix inversion failed!'
+end subroutine inverse !}}}
 
 ! vim: foldmethod=marker
