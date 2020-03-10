@@ -824,7 +824,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, 1)
    
                nCells = nCellsArray(1)
-               nEdges = nEdgesArray(2)
+               nEdges = nEdgesArray(1)
    
                if (config_filter_btr_mode) then
                   !$omp do schedule(runtime)
@@ -949,7 +949,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00', CGvec_r00)
 
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
 
             do iCell = 1, nCells
                sshTendb1 = 0.0_RKIND
@@ -1023,7 +1023,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0', CGvec_rh0)
 
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
 
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
@@ -1088,7 +1088,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_w0' , CGvec_w0)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
  
             CGcst_r00r0 = 0.0_RKIND
             CGcst_r00w0 = 0.0_RKIND
@@ -1158,7 +1158,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_wh0', CGvec_wh0)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
  
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
@@ -1225,7 +1225,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_zh0', CGvec_zh0)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
  
             do iCell = 1, nCells
  
@@ -1588,7 +1588,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_v0' , CGvec_v0)
    
                nCells = nCellsArray(1)
-               nEdges = nEdgesArray(2)
+               nEdges = nEdgesArray(1)
    
                if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                   ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
@@ -1666,7 +1666,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_zh1', CGvec_zh1)
    
                nCells = nCellsArray(1)
-               nEdges = nEdgesArray(2)
+               nEdges = nEdgesArray(1)
    
                do iCell = 1, nCells
                   sshTendAx = 0.0_RKIND
@@ -1774,8 +1774,11 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
             call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
 
-            nCells = nCellsArray( cellHaloComputeCounter )
-            nEdges = nEdgesArray( edgeHaloComputeCounter )
+!           nCells = nCellsArray( cellHaloComputeCounter )
+!           nEdges = nEdgesArray( edgeHaloComputeCounter )
+
+            nCells = nCellsArray( 1 )
+            nEdges = nEdgesArray( 1 )
 
             !$omp do schedule(runtime) private(cell1, cell2, CoriolisTerm, i, eoe)
             do iEdge = 1, nEdges
@@ -1844,7 +1847,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm', barotropicCoriolisTerm)
 
             nCells = nCellsArray(1)
-            nEdges = nCellsArray(2)
+            nEdges = nCellsArray(1)
 
             !$omp do schedule(runtime) private(cell1, cell2, CoriolisTerm, i, eoe)
             do iEdge = 1, nEdges
@@ -1919,7 +1922,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00', CGvec_r00)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
  
             do iCell = 1, nCells
                sshTendb1 = 0.0_RKIND
@@ -2064,7 +2067,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_w0' , CGvec_w0)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
  
             CGcst_r00r0 = 0.0_RKIND
             CGcst_r00w0 = 0.0_RKIND
@@ -2201,7 +2204,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_zh0', CGvec_zh0)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
 
             do iCell = 1, nCells
  
@@ -2641,7 +2644,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_zh1', CGvec_zh1)
    
                nCells = nCellsArray(1)
-               nEdges = nEdgesArray(2)
+               nEdges = nEdgesArray(1)
    
                do iCell = 1, nCells
                   sshTendAx = 0.0_RKIND
@@ -2765,7 +2768,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'barotropicThicknessFlux', barotropicThicknessFlux)
 
             nCells = nCellsArray(1)
-            nEdges = nEdgesArray(2)
+            nEdges = nEdgesArray(1)
 
             do iEdge = 1, nEdges
 
