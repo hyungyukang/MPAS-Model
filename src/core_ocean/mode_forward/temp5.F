@@ -333,8 +333,8 @@ module ocn_time_integration_si
       !--- Backward-Euler at the 1st time step only to remove spurious oscillation caused by CN method
       if ( first_step ) then
          first_step = .false.
-         alpha1 = 0.5
-         alpha2 = 0.5
+         alpha1 = 1.0
+         alpha2 = 0.0
       else
          alpha1 = 0.5
          alpha2 = 0.5
@@ -824,7 +824,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, 1)
    
                nCells = nCellsArray(1)
-               nEdges = nEdgesArray(2)
+               nEdges = nEdgesArray(1)
    
                if (config_filter_btr_mode) then
                   !$omp do schedule(runtime)
@@ -949,7 +949,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00', CGvec_r00)
 
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
 
             do iCell = 1, nCells
                sshTendb1 = 0.0_RKIND
@@ -1023,7 +1023,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0', CGvec_rh0)
 
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
 
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
@@ -1088,7 +1088,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_w0' , CGvec_w0)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
  
             CGcst_r00r0 = 0.0_RKIND
             CGcst_r00w0 = 0.0_RKIND
@@ -1158,7 +1158,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_wh0', CGvec_wh0)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
  
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
@@ -1225,7 +1225,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_zh0', CGvec_zh0)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
  
             do iCell = 1, nCells
  
@@ -1588,7 +1588,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_v0' , CGvec_v0)
    
                nCells = nCellsArray(1)
-               nEdges = nEdgesArray(2)
+               nEdges = nEdgesArray(1)
    
                if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                   ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
@@ -1666,7 +1666,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_zh1', CGvec_zh1)
    
                nCells = nCellsArray(1)
-               nEdges = nEdgesArray(2)
+               nEdges = nEdgesArray(1)
    
                do iCell = 1, nCells
                   sshTendAx = 0.0_RKIND
@@ -1774,8 +1774,11 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
             call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
 
+!           nCells = nCellsArray( cellHaloComputeCounter )
+!           nEdges = nEdgesArray( edgeHaloComputeCounter )
+
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
 
             !$omp do schedule(runtime) private(cell1, cell2, CoriolisTerm, i, eoe)
             do iEdge = 1, nEdges
@@ -1792,7 +1795,7 @@ module ocn_time_integration_si
                   eoe = edgesOnEdge(i,iEdge)
                   wgt = weightsOnEdge(i,iEdge)
                   CoriolisTerm = CoriolisTerm + wgt  &
-                               * normalBarotropicVelocitySubcycleCur(eoe) * fEdge(eoe)
+                               * normalBarotropicVelocityCur(eoe) * fEdge(eoe)
                end do
                     barotropicCoriolisTerm(iEdge) = CoriolisTerm
 
@@ -1844,7 +1847,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm', barotropicCoriolisTerm)
 
             nCells = nCellsArray(1)
-            nEdges = nCellsArray(2)
+            nEdges = nCellsArray(1)
 
             !$omp do schedule(runtime) private(cell1, cell2, CoriolisTerm, i, eoe)
             do iEdge = 1, nEdges
@@ -1919,7 +1922,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00', CGvec_r00)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
  
             do iCell = 1, nCells
                sshTendb1 = 0.0_RKIND
@@ -2064,7 +2067,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_w0' , CGvec_w0)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
  
             CGcst_r00r0 = 0.0_RKIND
             CGcst_r00w0 = 0.0_RKIND
@@ -2201,7 +2204,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_zh0', CGvec_zh0)
  
             nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
+            nEdges = nEdgesArray( 1 )
 
             do iCell = 1, nCells
  
@@ -2641,7 +2644,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_zh1', CGvec_zh1)
    
                nCells = nCellsArray(1)
-               nEdges = nEdgesArray(2)
+               nEdges = nEdgesArray(1)
    
                do iCell = 1, nCells
                   sshTendAx = 0.0_RKIND
@@ -2765,7 +2768,34 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'barotropicThicknessFlux', barotropicThicknessFlux)
 
             nCells = nCellsArray(1)
-            nEdges = nEdgesArray(2)
+            nEdges = nEdgesArray(1)
+
+            do iEdge = 1, nEdges
+
+               temp_mask = edgeMask(1, iEdge)
+
+               cell1 = cellsOnEdge(1,iEdge)
+               cell2 = cellsOnEdge(2,iEdge)
+
+               ! Compute the barotropic Coriolis term, -f*uPerp
+!              CoriolisTerm = 0.0_RKIND
+
+!              do i = 1, nEdgesOnEdge(iEdge)
+!                 eoe = edgesOnEdge(i,iEdge)
+!                 wgt = weightsOnEdge(i,iEdge)
+!                 CoriolisTerm = Coriolisterm + wgt  &
+!                              * normalBarotropicVelocitySubcycleCur(eoe) * fEdge(eoe)
+!              end do
+!              barotropicCoriolisTerm(iEdge) = CoriolisTerm
+
+               normalBarotropicVelocitySubcycleNew(iEdge) &
+                  = temp_mask &
+                  * (normalBarotropicVelocityCur(iEdge) &
+                  - (dt) * (-barotropicCoriolisTerm(iEdge) + gravity &
+                  * ( (alpha1*sshSubcycleCur(cell2)+alpha2*sshCur(cell2)) - (alpha1*sshSubcycleCur(cell1)+alpha2*sshCur(cell1)) ) &
+                  / dcEdge(iEdge) - barotropicForcing(iEdge)))
+
+            end do ! iEdge
 
             do iEdge = 1, nEdges
 
@@ -2781,7 +2811,7 @@ module ocn_time_integration_si
                   eoe = edgesOnEdge(i,iEdge)
                   wgt = weightsOnEdge(i,iEdge)
                   CoriolisTerm = Coriolisterm + wgt  &
-                               * normalBarotropicVelocitySubcycleCur(eoe) * fEdge(eoe)
+                               * (0.5*normalBarotropicVelocityCur(eoe)+0.5*normalBarotropicVelocitySubcycleNew(eoe)) * fEdge(eoe)
                end do
                barotropicCoriolisTerm(iEdge) = CoriolisTerm
 
@@ -2815,7 +2845,6 @@ module ocn_time_integration_si
                normalBarotropicVelocityNew(iEdge) = normalBarotropicVelocitySubcycleCur(iEdge)
             end do ! iEdge
 
-
             ! #Iteration  check
 !           if ( split_implicit_step == 2 ) then
 !           call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
@@ -2829,7 +2858,7 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_create(domain, finalBtrGroupName)
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'barotropicThicknessFlux')
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocity',2)
-         call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocitySubcycle',1)
+!        call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'ssh',2)
          call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, finalBtrGroupName)
          call mpas_dmpar_exch_group_destroy(domain, finalBtrGroupName)
@@ -3164,7 +3193,6 @@ module ocn_time_integration_si
                ! in this diagnostics solve.
                call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, diagnosticsPool, scratchPool, tracersPool, 2)
 
-
             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             !
             !  If large iteration complete, compute all variables at time n+1
@@ -3333,7 +3361,6 @@ module ocn_time_integration_si
                   !$omp end do
                end if
 
-
                ! Recompute final u to go on to next step.
                ! u_{n+1} = normalBarotropicVelocity_{n+1} + normalBaroclinicVelocity_{n+1}
                ! Right now normalBaroclinicVelocityNew is at time n+1/2, so back compute to get normalBaroclinicVelocity
@@ -3398,7 +3425,6 @@ module ocn_time_integration_si
         call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
         call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
         call mpas_pool_get_subpool(block % structs, 'scratch', scratchPool)
-
         ! Compute normalGMBolusVelocity; it will be added to the baroclinic modes in Stage 2 above.
         if (config_use_GM.or.config_use_Redi) then
            call ocn_gm_compute_Bolus_velocity(statePool, diagnosticsPool, &
