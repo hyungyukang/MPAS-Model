@@ -978,13 +978,13 @@ module ocn_time_integration_si
                   / dcEdge(iEdge) - barotropicForcing(iEdge)))
             end do ! iEdge
 
-         call mpas_timer_start("si halo btr vel")
-         call mpas_dmpar_exch_group_create(domain, iterGroupName)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocitySubcycle',1)
-         call mpas_threading_barrier()
-         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-         call mpas_timer_stop("si halo btr vel")
+!        call mpas_timer_start("si halo btr vel")
+!        call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!        call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocitySubcycle',1)
+!        call mpas_threading_barrier()
+!        call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!        call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!        call mpas_timer_stop("si halo btr vel")
 
             do iEdge = 1, nEdges
 
@@ -1018,13 +1018,13 @@ module ocn_time_integration_si
                                                            + alpha2* normalBarotropicVelocityCur(iEdge)
             end do ! iEdge
 
-         call mpas_timer_start("si halo btr vel")
-         call mpas_dmpar_exch_group_create(domain, iterGroupName)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocitySubcycle',1)
-         call mpas_threading_barrier()
-         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-         call mpas_timer_stop("si halo btr vel")
+!        call mpas_timer_start("si halo btr vel")
+!        call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!        call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocitySubcycle',1)
+!        call mpas_threading_barrier()
+!        call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!        call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!        call mpas_timer_stop("si halo btr vel")
 
             do iEdge = 1, nEdges
                cell1 = cellsOnEdge(1,iEdge)

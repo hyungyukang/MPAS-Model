@@ -534,9 +534,9 @@ RANLIB = ranlib
 
 
 ifeq "$(FORTRILINOS)" "true"
-        LIBS += -Wl,-rpath,$(FORTRILINOS_BUILD)/ForTrilinos/src/interface/src:$(FORTRILINOS_BUILD)/packages/ifpack2:$(FORTRILINOS_BUILD)/ForTrilinos/src/tpetra/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/teuchos/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src:$(FORTRILINOS_BUILD)/packages/nox/src:$(FORTRILINOS_INSTALL)/lib
-        LIBS += -dynamic -L$(FORTRILINOS_INSTALL)/lib
-        LIBS += -lfortrilinos -lforteuchos -lfortpetra -lnox -lforerror -lforutils -lstratimikos -lstratimikosbelos
+        FORTRILINOS_LIBS += -Wl,-rpath,$(FORTRILINOS_BUILD)/ForTrilinos/src/interface/src:$(FORTRILINOS_BUILD)/packages/ifpack2:$(FORTRILINOS_BUILD)/ForTrilinos/src/tpetra/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/teuchos/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src:$(FORTRILINOS_BUILD)/packages/nox/src:$(FORTRILINOS_INSTALL)/lib
+        FORTRILINOS_LIBS += -dynamic -L$(FORTRILINOS_INSTALL)/lib
+        FORTRILINOS_LIBS += -lfortrilinos -lforteuchos -lfortpetra -lnox -lforerror -lforutils -lstratimikos -lstratimikosbelos
 endif
 
 
@@ -862,6 +862,7 @@ endif
                  AUTOCLEAN="$(AUTOCLEAN)" \
                  GEN_F90="$(GEN_F90)" \
                  FORTRILINOS="$(FORTRILINOS)" \
+                 FORTRILINOS_LIBS="$(FORTRILINOS_LIBS)" \
                  FORTRILINOS_INCLUDES="$(FORTRILINOS_INCLUDES)" \
                  NAMELIST_SUFFIX="$(NAMELIST_SUFFIX)" \
                  EXE_NAME="$(EXE_NAME)"

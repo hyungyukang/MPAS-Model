@@ -31,17 +31,17 @@ module ocn_fortrilinos_imp_mod
   integer :: my_rank, num_procs
 
   integer(global_size_type) :: n_global,n_local
-  integer(size_type),save :: max_entries_per_row, num_vecs = 1, lda,ione = 1,itwo=2,izero=0
+  integer(size_type) :: max_entries_per_row, num_vecs = 1, lda,ione = 1,itwo=2,izero=0
   integer(int_type) :: row_nnz
 
   integer :: n,numvalid
   integer(global_ordinal_type) :: offset,icol,irow,icol1,icol2,irow1,irow2,gblrow
 
   type(TeuchosComm) :: comm
-  type(ParameterList),save:: plist, linear_solver_list, belos_list, solver_list, krylov_list
-  type(TrilinosSolver),save :: solver_handle
-  type(TpetraMap),save :: map
-  type(TpetraCrsMatrix),save :: A
+  type(ParameterList) :: plist, linear_solver_list, belos_list, solver_list, krylov_list
+  type(TrilinosSolver) :: solver_handle
+  type(TpetraMap) :: map
+  type(TpetraCrsMatrix) :: A
   type(TpetraMultiVector) :: B, X, residual
 
   real(scalar_type), dimension(:), allocatable :: lhs, rhs
@@ -97,18 +97,17 @@ module ocn_fortrilinos_imp_mod
 
   ! For User defined variables -------------------------------------------------
   integer :: ierr,nvec,n_tot_vec
-  integer, dimension(:), allocatable,save :: globalIdx
+  integer, dimension(:), allocatable :: globalIdx
   integer :: sCellIdx,eCellIdx,mpi_ierr
   logical :: init_belos = .true.
   ! ----------------------------------------------------------------------------
-
-  dminfo = domain % dminfo
-  comm = TeuchosComm(dminfo % comm)
    
   ! INIT belos -----------------------------------------------------------------
   if ( init_belos ) then
-!   print*, 'PRINT in init'
-    init_belos = .false.
+    print*, 'PRINT in init'
+!   init_belos = .false.
+    dminfo = domain % dminfo
+    comm = TeuchosComm(dminfo % comm)
     my_rank = comm%getRank()
     num_procs = comm%getSize()
 
@@ -188,17 +187,28 @@ module ocn_fortrilinos_imp_mod
 
       lda = nCellsArray(1)
 
+
   ! ----------------------------------------------------------------------------
 
   ! Read in the parameterList
-! plist = ParameterList("Stratimikos"); FORTRILINOS_CHECK_IERR()
-! call load_from_xml(plist, "stratimikos.xml"); FORTRILINOS_CHECK_IERR()
+  plist = ParameterList("Stratimikos"); FORTRILINOS_CHECK_IERR()
+  call load_from_xml(plist, "stratimikos.xml"); FORTRILINOS_CHECK_IERR()
 
   ! Get tolerance from the parameter list
-! linear_solver_list = plist%sublist('Linear Solver Types')
-! belos_list = linear_solver_list%sublist(plist%get_string('Linear Solver Type'))
-! solver_list = belos_list%sublist('Solver Types')
-! krylov_list = solver_list%sublist(belos_list%get_string('Solver Type'))
+  linear_solver_list = plist%sublist('Linear Solver Types')
+  belos_list = linear_solver_list%sublist(plist%get_string('Linear Solver Type'))
+  solver_list = belos_list%sublist('Solver Types')
+  krylov_list = solver_list%sublist(belos_list%get_string('Solver Type'))
+
+  endif ! INIT_belos
+
+  if ( stage == 'o' ) then
+    call krylov_list%set('Convergence Tolerance', 1e-2)
+    tol = 1.0d-2
+  else
+    call krylov_list%set('Convergence Tolerance', 1e-8)
+    tol = 1.0d-8
+  endif
 
   ! ------------------------------------------------------------------
   ! Step 0: Construct tri-diagonal matrix
@@ -245,6 +255,7 @@ module ocn_fortrilinos_imp_mod
      vals(1) = szero
 
      do iCell = 1, nCellsArray(1)
+
         gblrow  = globalIdx(iCell)
 
         do i = 1, nEdgesOnCell(iCell)
@@ -263,7 +274,6 @@ module ocn_fortrilinos_imp_mod
           cols(1) = globalIdx(cell2)
           call A%insertGlobalValues(gblrow, cols, vals)
           endif
-
         end do ! i
 
         cols(1) = globalIdx(iCell)
@@ -272,65 +282,6 @@ module ocn_fortrilinos_imp_mod
      end do ! iCell
 
      call A%fillComplete(); FORTRILINOS_CHECK_IERR()
-
-     block => block % next
-  end do  ! block
-
-  endif ! INIT_belos
-
-  ! Read in the parameterList
-  plist = ParameterList("Stratimikos"); FORTRILINOS_CHECK_IERR()
-  call load_from_xml(plist, "stratimikos.xml"); FORTRILINOS_CHECK_IERR()
-
-  ! Get tolerance from the parameter list
-  linear_solver_list = plist%sublist('Linear Solver Types')
-  belos_list = linear_solver_list%sublist(plist%get_string('Linear Solver Type'))
-  solver_list = belos_list%sublist('Solver Types')
-  krylov_list = solver_list%sublist(belos_list%get_string('Solver Type'))
-
-  ! -- MPAS-O SpMV -------------------------------------------------------------
-  block => domain % blocklist
-  do while (associated(block))
-
-     call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-     call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
-     call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
-     call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
-     call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-
-     call mpas_pool_get_array(meshPool, 'nEdgesOnCell',            nEdgesOnCell           )
-     call mpas_pool_get_array(meshPool, 'edgesOnCell',             edgesOnCell            )
-     call mpas_pool_get_array(meshPool, 'cellsOnEdge',             cellsOnEdge            )
-     call mpas_pool_get_array(meshPool, 'dcEdge',                  dcEdge                 )
-     call mpas_pool_get_array(meshPool, 'bottomDepth',             bottomDepth            )
-     call mpas_pool_get_array(meshPool, 'edgeSignOnCell',          edgeSignOnCell         )
-     call mpas_pool_get_array(meshPool, 'dvEdge',                  dvEdge                 )
-     call mpas_pool_get_array(meshPool, 'areaCell',                areaCell               )
-
-     call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
-     call mpas_pool_get_array(statePool, 'ssh', sshNew, 2)
-     call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
-     call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
-     call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur,1)
-     call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
-     call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
-
-     call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0 )
-     call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1 )
-
-     nCells = nCellsArray(1)
-     nEdges = nEdgesArray(2)
- 
-     if ( stage == 'o' ) then
-       call krylov_list%set('Convergence Tolerance', 1e-2)
-       tol = 1.0d-2
-     else
-       call krylov_list%set('Convergence Tolerance', 1e-8)
-       tol = 1.0d-8
-     endif
-
-     ! A : Coefficient matrix -------------------------------------------------!
 
      call A%resumeFill(); FORTRILINOS_CHECK_IERR()
 
@@ -350,7 +301,8 @@ module ocn_fortrilinos_imp_mod
           thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1),bottomDepth(cell2))
           fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
 
-          if ( globalIdx(cell2) > 0) then
+
+!         if ( globalIdx(cell2) > 0) then
           cols(1) = globalIdx(cell1)
           vals(1) = -fluxAx 
           numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
@@ -358,7 +310,7 @@ module ocn_fortrilinos_imp_mod
           cols(1) = globalIdx(cell2)
           vals(1) = +fluxAx 
           numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
-          endif
+!         endif
 
         end do ! i
 
@@ -369,9 +321,13 @@ module ocn_fortrilinos_imp_mod
      end do ! iCell
 
 
+     ! End reduction ----------------------------------------------------------!
+
   call A%fillComplete(); FORTRILINOS_CHECK_IERR()
 
-     ! B : Right Hand Side ----------------------------------------------------!
+     ! Residual ---------------------------------------------------------------!
+
+     ! SpMV ------------------------!
      do iCell = 1, nCellsArray(1)
 
        sshTendb1 = 0.0_RKIND
@@ -429,7 +385,7 @@ module ocn_fortrilinos_imp_mod
 
   ! Step 1: initialize a handle
   call solver_handle%init(comm); FORTRILINOS_CHECK_IERR()
-    
+
   ! Step 2: setup the problem
   call solver_handle%setup_matrix(A); FORTRILINOS_CHECK_IERR()
 
@@ -476,20 +432,20 @@ module ocn_fortrilinos_imp_mod
 
   ! ------------------------------------------------------------------
 
-! call krylov_list%release()
-! call solver_list%release; FORTRILINOS_CHECK_IERR()
-! call belos_list%release; FORTRILINOS_CHECK_IERR()
-! call linear_solver_list%release; FORTRILINOS_CHECK_IERR()
-! call solver_handle%release(); FORTRILINOS_CHECK_IERR()
-! call plist%release(); FORTRILINOS_CHECK_IERR()
+  call krylov_list%release()
+  call solver_list%release; FORTRILINOS_CHECK_IERR()
+  call belos_list%release; FORTRILINOS_CHECK_IERR()
+  call linear_solver_list%release; FORTRILINOS_CHECK_IERR()
 
-! call X%release(); FORTRILINOS_CHECK_IERR()
-! call B%release(); FORTRILINOS_CHECK_IERR()
-! call A%release(); FORTRILINOS_CHECK_IERR()
-! call map%release(); FORTRILINOS_CHECK_IERR()
-! call comm%release(); FORTRILINOS_CHECK_IERR()
+  call solver_handle%release(); FORTRILINOS_CHECK_IERR()
+  call plist%release(); FORTRILINOS_CHECK_IERR()
+  call X%release(); FORTRILINOS_CHECK_IERR()
+  call B%release(); FORTRILINOS_CHECK_IERR()
+  call A%release(); FORTRILINOS_CHECK_IERR()
+  call map%release(); FORTRILINOS_CHECK_IERR()
+  call comm%release(); FORTRILINOS_CHECK_IERR()
 
-! deallocate(globalIdx)
+  deallocate(globalIdx)
 ! deallocate(aval)
 ! deallocate(acol)
 ! deallocate(colent)
