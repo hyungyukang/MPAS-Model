@@ -49,7 +49,7 @@ module ocn_fortrilinos_imp_mod
   real(norm_type), dimension(:) :: norms(1)
   integer(global_ordinal_type) :: cols(1)
   real(scalar_type) :: vals(1)
-  real(scalar_type),save :: r0, sone = 1., szero = 0., tol, val
+  real(scalar_type) :: r0, sone = 1., szero = 0., tol, val
 
   ! For MPAS-O -----------------------------------------------------------------
   type (domain_type) :: domain
@@ -276,6 +276,10 @@ module ocn_fortrilinos_imp_mod
      block => block % next
   end do  ! block
 
+  endif ! INIT_belos
+
+
+  call mpas_timer_start("fort list")
 
   ! Read in the parameterList
   plist = ParameterList("Stratimikos"); FORTRILINOS_CHECK_IERR()
@@ -286,6 +290,11 @@ module ocn_fortrilinos_imp_mod
   belos_list = linear_solver_list%sublist(plist%get_string('Linear Solver Type'))
   solver_list = belos_list%sublist('Solver Types')
   krylov_list = solver_list%sublist(belos_list%get_string('Solver Type'))
+
+  call mpas_timer_stop("fort list")
+
+
+  call mpas_timer_start("fort mat setup")
 
   ! -- MPAS-O SpMV -------------------------------------------------------------
   block => domain % blocklist
@@ -370,55 +379,9 @@ module ocn_fortrilinos_imp_mod
 
   call A%fillComplete(); FORTRILINOS_CHECK_IERR()
 
-     block => block % next
-  end do  ! block
+  call mpas_timer_stop("fort mat setup")
 
-  ! Step 0: create a handle
-  solver_handle = TrilinosSolver(); FORTRILINOS_CHECK_IERR()
-
-  ! Step 1: initialize a handle
-  call solver_handle%init(comm); FORTRILINOS_CHECK_IERR()
-    
-  ! Step 2: setup the problem
-  call solver_handle%setup_matrix(A); FORTRILINOS_CHECK_IERR()
-
-  ! Step 3: setup the solver
-  call solver_handle%setup_solver(plist); FORTRILINOS_CHECK_IERR()
-
-  endif ! INIT_belos
-
-
-  block => domain % blocklist
-  do while (associated(block))
-
-     call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-     call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
-     call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
-     call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
-     call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-
-     call mpas_pool_get_array(meshPool, 'nEdgesOnCell',            nEdgesOnCell           )
-     call mpas_pool_get_array(meshPool, 'edgesOnCell',             edgesOnCell            )
-     call mpas_pool_get_array(meshPool, 'cellsOnEdge',             cellsOnEdge            )
-     call mpas_pool_get_array(meshPool, 'dcEdge',                  dcEdge                 )
-     call mpas_pool_get_array(meshPool, 'bottomDepth',             bottomDepth            )
-     call mpas_pool_get_array(meshPool, 'edgeSignOnCell',          edgeSignOnCell         )
-     call mpas_pool_get_array(meshPool, 'dvEdge',                  dvEdge                 )
-     call mpas_pool_get_array(meshPool, 'areaCell',                areaCell               )
-
-     call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
-     call mpas_pool_get_array(statePool, 'ssh', sshNew, 2)
-     call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
-     call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
-     call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur,1)
-     call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
-     call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
-
-     call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0 )
-     call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1 )
-
-
+  call mpas_timer_start("fort resid")
 
      ! B : Right Hand Side ----------------------------------------------------!
      do iCell = 1, nCellsArray(1)
@@ -463,40 +426,53 @@ module ocn_fortrilinos_imp_mod
          CGvec_r0(iCell) = -(-sshCurArea - sshTendb1 + sshTendb2) 
      end do ! iCell
 
+  call mpas_timer_stop("fort resid")
 
+  call mpas_timer_start("fort Vector")
   B = TpetraMultiVector(map, CGvec_r0(1:nCellsArray(1)), lda, num_vecs); FORTRILINOS_CHECK_IERR()
   X = TpetraMultiVector(map, sshSubcycleCur(1:nCellsArray(1)), lda, num_vecs); FORTRILINOS_CHECK_IERR()
 
   residual = TpetraMultiVector(map,num_vecs,.false.); FORTRILINOS_CHECK_IERR()
+  call mpas_timer_stop("fort Vector")
 
+
+  call mpas_timer_start("fort solver setup")
   ! Step 0: create a handle
-! solver_handle = TrilinosSolver(); FORTRILINOS_CHECK_IERR()
+  solver_handle = TrilinosSolver(); FORTRILINOS_CHECK_IERR()
 
   ! ------------------------------------------------------------------
   ! Explicit setup and solve
   ! ------------------------------------------------------------------
 
   ! Step 1: initialize a handle
-! call solver_handle%init(comm); FORTRILINOS_CHECK_IERR()
-!   
-! ! Step 2: setup the problem
-! call solver_handle%setup_matrix(A); FORTRILINOS_CHECK_IERR()
+  call solver_handle%init(comm); FORTRILINOS_CHECK_IERR()
+    
+  ! Step 2: setup the problem
+  call solver_handle%setup_matrix(A); FORTRILINOS_CHECK_IERR()
 
-! ! Step 3: setup the solver
-! call solver_handle%setup_solver(plist); FORTRILINOS_CHECK_IERR()
+  ! Step 3: setup the solver
+  call solver_handle%setup_solver(plist); FORTRILINOS_CHECK_IERR()
 
+  call mpas_timer_stop("fort solver setup")
+
+  call mpas_timer_start("fort init resid")
   ! Calculate initial residual
   call A%apply(X, residual, TeuchosNO_TRANS, sone, szero); FORTRILINOS_CHECK_IERR()
   call residual%update(sone, B, -sone); FORTRILINOS_CHECK_IERR()
   call residual%norm2(norms); FORTRILINOS_CHECK_IERR()
   r0 = norms(1)
+  call mpas_timer_stop("fort init resid")
 
+  call mpas_timer_start("fort solve")
   call solver_handle%solve(B, X); FORTRILINOS_CHECK_IERR()
+  call mpas_timer_stop("fort solve")
 
+  call mpas_timer_start("fort check")
   ! Check the solution
   call A%apply(X, residual, TeuchosNO_TRANS, sone, szero); FORTRILINOS_CHECK_IERR()
   call residual%update(sone, B, -sone); FORTRILINOS_CHECK_IERR()
   call residual%norm2(norms); FORTRILINOS_CHECK_IERR()
+  call mpas_timer_stop("fort check")
 
   if ( norms(1)/r0 > tol) then
     write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
@@ -520,8 +496,10 @@ module ocn_fortrilinos_imp_mod
   call mpas_timer_stop("si halo ssh")
        
 
+  call mpas_timer_start("fort final")
   ! Step 5: clean up
-! call solver_handle%finalize(); FORTRILINOS_CHECK_IERR()
+  call solver_handle%finalize(); FORTRILINOS_CHECK_IERR()
+  call mpas_timer_stop("fort final")
 
   ! ------------------------------------------------------------------
 
