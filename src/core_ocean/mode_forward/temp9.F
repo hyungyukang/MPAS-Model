@@ -276,6 +276,7 @@ module ocn_fortrilinos_imp_mod
      block => block % next
   end do  ! block
 
+  endif ! INIT_belos
 
   ! Read in the parameterList
   plist = ParameterList("Stratimikos"); FORTRILINOS_CHECK_IERR()
@@ -369,45 +370,6 @@ module ocn_fortrilinos_imp_mod
 
 
   call A%fillComplete(); FORTRILINOS_CHECK_IERR()
-
-     block => block % next
-  end do  ! block
-
-
-  endif ! INIT_belos
-
-
-  block => domain % blocklist
-  do while (associated(block))
-
-     call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-     call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
-     call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
-     call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
-     call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-
-     call mpas_pool_get_array(meshPool, 'nEdgesOnCell',            nEdgesOnCell           )
-     call mpas_pool_get_array(meshPool, 'edgesOnCell',             edgesOnCell            )
-     call mpas_pool_get_array(meshPool, 'cellsOnEdge',             cellsOnEdge            )
-     call mpas_pool_get_array(meshPool, 'dcEdge',                  dcEdge                 )
-     call mpas_pool_get_array(meshPool, 'bottomDepth',             bottomDepth            )
-     call mpas_pool_get_array(meshPool, 'edgeSignOnCell',          edgeSignOnCell         )
-     call mpas_pool_get_array(meshPool, 'dvEdge',                  dvEdge                 )
-     call mpas_pool_get_array(meshPool, 'areaCell',                areaCell               )
-
-     call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
-     call mpas_pool_get_array(statePool, 'ssh', sshNew, 2)
-     call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
-     call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
-     call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur,1)
-     call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
-     call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
-
-     call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0 )
-     call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1 )
-
-
 
      ! B : Right Hand Side ----------------------------------------------------!
      do iCell = 1, nCellsArray(1)

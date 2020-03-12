@@ -350,10 +350,10 @@ gnu-nersc:
 	"CC_SERIAL = cc" \
 	"CXX_SERIAL = CC" \
 	"FFLAGS_PROMOTION = -fdefault-real-8 -fdefault-double-8" \
-	"FFLAGS_OPT = -O3 -m64 -ffree-line-length-none -fconvert=big-endian -ffree-form" \
-	"CFLAGS_OPT = -O3 -m64" \
-	"CXXFLAGS_OPT = -O3 -m64" \
-	"LDFLAGS_OPT = -O3 -m64" \
+	"FFLAGS_OPT = -O3 -m64 -ffree-line-length-none -fconvert=big-endian -ffree-form -mcmodel=large" \
+	"CFLAGS_OPT = -O3 -m64 -mcmodel=large" \
+	"CXXFLAGS_OPT = -O3 -m64 -mcmodel=large" \
+	"LDFLAGS_OPT = -O3 -m64 -mcmodel=large" \
 	"FFLAGS_DEBUG = -g -m64 -ffree-line-length-none -fconvert=big-endian -ffree-form" \
 	"CFLAGS_DEBUG = -g -m64" \
 	"CXXFLAGS_DEBUG = -g -m64" \
@@ -445,8 +445,8 @@ llvm:
 	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI" )
 
 
-#FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos_MPI_Release_test # For NERSC-Cori
-FORTRILINOS_ROOT    = /Users/3hk/home/programs/Trilinos_MPI_Release_test # For my Mac
+FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos_MPI_Release_test
+#FORTRILINOS_ROOT    = /Users/3hk/home/programs/Trilinos_MPI_Release_test
 FORTRILINOS_BUILD   = $(FORTRILINOS_ROOT)/build
 FORTRILINOS_INSTALL = $(FORTRILINOS_ROOT)/build/Trilinos_install
 FORTRILINOS_INCLUDES = -I$(FORTRILINOS_INSTALL)/include -I/$(FORTRILINOS_INSTALL)/lib  -I/$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src -I/$(FORTRILINOS_ROOT)/build/ForTrilinos/src/interface -I$(FORTRILINOS_BUILD)/packages/nox/src
