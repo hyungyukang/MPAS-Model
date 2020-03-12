@@ -282,17 +282,34 @@ module ocn_fortrilinos_imp_mod
   call mpas_timer_start("fort list")
 
   ! Read in the parameterList
+  call mpas_timer_start("fort list plist")
   plist = ParameterList("Stratimikos"); FORTRILINOS_CHECK_IERR()
+  call mpas_timer_stop("fort list plist")
+
+  call mpas_timer_start("fort list load xml")
   call load_from_xml(plist, "stratimikos.xml"); FORTRILINOS_CHECK_IERR()
+  call mpas_timer_stop("fort list load xml")
+
 
   ! Get tolerance from the parameter list
+  call mpas_timer_start("fort list lists")
   linear_solver_list = plist%sublist('Linear Solver Types')
   belos_list = linear_solver_list%sublist(plist%get_string('Linear Solver Type'))
   solver_list = belos_list%sublist('Solver Types')
   krylov_list = solver_list%sublist(belos_list%get_string('Solver Type'))
+  call mpas_timer_stop("fort list lists")
+
+  call mpas_timer_start("fort list tol")
+     if ( stage == 'o' ) then
+       call krylov_list%set('Convergence Tolerance', 1e-2)
+       tol = 1.0d-2
+     else
+       call krylov_list%set('Convergence Tolerance', 1e-8)
+       tol = 1.0d-8
+     endif
+  call mpas_timer_stop("fort list tol")
 
   call mpas_timer_stop("fort list")
-
 
   call mpas_timer_start("fort mat setup")
 
@@ -330,13 +347,6 @@ module ocn_fortrilinos_imp_mod
      nCells = nCellsArray(1)
      nEdges = nEdgesArray(2)
  
-     if ( stage == 'o' ) then
-       call krylov_list%set('Convergence Tolerance', 1e-2)
-       tol = 1.0d-2
-     else
-       call krylov_list%set('Convergence Tolerance', 1e-8)
-       tol = 1.0d-8
-     endif
 
      ! A : Coefficient matrix -------------------------------------------------!
 
