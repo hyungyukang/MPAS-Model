@@ -1039,9 +1039,9 @@ module ocn_time_integration_si
 
 !        ! Main loop ------------------------------------------------------------------------------!
 
-!        call mpas_timer_start("si fortrilinos btrmode")
-!        call ocn_time_integration_imp_btrmode(domain,dt,itotal_num_cells,'m')
-!        call mpas_timer_stop ("si fortrilinos btrmode")
+         call mpas_timer_start("si fortrilinos btrmode")
+         call ocn_time_integration_imp_btrmode(domain,dt,itotal_num_cells,'m')
+         call mpas_timer_stop ("si fortrilinos btrmode")
 
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1100,6 +1100,32 @@ module ocn_time_integration_si
                   * ( (alpha1*sshSubcycleCur(cell2)+alpha2*sshCur(cell2)) - (alpha1*sshSubcycleCur(cell1)+alpha2*sshCur(cell1)) ) &
                   / dcEdge(iEdge) - barotropicForcing(iEdge)))
 
+            end do ! iEdge
+
+            do iEdge = 1, nEdges
+
+               temp_mask = edgeMask(1, iEdge)
+
+               cell1 = cellsOnEdge(1,iEdge)
+               cell2 = cellsOnEdge(2,iEdge)
+
+               ! Compute the barotropic Coriolis term, -f*uPerp
+               CoriolisTerm = 0.0_RKIND
+
+               do i = 1, nEdgesOnEdge(iEdge)
+                  eoe = edgesOnEdge(i,iEdge)
+                  wgt = weightsOnEdge(i,iEdge)
+                  CoriolisTerm = CoriolisTerm + wgt  &
+                               * 0.5*(normalBarotropicVelocityCur(eoe)+normalBarotropicVelocitySubcycleCur(eoe)) * fEdge(eoe)
+               end do
+                    barotropicCoriolisTerm(iEdge) = CoriolisTerm
+
+               normalBarotropicVelocitySubcycleNew(iEdge) &
+                  = temp_mask &
+                  * (normalBarotropicVelocityCur(iEdge) &
+                  - dt * (-barotropicCoriolisTerm(iEdge) + gravity &
+                  * ( (alpha1*sshSubcycleCur(cell2)+alpha2*sshCur(cell2)) - (alpha1*sshSubcycleCur(cell1)+alpha2*sshCur(cell1))) &
+                  / dcEdge(iEdge) - barotropicForcing(iEdge)))
             end do ! iEdge
 
             do iEdge = 1, nEdges

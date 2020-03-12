@@ -49,7 +49,7 @@ module ocn_fortrilinos_imp_mod
   real(norm_type), dimension(:) :: norms(1)
   integer(global_ordinal_type) :: cols(1)
   real(scalar_type) :: vals(1)
-  real(scalar_type) :: r0, sone = 1., szero = 0., tol, val
+  real(scalar_type),save :: r0, sone = 1., szero = 0., tol, val
 
   ! For MPAS-O -----------------------------------------------------------------
   type (domain_type) :: domain
@@ -373,6 +373,17 @@ module ocn_fortrilinos_imp_mod
      block => block % next
   end do  ! block
 
+  ! Step 0: create a handle
+  solver_handle = TrilinosSolver(); FORTRILINOS_CHECK_IERR()
+
+  ! Step 1: initialize a handle
+  call solver_handle%init(comm); FORTRILINOS_CHECK_IERR()
+    
+  ! Step 2: setup the problem
+  call solver_handle%setup_matrix(A); FORTRILINOS_CHECK_IERR()
+
+  ! Step 3: setup the solver
+  call solver_handle%setup_solver(plist); FORTRILINOS_CHECK_IERR()
 
   endif ! INIT_belos
 
@@ -459,20 +470,20 @@ module ocn_fortrilinos_imp_mod
   residual = TpetraMultiVector(map,num_vecs,.false.); FORTRILINOS_CHECK_IERR()
 
   ! Step 0: create a handle
-  solver_handle = TrilinosSolver(); FORTRILINOS_CHECK_IERR()
+! solver_handle = TrilinosSolver(); FORTRILINOS_CHECK_IERR()
 
   ! ------------------------------------------------------------------
   ! Explicit setup and solve
   ! ------------------------------------------------------------------
 
   ! Step 1: initialize a handle
-  call solver_handle%init(comm); FORTRILINOS_CHECK_IERR()
-    
-  ! Step 2: setup the problem
-  call solver_handle%setup_matrix(A); FORTRILINOS_CHECK_IERR()
+! call solver_handle%init(comm); FORTRILINOS_CHECK_IERR()
+!   
+! ! Step 2: setup the problem
+! call solver_handle%setup_matrix(A); FORTRILINOS_CHECK_IERR()
 
-  ! Step 3: setup the solver
-  call solver_handle%setup_solver(plist); FORTRILINOS_CHECK_IERR()
+! ! Step 3: setup the solver
+! call solver_handle%setup_solver(plist); FORTRILINOS_CHECK_IERR()
 
   ! Calculate initial residual
   call A%apply(X, residual, TeuchosNO_TRANS, sone, szero); FORTRILINOS_CHECK_IERR()
@@ -510,7 +521,7 @@ module ocn_fortrilinos_imp_mod
        
 
   ! Step 5: clean up
-  call solver_handle%finalize(); FORTRILINOS_CHECK_IERR()
+! call solver_handle%finalize(); FORTRILINOS_CHECK_IERR()
 
   ! ------------------------------------------------------------------
 

@@ -445,8 +445,8 @@ llvm:
 	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI" )
 
 
-FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos_MPI_Release_test
-#FORTRILINOS_ROOT    = /Users/3hk/home/programs/Trilinos_MPI_Release_test
+#FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos_MPI_Release_test
+FORTRILINOS_ROOT    = /Users/3hk/home/programs/Trilinos_MPI_Release_test
 FORTRILINOS_BUILD   = $(FORTRILINOS_ROOT)/build
 FORTRILINOS_INSTALL = $(FORTRILINOS_ROOT)/build/Trilinos_install
 FORTRILINOS_INCLUDES = -I$(FORTRILINOS_INSTALL)/include -I/$(FORTRILINOS_INSTALL)/lib  -I/$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src -I/$(FORTRILINOS_ROOT)/build/ForTrilinos/src/interface -I$(FORTRILINOS_BUILD)/packages/nox/src
@@ -536,7 +536,7 @@ RANLIB = ranlib
 
 
 ifeq "$(FORTRILINOS)" "true"
-        FORTRILINOS_LIBS += -Wl,-rpath,$(FORTRILINOS_BUILD)/ForTrilinos/src/interface/src:$(FORTRILINOS_BUILD)/packages/ifpack2:$(FORTRILINOS_BUILD)/ForTrilinos/src/tpetra/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/teuchos/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src:$(FORTRILINOS_BUILD)/packages/nox/src:$(FORTRILINOS_INSTALL)/lib
+        FORTRILINOS_LIBS = -Wl,-rpath,$(FORTRILINOS_BUILD)/ForTrilinos/src/interface/src:$(FORTRILINOS_BUILD)/packages/ifpack2:$(FORTRILINOS_BUILD)/ForTrilinos/src/tpetra/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/teuchos/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src:$(FORTRILINOS_BUILD)/packages/nox/src:$(FORTRILINOS_INSTALL)/lib
         FORTRILINOS_LIBS += -dynamic -L$(FORTRILINOS_INSTALL)/lib
         FORTRILINOS_LIBS += -lfortrilinos -lforteuchos -lfortpetra -lnox -lforerror -lforutils -lstratimikos -lstratimikosbelos
 endif
