@@ -203,7 +203,7 @@ module ocn_fortrilinos_imp_mod
   ! ------------------------------------------------------------------
   ! Step 0: Construct tri-diagonal matrix
   n_global = -1
-  map = TpetraMap(n_global, nCellsArray(1), comm); FORTRILINOS_CHECK_IERR()
+  map = TpetraMap(n_global, nCellsArray(1), comm) !; FORTRILINOS_CHECK_IERR()
 
   max_entries_per_row = 8
   A = TpetraCrsMatrix(map, max_entries_per_row, TpetraStaticProfile)
@@ -271,7 +271,7 @@ module ocn_fortrilinos_imp_mod
           
      end do ! iCell
 
-     call A%fillComplete(); FORTRILINOS_CHECK_IERR()
+     call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
 
      block => block % next
   end do  ! block
@@ -283,11 +283,11 @@ module ocn_fortrilinos_imp_mod
 
   ! Read in the parameterList
   call mpas_timer_start("fort list plist")
-  plist = ParameterList("Stratimikos"); FORTRILINOS_CHECK_IERR()
+  plist = ParameterList("Stratimikos") !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort list plist")
 
   call mpas_timer_start("fort list load xml")
-  call load_from_xml(plist, "stratimikos.xml"); FORTRILINOS_CHECK_IERR()
+  call load_from_xml(plist, "stratimikos.xml") !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort list load xml")
 
 
@@ -350,9 +350,11 @@ module ocn_fortrilinos_imp_mod
 
      ! A : Coefficient matrix -------------------------------------------------!
 
-     call A%resumeFill(); FORTRILINOS_CHECK_IERR()
+     call A%resumeFill() !; FORTRILINOS_CHECK_IERR()
 
+     call mpas_timer_start("fort mat AllToScalar")
      call A%setAllToScalar(szero)
+     call mpas_timer_stop("fort mat AllToScalar")
 
      do iCell = 1, nCellsArray(1)
 
@@ -387,7 +389,7 @@ module ocn_fortrilinos_imp_mod
      end do ! iCell
 
 
-  call A%fillComplete(); FORTRILINOS_CHECK_IERR()
+  call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
 
   call mpas_timer_stop("fort mat setup")
 
@@ -439,49 +441,49 @@ module ocn_fortrilinos_imp_mod
   call mpas_timer_stop("fort resid")
 
   call mpas_timer_start("fort Vector")
-  B = TpetraMultiVector(map, CGvec_r0(1:nCellsArray(1)), lda, num_vecs); FORTRILINOS_CHECK_IERR()
-  X = TpetraMultiVector(map, sshSubcycleCur(1:nCellsArray(1)), lda, num_vecs); FORTRILINOS_CHECK_IERR()
+  B = TpetraMultiVector(map, CGvec_r0(1:nCellsArray(1)), lda, num_vecs) !; FORTRILINOS_CHECK_IERR()
+  X = TpetraMultiVector(map, sshSubcycleCur(1:nCellsArray(1)), lda, num_vecs) !; FORTRILINOS_CHECK_IERR()
 
-  residual = TpetraMultiVector(map,num_vecs,.false.); FORTRILINOS_CHECK_IERR()
+  residual = TpetraMultiVector(map,num_vecs,.false.) !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort Vector")
 
 
   call mpas_timer_start("fort solver setup")
   ! Step 0: create a handle
-  solver_handle = TrilinosSolver(); FORTRILINOS_CHECK_IERR()
+  solver_handle = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
 
   ! ------------------------------------------------------------------
   ! Explicit setup and solve
   ! ------------------------------------------------------------------
 
   ! Step 1: initialize a handle
-  call solver_handle%init(comm); FORTRILINOS_CHECK_IERR()
+  call solver_handle%init(comm) !; FORTRILINOS_CHECK_IERR()
     
   ! Step 2: setup the problem
-  call solver_handle%setup_matrix(A); FORTRILINOS_CHECK_IERR()
+  call solver_handle%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
 
   ! Step 3: setup the solver
-  call solver_handle%setup_solver(plist); FORTRILINOS_CHECK_IERR()
+  call solver_handle%setup_solver(plist) !; FORTRILINOS_CHECK_IERR()
 
   call mpas_timer_stop("fort solver setup")
 
   call mpas_timer_start("fort init resid")
   ! Calculate initial residual
-  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero); FORTRILINOS_CHECK_IERR()
-  call residual%update(sone, B, -sone); FORTRILINOS_CHECK_IERR()
-  call residual%norm2(norms); FORTRILINOS_CHECK_IERR()
+  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
+  call residual%update(sone, B, -sone) !; FORTRILINOS_CHECK_IERR()
+  call residual%norm2(norms) !; FORTRILINOS_CHECK_IERR()
   r0 = norms(1)
   call mpas_timer_stop("fort init resid")
 
   call mpas_timer_start("fort solve")
-  call solver_handle%solve(B, X); FORTRILINOS_CHECK_IERR()
+  call solver_handle%solve(B, X) !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort solve")
 
   call mpas_timer_start("fort check")
   ! Check the solution
-  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero); FORTRILINOS_CHECK_IERR()
-  call residual%update(sone, B, -sone); FORTRILINOS_CHECK_IERR()
-  call residual%norm2(norms); FORTRILINOS_CHECK_IERR()
+  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
+  call residual%update(sone, B, -sone) !; FORTRILINOS_CHECK_IERR()
+  call residual%norm2(norms) !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort check")
 
   if ( norms(1)/r0 > tol) then
@@ -508,7 +510,7 @@ module ocn_fortrilinos_imp_mod
 
   call mpas_timer_start("fort final")
   ! Step 5: clean up
-  call solver_handle%finalize(); FORTRILINOS_CHECK_IERR()
+  call solver_handle%finalize() !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort final")
 
   ! ------------------------------------------------------------------
