@@ -201,7 +201,7 @@ module ocn_fortrilinos_imp_mod
 ! krylov_list = solver_list%sublist(belos_list%get_string('Solver Type'))
 
   ! ------------------------------------------------------------------
-  ! Step 0: Construct tri-diagonal matrix
+  ! Step 0: Construct coefficient matrix
   n_global = -1
   map = TpetraMap(n_global, nCellsArray(1), comm) !; FORTRILINOS_CHECK_IERR()
 
