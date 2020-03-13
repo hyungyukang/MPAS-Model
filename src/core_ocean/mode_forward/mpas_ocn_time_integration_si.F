@@ -1068,6 +1068,15 @@ module ocn_time_integration_si
             block => block % next
           end do  ! block
 
+            call mpas_timer_start("si halo init")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo init")
+
+
           call mpas_timer_stop("si fortrilinos btrmode")
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1120,15 +1129,15 @@ module ocn_time_integration_si
                cell2 = cellsOnEdge(2,iEdge)
 
                ! Compute the barotropic Coriolis term, -f*uPerp
- !             CoriolisTerm = 0.0_RKIND
+               CoriolisTerm = 0.0_RKIND
 
- !             do i = 1, nEdgesOnEdge(iEdge)
- !                eoe = edgesOnEdge(i,iEdge)
- !                wgt = weightsOnEdge(i,iEdge)
- !                CoriolisTerm = Coriolisterm + wgt  &
- !                             * normalBarotropicVelocityCur(eoe) * fEdge(eoe)
- !             end do
- !             barotropicCoriolisTerm(iEdge) = CoriolisTerm
+               do i = 1, nEdgesOnEdge(iEdge)
+                  eoe = edgesOnEdge(i,iEdge)
+                  wgt = weightsOnEdge(i,iEdge)
+                  CoriolisTerm = Coriolisterm + wgt  &
+                               * 0.5*(normalBarotropicVelocityCur(eoe)+normalBarotropicVelocitySubcycleCur(eoe)) * fEdge(eoe)
+               end do
+               barotropicCoriolisTerm(iEdge) = CoriolisTerm
 
                normalBarotropicVelocitySubcycleNew(iEdge) &
                   = temp_mask &
