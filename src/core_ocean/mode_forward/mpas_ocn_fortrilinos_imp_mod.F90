@@ -276,7 +276,6 @@ module ocn_fortrilinos_imp_mod
      block => block % next
   end do  ! block
 
-  endif ! INIT_belos
 
 
   call mpas_timer_start("fort list")
@@ -299,6 +298,11 @@ module ocn_fortrilinos_imp_mod
   krylov_list = solver_list%sublist(belos_list%get_string('Solver Type'))
   call mpas_timer_stop("fort list lists")
 
+  call mpas_timer_stop("fort list")
+
+
+  endif ! INIT_belos
+
   call mpas_timer_start("fort list tol")
      if ( stage == 'o' ) then
        call krylov_list%set('Convergence Tolerance', 1e-2)
@@ -309,7 +313,6 @@ module ocn_fortrilinos_imp_mod
      endif
   call mpas_timer_stop("fort list tol")
 
-  call mpas_timer_stop("fort list")
 
   call mpas_timer_start("fort mat setup")
 
@@ -498,6 +501,7 @@ module ocn_fortrilinos_imp_mod
 
      block => block % next
   end do  ! block
+
 
   call mpas_timer_start("si halo ssh")
   call mpas_dmpar_exch_group_create(domain, iterGroupName)
