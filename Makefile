@@ -447,6 +447,7 @@ llvm:
 
 #FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos_MPI_Release_test
 FORTRILINOS_ROOT    = /Users/3hk/home/programs/Trilinos_MPI_Release_test
+#FORTRILINOS_ROOT    = /Users/3hk/home/programs/Trilinos_MPI_Release_o3
 FORTRILINOS_BUILD   = $(FORTRILINOS_ROOT)/build
 FORTRILINOS_INSTALL = $(FORTRILINOS_ROOT)/build/Trilinos_install
 FORTRILINOS_INCLUDES = -I$(FORTRILINOS_INSTALL)/include -I/$(FORTRILINOS_INSTALL)/lib  -I/$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src -I/$(FORTRILINOS_ROOT)/build/ForTrilinos/src/interface -I$(FORTRILINOS_BUILD)/packages/nox/src

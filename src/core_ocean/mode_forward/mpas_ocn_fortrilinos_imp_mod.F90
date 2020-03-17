@@ -7,12 +7,12 @@ module ocn_fortrilinos_imp_mod
   use forteuchos
   use fortpetra
   use fortest
-  use ocn_belos_mod
 !---------------------------
   use mpas_derived_types
   use mpas_pool_routines
   use mpas_constants
   use mpas_dmpar
+  use mpas_timer
 !---------------------------
 
   implicit none
@@ -107,7 +107,7 @@ module ocn_fortrilinos_imp_mod
    
   ! INIT belos -----------------------------------------------------------------
   if ( init_belos ) then
-!   print*, 'PRINT in init'
+    print*, 'PRINT in init'
     init_belos = .false.
     my_rank = comm%getRank()
     num_procs = comm%getSize()
@@ -288,7 +288,6 @@ module ocn_fortrilinos_imp_mod
   call mpas_timer_start("fort list load xml")
   call load_from_xml(plist, "stratimikos.xml") !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort list load xml")
-
 
   ! Get tolerance from the parameter list
   call mpas_timer_start("fort list lists")

@@ -2,7 +2,6 @@
 
 OBJS = mpas_ocn_forward_mode.o \
        mpas_ocn_fortrilinos_imp_mod.o \
-       mpas_ocn_fortrilinos_belos_mod.o \
        mpas_ocn_time_integration.o \
        mpas_ocn_time_integration_rk4.o \
        mpas_ocn_time_integration_si.o \
@@ -20,9 +19,7 @@ mpas_ocn_time_integration_si.o: mpas_ocn_fortrilinos_imp_mod.o
 
 mpas_ocn_time_integration_split.o: 
 
-mpas_ocn_fortrilinos_imp_mod.o: mpas_ocn_fortrilinos_belos_mod.o
-
-mpas_ocn_fortrilinos_belos_mod.o:
+mpas_ocn_fortrilinos_imp_mod.o:
 
 mpas_ocn_forward_mode.o: mpas_ocn_time_integration.o \
                          mpas_ocn_time_integration_rk4.o \
@@ -37,7 +34,6 @@ clean:
 
 
 ifeq "$(FORTRILINOS)" "true"
-	$(FC) $(CPPFLAGS) $(FFLAGS) -c mpas_ocn_fortrilinos_belos_mod.F90 $(CPPINCLUDES) $(FCINCLUDES) $(FORTRILINOS_INCLUDES)
 	$(FC) $(CPPFLAGS) $(FFLAGS) -c mpas_ocn_fortrilinos_imp_mod.F90 $(CPPINCLUDES) $(FCINCLUDES) $(FORTRILINOS_INCLUDES)
 endif
 

@@ -755,7 +755,7 @@ module ocn_forward_mode
       call mpas_destroy_clock(domain % clock, ierr)
 
       call mpas_decomp_destroy_decomp_list(domain % decompositions)
-
+ 
    end function ocn_forward_mode_finalize!}}}
 
 end module ocn_forward_mode
