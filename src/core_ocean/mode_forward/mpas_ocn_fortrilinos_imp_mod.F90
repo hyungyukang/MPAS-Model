@@ -511,10 +511,10 @@ module ocn_fortrilinos_imp_mod
   call mpas_timer_stop("si halo ssh")
        
 
-  call mpas_timer_start("fort final")
-  ! Step 5: clean up
-  call solver_handle%finalize() !; FORTRILINOS_CHECK_IERR()
-  call mpas_timer_stop("fort final")
+! call mpas_timer_start("fort final")
+! ! Step 5: clean up
+! call solver_handle%finalize() !; FORTRILINOS_CHECK_IERR()
+! call mpas_timer_stop("fort final")
 
   ! ------------------------------------------------------------------
 
