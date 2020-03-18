@@ -390,7 +390,6 @@ module ocn_fortrilinos_imp_mod
 
      end do ! iCell
 
-
   call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
 
   call mpas_timer_stop("fort mat setup")

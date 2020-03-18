@@ -915,17 +915,24 @@ module ocn_time_integration_si
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
-         ! Stage 2.2 : A semi-implicit barotropic mode solver using ForTrilinos
+         ! Stage 2.2 : Outer iteration
          !
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
 
          ! Outer loop -----------------------------------------------------------------------------!
 
          call mpas_timer_start("si fortrilinos btrmode")
+
          call ocn_time_integration_imp_btrmode(domain,dt,itotal_num_cells,'o')
+
          call mpas_timer_stop("si fortrilinos btrmode")
 
+
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+         !
+         ! Stage 2.3 : Barotropic velocity update using the lagged SSH
+         !
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
          call mpas_timer_start("si btr vel update")
 
@@ -1037,16 +1044,25 @@ module ocn_time_integration_si
 
          call mpas_timer_stop("si btr vel update")
 
+
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+         !
+         ! Stage 2.4 : Main iteration
+         !
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
          ! Main loop ------------------------------------------------------------------------------!
 
          call mpas_timer_start("si fortrilinos btrmode")
+
          call ocn_time_integration_imp_btrmode(domain,dt,itotal_num_cells,'m')
+
          call mpas_timer_stop ("si fortrilinos btrmode")
 
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
-         ! Stage 2.6 : Barotropic velocity update
+         ! Stage 2.5 : Barotropic velocity update
          !
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
