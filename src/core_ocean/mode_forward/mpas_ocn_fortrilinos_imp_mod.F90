@@ -37,12 +37,12 @@ module ocn_fortrilinos_imp_mod
   integer :: n,numvalid
   integer(global_ordinal_type) :: offset,icol,irow,icol1,icol2,irow1,irow2,gblrow
 
-  type(TeuchosComm) :: comm
+  type(TeuchosComm),save :: comm
   type(ParameterList),save:: plist, linear_solver_list, belos_list, solver_list, krylov_list
   type(TrilinosSolver),save :: solver_handle
   type(TpetraMap),save :: map
   type(TpetraCrsMatrix),save :: A
-  type(TpetraMultiVector) :: B, X, residual
+  type(TpetraMultiVector),save :: B, X, residual
 
   real(scalar_type), dimension(:), allocatable :: lhs, rhs
   real(scalar_type), dimension(:), pointer :: solvec
@@ -103,12 +103,12 @@ module ocn_fortrilinos_imp_mod
   ! ----------------------------------------------------------------------------
 
   dminfo = domain % dminfo
-  comm = TeuchosComm(dminfo % comm)
    
   ! INIT belos -----------------------------------------------------------------
   if ( init_belos ) then
     print*, 'PRINT in init'
     init_belos = .false.
+    comm = TeuchosComm(dminfo % comm)
     my_rank = comm%getRank()
     num_procs = comm%getSize()
 
