@@ -63,7 +63,7 @@ module ocn_fortrilinos_imp_mod
   type (mpas_pool_type), pointer :: tendPool
 
   integer :: nCells, nEdges
-  integer :: i,j,iCell,iEdge,cell1,cell2,isum
+  integer :: i,j,iCell,iEdge,cell1,cell2,isum, it
   integer :: sshEdgeLag1,sshEdgeLag2
   integer :: thicknessSumLag1,thicknessSumLag2
   integer :: sshDiffNew1, sshDiffNew2,sshDiffNew
@@ -201,83 +201,6 @@ module ocn_fortrilinos_imp_mod
 ! krylov_list = solver_list%sublist(belos_list%get_string('Solver Type'))
 
   ! ------------------------------------------------------------------
-  ! Step 0: Construct coefficient matrix
-  n_global = -1
-  map = TpetraMap(n_global, nCellsArray(1), comm) !; FORTRILINOS_CHECK_IERR()
-
-  max_entries_per_row = 8
-  A = TpetraCrsMatrix(map, max_entries_per_row, TpetraStaticProfile)
-
-  ! -- MPAS-O SpMV -------------------------------------------------------------
-  block => domain % blocklist
-  do while (associated(block))
-
-     call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-     call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
-     call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
-     call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
-     call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-
-     call mpas_pool_get_array(meshPool, 'nEdgesOnCell',            nEdgesOnCell           )
-     call mpas_pool_get_array(meshPool, 'edgesOnCell',             edgesOnCell            )
-     call mpas_pool_get_array(meshPool, 'cellsOnEdge',             cellsOnEdge            )
-     call mpas_pool_get_array(meshPool, 'dcEdge',                  dcEdge                 )
-     call mpas_pool_get_array(meshPool, 'bottomDepth',             bottomDepth            )
-     call mpas_pool_get_array(meshPool, 'edgeSignOnCell',          edgeSignOnCell         )
-     call mpas_pool_get_array(meshPool, 'dvEdge',                  dvEdge                 )
-     call mpas_pool_get_array(meshPool, 'areaCell',                areaCell               )
-
-     call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
-     call mpas_pool_get_array(statePool, 'ssh', sshNew, 2)
-     call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
-     call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
-     call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur,1)
-     call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
-     call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
-
-     call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0 )
-     call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1 )
-
-     nCells = nCellsArray(1)
-     nEdges = nEdgesArray(2)
-
-     vals(1) = szero
-
-     do iCell = 1, nCellsArray(1)
-        gblrow  = globalIdx(iCell)
-
-        do i = 1, nEdgesOnCell(iCell)
-          iEdge = edgesOnCell(i, iCell)
-          cell1 = cellsOnEdge(1, iEdge)
-          cell2 = cellsOnEdge(2, iEdge)
-
-          sshEdgeLag = 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2))
-          thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1),bottomDepth(cell2))
-          fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
-
-          if ( globalIdx(cell2) >  0 ) then
-          cols(1) = globalIdx(cell1)
-          call A%insertGlobalValues(gblrow, cols, vals)
-
-          cols(1) = globalIdx(cell2)
-          call A%insertGlobalValues(gblrow, cols, vals)
-          endif
-
-        end do ! i
-
-        cols(1) = globalIdx(iCell)
-        call A%insertGlobalValues(gblrow, cols, vals)
-          
-     end do ! iCell
-
-     call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
-
-     block => block % next
-  end do  ! block
-
-
-
   call mpas_timer_start("fort list")
 
   ! Read in the parameterList
@@ -316,8 +239,25 @@ module ocn_fortrilinos_imp_mod
   call mpas_timer_start("fort mat setup")
 
   ! -- MPAS-O SpMV -------------------------------------------------------------
+  ! Initialize the matrix
+  n_global = -1
+  map = TpetraMap(n_global, nCellsArray(1), comm) !; FORTRILINOS_CHECK_IERR()
+
+  max_entries_per_row = 8
+  A = TpetraCrsMatrix(map, max_entries_per_row, TpetraStaticProfile)
+
+  solver_handle = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
+
+  ! initialize a handle
+  call solver_handle%init(comm) !; FORTRILINOS_CHECK_IERR()
+    
+
+  it = 0
+
   block => domain % blocklist
   do while (associated(block))
+
+     it = it + 1
 
      call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
      call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
@@ -352,11 +292,13 @@ module ocn_fortrilinos_imp_mod
 
      ! A : Coefficient matrix -------------------------------------------------!
 
-     call A%resumeFill() !; FORTRILINOS_CHECK_IERR()
+     if (it > 1) then
+       call A%resumeFill() !; FORTRILINOS_CHECK_IERR()
 
-     call mpas_timer_start("fort mat AllToScalar")
-     call A%setAllToScalar(szero)
-     call mpas_timer_stop("fort mat AllToScalar")
+       call mpas_timer_start("fort mat AllToScalar")
+       call A%setAllToScalar(szero)
+       call mpas_timer_stop("fort mat AllToScalar")
+     endif
 
      do iCell = 1, nCellsArray(1)
 
@@ -448,23 +390,18 @@ module ocn_fortrilinos_imp_mod
   residual = TpetraMultiVector(map,num_vecs,.false.) !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort Vector")
 
-
-  call mpas_timer_start("fort solver setup")
-  ! Step 0: create a handle
-  solver_handle = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
-
   ! ------------------------------------------------------------------
   ! Explicit setup and solve
   ! ------------------------------------------------------------------
 
-  ! Step 1: initialize a handle
-  call solver_handle%init(comm) !; FORTRILINOS_CHECK_IERR()
-    
+  call mpas_timer_start("fort solver setup")
   ! Step 2: setup the problem
   call solver_handle%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
 
-  ! Step 3: setup the solver
-  call solver_handle%setup_solver(plist) !; FORTRILINOS_CHECK_IERR()
+  if (it == 1) then
+    ! Step 3: setup the solver
+    call solver_handle%setup_solver(plist) !; FORTRILINOS_CHECK_IERR()
+  endif
 
   call mpas_timer_stop("fort solver setup")
 
