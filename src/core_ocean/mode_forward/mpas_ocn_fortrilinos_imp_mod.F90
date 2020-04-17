@@ -38,8 +38,9 @@ module ocn_fortrilinos_imp_mod
   integer(global_ordinal_type) :: offset,icol,irow,icol1,icol2,irow1,irow2,gblrow
 
   type(TeuchosComm),save :: comm
-  type(ParameterList),save:: plist, linear_solver_list, belos_list, solver_list, krylov_list
-  type(TrilinosSolver),save :: solver_handle
+  type(ParameterList),save:: plist_o, linear_solver_list_o, belos_list_o, solver_list_o, krylov_list_o
+  type(ParameterList),save:: plist_m, linear_solver_list_m, belos_list_m, solver_list_m, krylov_list_m
+  type(TrilinosSolver),save :: solver_handle_o,solver_handle_m
   type(TpetraMap),save :: map
   type(TpetraCrsMatrix),save :: A
   type(TpetraMultiVector),save :: B, X, residual
@@ -49,7 +50,7 @@ module ocn_fortrilinos_imp_mod
   real(norm_type), dimension(:) :: norms(1)
   integer(global_ordinal_type) :: cols(1)
   real(scalar_type) :: vals(1)
-  real(scalar_type) :: r0, sone = 1., szero = 0., tol, val
+  real(scalar_type) :: r0, sone = 1., szero = 0., tol_o,tol_m, val
 
   ! For MPAS-O -----------------------------------------------------------------
   type (domain_type) :: domain
@@ -99,7 +100,7 @@ module ocn_fortrilinos_imp_mod
   integer :: ierr,nvec,n_tot_vec
   integer, dimension(:), allocatable,save :: globalIdx
   integer :: sCellIdx,eCellIdx,mpi_ierr
-  logical :: init_belos = .true.
+  logical :: init_belos = .true., init_belos_o = .true., init_belos_m = .true.
   ! ----------------------------------------------------------------------------
 
   dminfo = domain % dminfo
@@ -191,8 +192,8 @@ module ocn_fortrilinos_imp_mod
   ! ----------------------------------------------------------------------------
 
   ! Read in the parameterList
-! plist = ParameterList("Stratimikos"); FORTRILINOS_CHECK_IERR()
-! call load_from_xml(plist, "stratimikos.xml"); FORTRILINOS_CHECK_IERR()
+! plist = ParameterList("Stratimikos")!; FORTRILINOS_CHECK_IERR()
+! call load_from_xml(plist, "stratimikos.xml")!; FORTRILINOS_CHECK_IERR()
 
   ! Get tolerance from the parameter list
 ! linear_solver_list = plist%sublist('Linear Solver Types')
@@ -276,42 +277,40 @@ module ocn_fortrilinos_imp_mod
      block => block % next
   end do  ! block
 
-
-
-  call mpas_timer_start("fort list")
-
   ! Read in the parameterList
-  call mpas_timer_start("fort list plist")
-  plist = ParameterList("Stratimikos") !; FORTRILINOS_CHECK_IERR()
-  call mpas_timer_stop("fort list plist")
+  plist_o = ParameterList("Stratimikos") !; FORTRILINOS_CHECK_IERR()
+  plist_m = ParameterList("Stratimikos") !; FORTRILINOS_CHECK_IERR()
 
-  call mpas_timer_start("fort list load xml")
-  call load_from_xml(plist, "stratimikos.xml") !; FORTRILINOS_CHECK_IERR()
-  call mpas_timer_stop("fort list load xml")
+  call load_from_xml(plist_o, "stratimikos.xml") !; FORTRILINOS_CHECK_IERR()
+  call load_from_xml(plist_m, "stratimikos.xml") !; FORTRILINOS_CHECK_IERR()
 
   ! Get tolerance from the parameter list
-  call mpas_timer_start("fort list lists")
-  linear_solver_list = plist%sublist('Linear Solver Types')
-  belos_list = linear_solver_list%sublist(plist%get_string('Linear Solver Type'))
-  solver_list = belos_list%sublist('Solver Types')
-  krylov_list = solver_list%sublist(belos_list%get_string('Solver Type'))
-  call mpas_timer_stop("fort list lists")
+  linear_solver_list_o = plist_o%sublist('Linear Solver Types')
+  linear_solver_list_m = plist_m%sublist('Linear Solver Types')
 
-  call mpas_timer_stop("fort list")
+  belos_list_o = linear_solver_list_o%sublist(plist_o%get_string('Linear Solver Type'))
+  belos_list_m = linear_solver_list_m%sublist(plist_m%get_string('Linear Solver Type'))
 
+  solver_list_o = belos_list_o%sublist('Solver Types')
+  solver_list_m = belos_list_m%sublist('Solver Types')
+
+  krylov_list_o = solver_list_o%sublist(belos_list_o%get_string('Solver Type'))
+  krylov_list_m = solver_list_m%sublist(belos_list_m%get_string('Solver Type'))
+
+
+  call krylov_list_o%set('Convergence Tolerance', 1e-2)
+  tol_o = 1.0d-2
+  call krylov_list_m%set('Convergence Tolerance', 1e-8)
+  tol_m = 1.0d-8
+
+
+  solver_handle_o = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
+  solver_handle_m = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
+
+  call solver_handle_o%init(comm) !; FORTRILINOS_CHECK_IERR()
+  call solver_handle_m%init(comm) !; FORTRILINOS_CHECK_IERR()
 
   endif ! INIT_belos
-
-  call mpas_timer_start("fort list tol")
-     if ( stage == 'o' ) then
-       call krylov_list%set('Convergence Tolerance', 1e-2)
-       tol = 1.0d-2
-     else
-       call krylov_list%set('Convergence Tolerance', 1e-8)
-       tol = 1.0d-8
-     endif
-  call mpas_timer_stop("fort list tol")
-
 
   call mpas_timer_start("fort mat setup")
 
@@ -450,21 +449,28 @@ module ocn_fortrilinos_imp_mod
 
 
   call mpas_timer_start("fort solver setup")
-  ! Step 0: create a handle
-  solver_handle = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
 
   ! ------------------------------------------------------------------
   ! Explicit setup and solve
   ! ------------------------------------------------------------------
 
-  ! Step 1: initialize a handle
-  call solver_handle%init(comm) !; FORTRILINOS_CHECK_IERR()
-    
   ! Step 2: setup the problem
-  call solver_handle%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
+  if ( stage == 'o' ) then
+    call solver_handle_o%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
+  elseif ( stage == 'm' ) then
+    call solver_handle_m%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
+  endif
 
-  ! Step 3: setup the solver
-  call solver_handle%setup_solver(plist) !; FORTRILINOS_CHECK_IERR()
+
+  ! Step 3: setup the solver - Initial only
+  if ( init_belos_o .and. stage == 'o') then
+    call solver_handle_o%setup_solver(plist_o) !; FORTRILINOS_CHECK_IERR()
+    init_belos_o = .false.
+  elseif ( init_belos_m .and. stage == 'm') then
+    call solver_handle_m%setup_solver(plist_m) !; FORTRILINOS_CHECK_IERR()
+    init_belos_m = .false.
+  endif
+
 
   call mpas_timer_stop("fort solver setup")
 
@@ -477,7 +483,15 @@ module ocn_fortrilinos_imp_mod
   call mpas_timer_stop("fort init resid")
 
   call mpas_timer_start("fort solve")
-  call solver_handle%solve(B, X) !; FORTRILINOS_CHECK_IERR()
+
+
+  if ( stage == 'o' ) then
+    call solver_handle_o%solve(B, X) !; FORTRILINOS_CHECK_IERR()
+  elseif ( stage == 'm' ) then
+    call solver_handle_m%solve(B, X) !; FORTRILINOS_CHECK_IERR()
+  endif
+
+
   call mpas_timer_stop("fort solve")
 
   call mpas_timer_start("fort check")
@@ -487,15 +501,30 @@ module ocn_fortrilinos_imp_mod
   call residual%norm2(norms) !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort check")
 
-  if ( norms(1)/r0 > tol) then
+
+  if ( stage == 'o' .and. norms(1)/r0 > tol_o) then
+    write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
+    stop 1
+  elseif ( stage == 'm' .and. norms(1)/r0 > tol_m) then
     write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
     stop 1
   end if
+
 
   ! Get solution
   solvec => X%getData(ione)
   sshSubcycleCur(1:nCellsArray(1)) = solvec(1:nCellsArray(1))
   nullify(solvec)
+
+
+  call mpas_timer_start("si halo ssh")
+  call mpas_dmpar_exch_group_create(domain, iterGroupName)
+  call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
+  call mpas_threading_barrier()
+  call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+  call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+  call mpas_timer_stop("si halo ssh")
+
 
      block => block % next
   end do  ! block
@@ -515,20 +544,20 @@ module ocn_fortrilinos_imp_mod
 ! call solver_handle%finalize() !; FORTRILINOS_CHECK_IERR()
 ! call mpas_timer_stop("fort final")
 
-  ! ------------------------------------------------------------------
+! ------------------------------------------------------------------
 
 ! call krylov_list%release()
-! call solver_list%release; FORTRILINOS_CHECK_IERR()
-! call belos_list%release; FORTRILINOS_CHECK_IERR()
-! call linear_solver_list%release; FORTRILINOS_CHECK_IERR()
-! call solver_handle%release(); FORTRILINOS_CHECK_IERR()
-! call plist%release(); FORTRILINOS_CHECK_IERR()
+! call solver_list%release!; FORTRILINOS_CHECK_IERR()
+! call belos_list%release!; FORTRILINOS_CHECK_IERR()
+! call linear_solver_list%release!; FORTRILINOS_CHECK_IERR()
+! call solver_handle%release()!; FORTRILINOS_CHECK_IERR()
+! call plist%release()!; FORTRILINOS_CHECK_IERR()
 
-! call X%release(); FORTRILINOS_CHECK_IERR()
-! call B%release(); FORTRILINOS_CHECK_IERR()
-! call A%release(); FORTRILINOS_CHECK_IERR()
-! call map%release(); FORTRILINOS_CHECK_IERR()
-! call comm%release(); FORTRILINOS_CHECK_IERR()
+! call X%release()!; FORTRILINOS_CHECK_IERR()
+! call B%release()!; FORTRILINOS_CHECK_IERR()
+! call A%release()!; FORTRILINOS_CHECK_IERR()
+! call map%release()!; FORTRILINOS_CHECK_IERR()
+! call comm%release()!; FORTRILINOS_CHECK_IERR()
 
 ! deallocate(globalIdx)
 ! deallocate(aval)
