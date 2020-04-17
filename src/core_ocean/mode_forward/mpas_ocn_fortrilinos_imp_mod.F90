@@ -105,7 +105,7 @@ module ocn_fortrilinos_imp_mod
 
   dminfo = domain % dminfo
    
-  ! INIT belos -----------------------------------------------------------------
+  ! INIT belos :: Initial only ===================================================================!
   if ( init_belos ) then
     print*, 'PRINT in init'
     init_belos = .false.
@@ -189,19 +189,8 @@ module ocn_fortrilinos_imp_mod
 
       lda = nCellsArray(1)
 
+
   ! ----------------------------------------------------------------------------
-
-  ! Read in the parameterList
-! plist = ParameterList("Stratimikos")!; FORTRILINOS_CHECK_IERR()
-! call load_from_xml(plist, "stratimikos.xml")!; FORTRILINOS_CHECK_IERR()
-
-  ! Get tolerance from the parameter list
-! linear_solver_list = plist%sublist('Linear Solver Types')
-! belos_list = linear_solver_list%sublist(plist%get_string('Linear Solver Type'))
-! solver_list = belos_list%sublist('Solver Types')
-! krylov_list = solver_list%sublist(belos_list%get_string('Solver Type'))
-
-  ! ------------------------------------------------------------------
   ! Step 0: Construct coefficient matrix
   n_global = -1
   map = TpetraMap(n_global, nCellsArray(1), comm) !; FORTRILINOS_CHECK_IERR()
@@ -297,20 +286,20 @@ module ocn_fortrilinos_imp_mod
   krylov_list_o = solver_list_o%sublist(belos_list_o%get_string('Solver Type'))
   krylov_list_m = solver_list_m%sublist(belos_list_m%get_string('Solver Type'))
 
-
   call krylov_list_o%set('Convergence Tolerance', 1e-2)
   tol_o = 1.0d-2
   call krylov_list_m%set('Convergence Tolerance', 1e-8)
   tol_m = 1.0d-8
 
 
+  ! Trilinos solver handle:  'o' for outer iteration, 'm' for main iteration
   solver_handle_o = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
   solver_handle_m = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
 
   call solver_handle_o%init(comm) !; FORTRILINOS_CHECK_IERR()
   call solver_handle_m%init(comm) !; FORTRILINOS_CHECK_IERR()
+  endif ! INIT_belos :: Initial only =============================================================!
 
-  endif ! INIT_belos
 
   call mpas_timer_start("fort mat setup")
 
