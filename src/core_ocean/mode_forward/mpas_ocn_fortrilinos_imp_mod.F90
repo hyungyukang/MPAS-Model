@@ -32,6 +32,7 @@ module ocn_fortrilinos_imp_mod
 
   integer(global_size_type) :: n_global,n_local
   integer(size_type),save :: max_entries_per_row, num_vecs = 1, lda,ione = 1,itwo=2,izero=0
+  integer,save :: max_entries_per_row2
   integer(int_type) :: row_nnz
 
   integer :: n,numvalid
@@ -49,6 +50,8 @@ module ocn_fortrilinos_imp_mod
   real(scalar_type), dimension(:), pointer :: solvec
   real(norm_type), dimension(:) :: norms(1)
   integer(global_ordinal_type) :: cols(1)
+  integer(global_ordinal_type),dimension(:),allocatable,save :: colse
+  real(scalar_type),dimension(:),allocatable,save :: valse
   real(scalar_type) :: vals(1)
   real(scalar_type) :: r0, sone = 1., szero = 0., tol_o,tol_m, val
 
@@ -102,6 +105,7 @@ module ocn_fortrilinos_imp_mod
   integer :: sCellIdx,eCellIdx,mpi_ierr
   logical :: init_belos = .true., init_belos_o = .true., init_belos_m = .true.
   ! ----------------------------------------------------------------------------
+    
 
   dminfo = domain % dminfo
    
@@ -266,6 +270,14 @@ module ocn_fortrilinos_imp_mod
      block => block % next
   end do  ! block
 
+  max_entries_per_row2 = max_entries_per_row*2
+  allocate(colse(max_entries_per_row2))
+  allocate(valse(max_entries_per_row2))
+   
+  colse(:) = 0
+  valse(:) = 0.0_RKIND
+
+
   ! Read in the parameterList
   plist_o = ParameterList("Stratimikos") !; FORTRILINOS_CHECK_IERR()
   plist_m = ParameterList("Stratimikos") !; FORTRILINOS_CHECK_IERR()
@@ -298,6 +310,7 @@ module ocn_fortrilinos_imp_mod
 
   call solver_handle_o%init(comm) !; FORTRILINOS_CHECK_IERR()
   call solver_handle_m%init(comm) !; FORTRILINOS_CHECK_IERR()
+
   endif ! INIT_belos :: Initial only =============================================================!
 
 
@@ -346,7 +359,11 @@ module ocn_fortrilinos_imp_mod
      call A%setAllToScalar(szero)
      call mpas_timer_stop("fort mat AllToScalar")
 
+
      do iCell = 1, nCellsArray(1)
+
+        colse(:) = 0
+        valse(:) = 0.d0
 
         gblrow  = globalIdx(iCell)
 
@@ -360,21 +377,17 @@ module ocn_fortrilinos_imp_mod
           thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1),bottomDepth(cell2))
           fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
 
-          if ( globalIdx(cell2) > 0) then
-          cols(1) = globalIdx(cell1)
-          vals(1) = -fluxAx 
-          numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+          colse(i) = globalIdx(cell1)
+          valse(i) = -fluxAx 
 
-          cols(1) = globalIdx(cell2)
-          vals(1) = +fluxAx 
-          numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
-          endif
+          colse(i+7) = globalIdx(cell2)
+          valse(i+7) = +fluxAx 
 
         end do ! i
 
-        cols(1) = globalIdx(iCell)
-        vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
-        numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+        colse(max_entries_per_row2) = globalIdx(iCell)
+        valse(max_entries_per_row2) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+        numvalid = A%sumIntoGlobalValues(gblrow,colse,valse)
 
      end do ! iCell
 
