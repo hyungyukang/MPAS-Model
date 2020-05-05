@@ -65,7 +65,8 @@ module ocn_fortrilinos_imp_mod
   real(scalar_type), dimension(:), pointer :: solvec
   real(norm_type), dimension(:) :: norms(1)
   integer(global_ordinal_type) :: cols(1)
-  integer(global_ordinal_type),dimension(:),allocatable,save :: colse
+  !integer(global_ordinal_type),dimension(:),allocatable,save :: colse
+  integer,dimension(:),allocatable,save :: colse
   real(scalar_type),dimension(:),allocatable,save :: valse
   real(scalar_type) :: vals(1)
   real(scalar_type) :: r0, sone = 1., szero = 0., tol_o,tol_m, val
@@ -619,10 +620,11 @@ module ocn_fortrilinos_imp_mod
      do iCell = 1, nCellsArray(1)
 
 
-        !cole(:) = 0
-        !valse(:) = 0.d0
-        !row = iCell ! map%getLocalElement((map%getGlobalElement(iCell)))
-        row = map%getLocalElement((map%getGlobalElement(iCell)))
+        colse(:) = 0
+        valse(:) = 0.d0
+
+        row = iCell ! map%getLocalElement((map%getGlobalElement(iCell)))
+        !row = map%getLocalElement((map%getGlobalElement(iCell)))
 
         do i = 1, nEdgesOnCell(iCell)
           iEdge = edgesOnCell(i, iCell)
@@ -635,29 +637,35 @@ module ocn_fortrilinos_imp_mod
           fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
 
 
-          if ( globalIdx(cell2) > 0 ) then
-          col(1) = cell1 !map%getLocalElement((map%getGlobalElement(cell1)))
-          vals(1) = -fluxAx 
-          numvalid = C%sumIntoLocalValues(row,col,vals)
+!         if ( globalIdx(cell2) > 0 ) then
+!         col(1) = cell1 !map%getLocalElement((map%getGlobalElement(cell1)))
+!         vals(1) = -fluxAx 
+!         numvalid = C%sumIntoLocalValues(row,col,vals)
 
-          col(1) = cell2 !map%getLocalElement((map%getGlobalElement(cell2)))
-          vals(1) = +fluxAx 
-          numvalid = C%sumIntoLocalValues(row,col,vals)
+          colse(i) = cell1
+          valse(i) = -fluxAx
+!         numvalid = C%sumIntoLocalValues(row,colse,valse)
 
-!         !cole(i+7) = cell2
-          !cole(i+7) = map%getLocalElement((map%getGlobalElement(cell2)))
-          !valse(i+7) = 1.1111111111
+          !col(1) = cell2 !map%getLocalElement((map%getGlobalElement(cell2)))
+          !vals(1) = +fluxAx 
+          !numvalid = C%sumIntoLocalValues(row,col,vals)
+
+          colse(i+7) = cell2
+          valse(i+7) = fluxAx
+!         numvalid = C%sumIntoLocalValues(row,colse,valse)
           !if ( my_rank ==  0 ) then
           !  print*,cell1, cell2,iCell
           !endif
-          endif
+!         endif
 
         end do ! i
 
-        !col(1) = iCell !map%getLocalElement((map%getGlobalElement(iCell)))
-        col(1) = map%getLocalElement((map%getGlobalElement(iCell)))
-        vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
-        numvalid = C%sumIntoLocalValues(row,col,vals)
+        col(1) = iCell !map%getLocalElement((map%getGlobalElement(iCell)))
+        !col(1) = map%getLocalElement((map%getGlobalElement(iCell)))
+
+        colse(max_entries_per_row2) = iCell
+        valse(max_entries_per_row2) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+        numvalid = C%sumIntoLocalValues(row,colse,valse)
 
         !cole(max_entries_per_row2) = iCell
         !valse(max_entries_per_row2) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
