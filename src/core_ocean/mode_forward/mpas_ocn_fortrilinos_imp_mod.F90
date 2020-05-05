@@ -225,7 +225,7 @@ module ocn_fortrilinos_imp_mod
   !mape = TpetraMap(n_global,nCellsArray(2), comm) !; FORTRILINOS_CHECK_IERR()
   mape = TpetraMap(n_global,globalIdx_fort(1:nCellsArray(2)), comm) !; FORTRILINOS_CHECK_IERR()
   max_entries_per_row = 8
-  A = TpetraCrsMatrix(map,max_entries_per_row, TpetraStaticProfile)
+  !A = TpetraCrsMatrix(map,max_entries_per_row, TpetraStaticProfile)
   C = TpetraCrsMatrix(map,mape,max_entries_per_row, TpetraStaticProfile)
 
   ! -- MPAS-O SpMV -------------------------------------------------------------
