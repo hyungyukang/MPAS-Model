@@ -25,7 +25,7 @@ module ocn_fortrilinos_imp_mod
   contains
 !*********************************************************************
 
-  subroutine ocn_time_integration_imp_btrmode(domain,dt,n_tot_vec,stage)
+  subroutine ocn_time_integration_imp_btrmode(domain,dt,n_tot_vec,area_mean,stage)
    
   implicit none
   integer :: my_rank, num_procs
@@ -35,15 +35,30 @@ module ocn_fortrilinos_imp_mod
   integer,save :: max_entries_per_row2
   integer(int_type) :: row_nnz
 
-  integer :: n,numvalid
+  integer :: n,numvalid,numnnz_a,numrow_a
+  integer :: numnnz_c,numrow_c
+  integer,dimension(:),allocatable :: indchk_a,indlcl_a
+  integer,dimension(:),allocatable :: indchk_c,indlcl_c
+
+  integer(size_type), dimension(:), allocatable :: row_ptrs_a, rp_res_a
+  integer(int_type), dimension(:), allocatable :: colind_a, col_res_a, col_gbl_a
+  real(scalar_type), dimension(:), allocatable :: values_a, val_res_a
+
+  integer(size_type), dimension(:), allocatable :: row_ptrs_c, rp_res_c
+  integer(int_type), dimension(:), allocatable :: colind_c, col_res_c, col_gbl_c
+  real(scalar_type), dimension(:), allocatable :: values_c, val_res_c
+
+  integer :: row,col(1)
+  integer,dimension(:),allocatable :: cole
   integer(global_ordinal_type) :: offset,icol,irow,icol1,icol2,irow1,irow2,gblrow
 
   type(TeuchosComm),save :: comm
   type(ParameterList),save:: plist_o, linear_solver_list_o, belos_list_o, solver_list_o, krylov_list_o
   type(ParameterList),save:: plist_m, linear_solver_list_m, belos_list_m, solver_list_m, krylov_list_m
   type(TrilinosSolver),save :: solver_handle_o,solver_handle_m
-  type(TpetraMap),save :: map
-  type(TpetraCrsMatrix),save :: A
+  type(TpetraMap),save :: map,colmap_a,colmap_c,mape
+  type(TpetraCrsMatrix),save :: A,C
+  type(TpetraCrsGraph),save :: graph
   type(TpetraMultiVector),save :: B, X, residual
 
   real(scalar_type), dimension(:), allocatable :: lhs, rhs
@@ -58,7 +73,7 @@ module ocn_fortrilinos_imp_mod
   ! For MPAS-O -----------------------------------------------------------------
   type (domain_type) :: domain
   type (dm_info) :: dminfo
-  real (kind=RKIND)  :: dt
+  real (kind=RKIND)  :: dt,area_mean
   type (block_type), pointer :: block
 
   type (mpas_pool_type), pointer :: statePool
@@ -102,6 +117,7 @@ module ocn_fortrilinos_imp_mod
   ! For User defined variables -------------------------------------------------
   integer :: ierr,nvec,n_tot_vec
   integer, dimension(:), allocatable,save :: globalIdx
+  integer(global_ordinal_type), dimension(:), allocatable,save :: globalIdx_fort
   integer :: sCellIdx,eCellIdx,mpi_ierr
   logical :: init_belos = .true., init_belos_o = .true., init_belos_m = .true.
   ! ----------------------------------------------------------------------------
@@ -186,6 +202,12 @@ module ocn_fortrilinos_imp_mod
 
       endif ! num_procs
 
+      allocate(globalIdx_fort(nCellsArray(4)+1))
+  
+      do i = 1,nCellsArray(4)+1
+        globalIdx_fort(i) = globalIdx(i)
+      end do
+
       block => block % next
     end do
 
@@ -198,9 +220,13 @@ module ocn_fortrilinos_imp_mod
   ! Step 0: Construct coefficient matrix
   n_global = -1
   map = TpetraMap(n_global, nCellsArray(1), comm) !; FORTRILINOS_CHECK_IERR()
-
+  !mape = TpetraMap(n_global, nCellsArray(2), comm) !; FORTRILINOS_CHECK_IERR()
+  !map = TpetraMap(n_global, globalIdx_fort(1:nCellsArray(1)), comm) !; FORTRILINOS_CHECK_IERR()
+  !mape = TpetraMap(n_global,nCellsArray(2), comm) !; FORTRILINOS_CHECK_IERR()
+  mape = TpetraMap(n_global,globalIdx_fort(1:nCellsArray(2)), comm) !; FORTRILINOS_CHECK_IERR()
   max_entries_per_row = 8
-  A = TpetraCrsMatrix(map, max_entries_per_row, TpetraStaticProfile)
+  A = TpetraCrsMatrix(map,max_entries_per_row, TpetraStaticProfile)
+  C = TpetraCrsMatrix(map,mape,max_entries_per_row, TpetraStaticProfile)
 
   ! -- MPAS-O SpMV -------------------------------------------------------------
   block => domain % blocklist
@@ -245,38 +271,224 @@ module ocn_fortrilinos_imp_mod
           iEdge = edgesOnCell(i, iCell)
           cell1 = cellsOnEdge(1, iEdge)
           cell2 = cellsOnEdge(2, iEdge)
-
-          sshEdgeLag = 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2))
-          thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1),bottomDepth(cell2))
+          thicknessSumLag = min(bottomDepth(cell1),bottomDepth(cell2))
           fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
 
           if ( globalIdx(cell2) >  0 ) then
           cols(1) = globalIdx(cell1)
-          call A%insertGlobalValues(gblrow, cols, vals)
+          vals(1) = -fluxAx
+!         call A%insertGlobalValues(gblrow, cols, vals)
+          call C%insertGlobalValues(gblrow, cols, vals)
 
           cols(1) = globalIdx(cell2)
-          call A%insertGlobalValues(gblrow, cols, vals)
+          vals(1) = +fluxAx
+!         call A%insertGlobalValues(gblrow, cols, vals)
+          call C%insertGlobalValues(gblrow, cols, vals)
           endif
 
         end do ! i
 
         cols(1) = globalIdx(iCell)
-        call A%insertGlobalValues(gblrow, cols, vals)
+        vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+!       call A%insertGlobalValues(gblrow, cols, vals)
+        call C%insertGlobalValues(gblrow, cols, vals)
           
      end do ! iCell
 
-     call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
+!    call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
+     call C%fillComplete() !; FORTRILINOS_CHECK_IERR()
+
+     !A = TpetraCrsMatrix(map,mape,max_entries_per_row, TpetraStaticProfile)
+!    A = TpetraCrsMatrix(map,mape,max_entries_per_row, TpetraStaticProfile)
+!    call C%fillComplete() !; FORTRILINOS_CHECK_IERR()
+
+     call C%resumeFill() !; FORTRILINOS_CHECK_IERR()
+     call C%setAllToScalar(szero)
+!    graph = A%getCrsGraph()
+
+
+     do iCell = 1, nCellsArray(1)
+        gblrow  = globalIdx(iCell)
+           !row  = iCell
+           row =mape%getLocalElement((mape%getGlobalElement(iCell)))
+        do i = 1, nEdgesOnCell(iCell)
+          iEdge = edgesOnCell(i, iCell)
+          cell1 = cellsOnEdge(1, iEdge)
+          cell2 = cellsOnEdge(2, iEdge)
+
+          thicknessSumLag = min(bottomDepth(cell1),bottomDepth(cell2))
+          fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
+
+          if ( globalIdx(cell2) > 0 ) then
+          col(1) =mape%getLocalElement((mape%getGlobalElement(cell1)))
+          vals(1) = -fluxAx
+          !call A%insertLocalValues(row, col, vals)
+          numvalid = C%sumIntoLocalValues(row, col, vals)
+!         if ( cell1 > nCellsArray(1) .and. my_rank == 0) then
+!           print*, col(1),cell1,nCellsArray(2)
+!         endif
+
+          col(1) =mape%getLocalElement((mape%getGlobalElement(cell2)))
+          !col(1) = cell2
+          vals(1) = +fluxAx
+          !call A%insertLocalValues(row, col, vals)
+          numvalid = C%sumIntoLocalValues(row, col, vals)
+
+!         if ( cell2 > nCellsArray(1) .and. my_rank == 0) then
+!           print*, col(1),cell2,nCellsArray(2)
+!         endif
+        endif
+
+        end do ! i
+
+        !call C%insertLocalValues(row, col, vals)
+        !col(1) =map%getLocalElement((map%getGlobalElement(globalIdx(iCell))))
+        col(1) = iCell
+        vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+        !call A%insertLocalValues(row, col, vals)
+        numvalid = C%sumIntoLocalValues(row, col, vals)
+          
+     end do ! iCell
+
+  call C%fillComplete() !; FORTRILINOS_CHECK_IERR()
+!    call mpi_barrier(dminfo%comm,mpi_ierr)
+!    stop
+
+
+!    do iCell = 1, nCellsArray(1)
+!       gblrow  = globalIdx(iCell)
+!          row  = iCell
+!          !row =map%getLocalElement((map%getGlobalElement(globalIdx(iCell))))
+
+!       do i = 1, nEdgesOnCell(iCell)
+!         iEdge = edgesOnCell(i, iCell)
+!         cell1 = cellsOnEdge(1, iEdge)
+!         cell2 = cellsOnEdge(2, iEdge)
+
+!         if ( globalIdx(cell2) > 0 ) then
+!         col(1) =mape%getLocalElement((mape%getGlobalElement(cell1)))
+!         vals(1) = -fluxAx
+!         call A%insertLocalValues(row, col, vals)
+
+!         col(1) =mape%getLocalElement((mape%getGlobalElement(cell1)))
+
+!         if ( cell1 > nCellsArray(1) .and. my_rank == 0) then
+!           print*, col(1),cell1,nCellsArray(2)
+!         endif
+!         !col(1) = cell2
+
+!         col(1) =mape%getLocalElement((mape%getGlobalElement(cell2)))
+!         if ( cell2 > nCellsArray(1) .and. my_rank == 0) then
+!           print*, col(1),cell2,nCellsArray(2)
+!         endif
+!         endif
+
+!       end do ! i
+
+        !col(1) = iCell
+        !call C%insertLocalValues(row, col, vals)
+        !col(1) =map%getLocalElement((map%getGlobalElement(globalIdx(iCell))))
+!       col(1) = iCell
+!       vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+!       call A%insertLocalValues(row, col, vals)
+!         
+!    end do ! iCell
+
+
 
      block => block % next
   end do  ! block
 
+
+
+
+! numrow_a = A%getNodeNumRows()
+! numnnz_a = A%getNodeNumEntries()
+! colmap_a = A%getColMap()
+!
+! allocate(row_ptrs_a(numrow_a+1),rp_res_a(numrow_a+1))
+! allocate(colind_a(numnnz_a),col_res_a(numnnz_a),col_gbl_a(numnnz_a))
+! allocate(values_a(numnnz_a),val_res_a(numnnz_a))
+
+! call A%getAllValues(row_ptrs_a, colind_a, values_a)
+
+! numrow_c = C%getNodeNumRows()
+! numnnz_c = C%getNodeNumEntries()
+! colmap_c = C%getColMap()
+!
+! allocate(row_ptrs_c(numrow_c+1),rp_res_c(numrow_c+1))
+! allocate(colind_c(numnnz_c),col_res_c(numnnz_c),col_gbl_c(numnnz_c))
+! allocate(values_c(numnnz_c),val_res_c(numnnz_c))
+
+! call C%getAllValues(row_ptrs_c, colind_c, values_c)
+
+! print*,numrow_a,numrow_c,numnnz_a,numnnz_c, maxval(row_ptrs_a),maxval(row_ptrs_c),maxval(colind_a),maxval(colind_c)
+! print*,numrow_a,numnnz_a, maxval(row_ptrs_a),maxval(colind_a),nCellsArray(2)
+
+! print*, numrow_a-numrow_c,numnnz_a-numnnz_c
+
+! if ( my_rank == 0 ) then
+! do i = 1,numnnz_a
+!   if ( colind_a(i) > nCellsArray(1)) then
+!   print*,colind_a(i),colind_c(i),nCellsArray(1),nCellsArray(2),values_a(i),values_c(i),values_a(i)-values_c(i)
+!   !print*,row_ptrs_a(i),row_ptrs_c(i),colind_a(i),colind_c(i),nCellsArray(1),nCellsArray(2),values_a(i),values_c(i),values_a(i)-values_c(i)
+!   endif
+! end do
+! endif
+
+! call MPI_BARRIER(dminfo%comm,mpi_ierr)
+! stop
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  !call C%fillComplete() !; FORTRILINOS_CHECK_IERR()
+
+! call MPI_BARRIER(dminfo%comm,mpi_ierr)
+! stop
+
+! numrow = A%getNodeNumRows()
+! numnnz = A%getNodeNumEntries()
+! colmap = A%getColMap()
+!
+! allocate(row_ptrs(numrow+1),rp_res(numrow+1))
+! allocate(colind(numnnz),col_res(numnnz),col_gbl(numnnz))
+! allocate(values(numnnz),val_res(numnnz))
+
+! call A%getAllValues(row_ptrs, colind, values)
+
+! print*, minval(row_ptrs),minval(colind),maxval(row_ptrs),maxval(colind),nCellsArray(1),nCellsArray(2)
+ 
+! do i = 1,numnnz
+!   col_gbl(i) = colmap%getGlobalElement(col
+! end do
+
+
   max_entries_per_row2 = max_entries_per_row*2
   allocate(colse(max_entries_per_row2))
   allocate(valse(max_entries_per_row2))
+  allocate(cole(max_entries_per_row2))
    
   colse(:) = 0
   valse(:) = 0.0_RKIND
 
+  cole(:) = 0
 
   ! Read in the parameterList
   plist_o = ParameterList("Stratimikos") !; FORTRILINOS_CHECK_IERR()
@@ -299,7 +511,7 @@ module ocn_fortrilinos_imp_mod
   krylov_list_m = solver_list_m%sublist(belos_list_m%get_string('Solver Type'))
 
   call krylov_list_o%set('Convergence Tolerance', 1e-2)
-  tol_o = 1.0d-2
+  tol_o = 1.0d-2 
   call krylov_list_m%set('Convergence Tolerance', 1e-8)
   tol_m = 1.0d-8
 
@@ -312,7 +524,6 @@ module ocn_fortrilinos_imp_mod
   call solver_handle_m%init(comm) !; FORTRILINOS_CHECK_IERR()
 
   endif ! INIT_belos :: Initial only =============================================================!
-
 
   call mpas_timer_start("fort mat setup")
 
@@ -353,19 +564,65 @@ module ocn_fortrilinos_imp_mod
 
      ! A : Coefficient matrix -------------------------------------------------!
 
-     call A%resumeFill() !; FORTRILINOS_CHECK_IERR()
+!    call A%resumeFill() !; FORTRILINOS_CHECK_IERR()
+
+!    call mpas_timer_start("fort mat AllToScalar")
+!    call A%setAllToScalar(szero)
+!    call mpas_timer_stop("fort mat AllToScalar")
+
+
+!    do iCell = 1, nCellsArray(1)
+
+!       gblrow  = globalIdx(iCell)
+!       row = iCell
+
+!       do i = 1, nEdgesOnCell(iCell)
+!         iEdge = edgesOnCell(i, iCell)
+!         cell1 = cellsOnEdge(1, iEdge)
+!         cell2 = cellsOnEdge(2, iEdge)
+
+!         ! Interpolation sshEdge
+!         sshEdgeLag = 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2))
+!         thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1),bottomDepth(cell2))
+!         fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
+!
+
+!         if ( globalIdx(cell2) > 0 ) then
+!         cols(1) = globalIdx(cell1)
+!         vals(1) = -fluxAx 
+!         numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+
+!         cols(1) = globalIdx(cell2)
+!         vals(1) = +fluxAx 
+!         numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+!         endif
+
+!       end do ! i
+
+!       cols(1) = globalIdx(iCell)
+!       vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+!       numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+!    end do ! iCell
+
+! call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
+
+
+     ! C : Coefficient matrix -------------------------------------------------!
+
+     call C%resumeFill() !; FORTRILINOS_CHECK_IERR()
 
      call mpas_timer_start("fort mat AllToScalar")
-     call A%setAllToScalar(szero)
+     call C%setAllToScalar(szero)
      call mpas_timer_stop("fort mat AllToScalar")
 
 
      do iCell = 1, nCellsArray(1)
 
-        colse(:) = 0
-        valse(:) = 0.d0
 
-        gblrow  = globalIdx(iCell)
+        !cole(:) = 0
+        !valse(:) = 0.d0
+        !row = iCell ! map%getLocalElement((map%getGlobalElement(iCell)))
+        row = map%getLocalElement((map%getGlobalElement(iCell)))
 
         do i = 1, nEdgesOnCell(iCell)
           iEdge = edgesOnCell(i, iCell)
@@ -377,23 +634,105 @@ module ocn_fortrilinos_imp_mod
           thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1),bottomDepth(cell2))
           fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
 
-          colse(i) = globalIdx(cell1)
-          valse(i) = -fluxAx 
 
-          colse(i+7) = globalIdx(cell2)
-          valse(i+7) = +fluxAx 
+          if ( globalIdx(cell2) > 0 ) then
+          col(1) = cell1 !map%getLocalElement((map%getGlobalElement(cell1)))
+          vals(1) = -fluxAx 
+          numvalid = C%sumIntoLocalValues(row,col,vals)
+
+          col(1) = cell2 !map%getLocalElement((map%getGlobalElement(cell2)))
+          vals(1) = +fluxAx 
+          numvalid = C%sumIntoLocalValues(row,col,vals)
+
+!         !cole(i+7) = cell2
+          !cole(i+7) = map%getLocalElement((map%getGlobalElement(cell2)))
+          !valse(i+7) = 1.1111111111
+          !if ( my_rank ==  0 ) then
+          !  print*,cell1, cell2,iCell
+          !endif
+          endif
 
         end do ! i
 
-        colse(max_entries_per_row2) = globalIdx(iCell)
-        valse(max_entries_per_row2) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
-        numvalid = A%sumIntoGlobalValues(gblrow,colse,valse)
+        !col(1) = iCell !map%getLocalElement((map%getGlobalElement(iCell)))
+        col(1) = map%getLocalElement((map%getGlobalElement(iCell)))
+        vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+        numvalid = C%sumIntoLocalValues(row,col,vals)
+
+        !cole(max_entries_per_row2) = iCell
+        !valse(max_entries_per_row2) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+        !numvalid = C%sumIntoLocalValues(row,cole,valse)
 
      end do ! iCell
 
-  call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
+!    do iCell = 1, nCellsArray(1)
+!       row = iCell ! map%getLocalElement((map%getGlobalElement(iCell)))
+!
+!       do i = 1, nEdgesOnCell(iCell)
+!         iEdge = edgesOnCell(i, iCell)
+!         cell1 = cellsOnEdge(1, iEdge)
+!         cell2 = cellsOnEdge(2, iEdge)
+!
+!         if ( cell1 > nCellsArray(1) ) then
+!         col(1) = cell1 !map%getLocalElement((map%getGlobalElement(cell2)))
+!         !col(1) = map%getLocalElement((map%getGlobalElement(cell2)))
+!         vals(1) = -fluxAx
+!         numvalid = C%sumIntoLocalValues(row,col,vals)
+!         endif
+!         if ( cell2 > nCellsArray(1) ) then
+!         col(1) = cell2 !map%getLocalElement((map%getGlobalElement(cell2)))
+!         !col(1) = map%getLocalElement((map%getGlobalElement(cell2)))
+!         vals(1) = fluxAx
+!         numvalid = C%sumIntoLocalValues(row,col,vals)
+!         endif
+!
+!
+!       end do
+!    end do
+
+
+  call C%fillComplete() !; FORTRILINOS_CHECK_IERR()
 
   call mpas_timer_stop("fort mat setup")
+
+! numrow_a = A%getNodeNumRows()
+! numnnz_a = A%getNodeNumEntries()
+! colmap_a = A%getColMap()
+!
+! allocate(row_ptrs_a(numrow_a+1),rp_res_a(numrow_a+1))
+! allocate(colind_a(numnnz_a),col_res_a(numnnz_a),col_gbl_a(numnnz_a))
+! allocate(values_a(numnnz_a),val_res_a(numnnz_a))
+
+! call A%getAllValues(row_ptrs_a, colind_a, values_a)
+
+! numrow_c = C%getNodeNumRows()
+! numnnz_c = C%getNodeNumEntries()
+! colmap_c = C%getColMap()
+!
+! allocate(row_ptrs_c(numrow_c+1),rp_res_c(numrow_c+1))
+! allocate(colind_c(numnnz_c),col_res_c(numnnz_c),col_gbl_c(numnnz_c))
+! allocate(values_c(numnnz_c),val_res_c(numnnz_c))
+
+! call C%getAllValues(row_ptrs_c, colind_c, values_c)
+
+
+! print*,numrow_a,numrow_c,numnnz_a,numnnz_c, maxval(row_ptrs_a),maxval(row_ptrs_c),maxval(colind_a),maxval(colind_c)
+! print*,numrow_a,numnnz_a, maxval(row_ptrs_a),maxval(colind_a),nCellsArray(2)
+
+! print*, numrow_a-numrow_c,numnnz_a-numnnz_c
+
+! if ( my_rank == 0 ) then
+! do i = 1,numnnz_a
+!   if ( colind_a(i) > nCellsArray(1)) then
+!   print*,colind_a(i),colind_c(i),nCellsArray(1),nCellsArray(2),values_a(i),values_c(i),values_a(i)-values_c(i)
+!   !print*,row_ptrs_a(i),row_ptrs_c(i),colind_a(i),colind_c(i),nCellsArray(1),nCellsArray(2),values_a(i),values_c(i),values_a(i)-values_c(i)
+!   endif
+! end do
+! endif
+
+! call MPI_BARRIER(dminfo%comm,mpi_ierr)
+! stop
+
 
   call mpas_timer_start("fort resid")
 
@@ -458,9 +797,9 @@ module ocn_fortrilinos_imp_mod
 
   ! Step 2: setup the problem
   if ( stage == 'o' ) then
-    call solver_handle_o%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
+    call solver_handle_o%setup_matrix(C) !; FORTRILINOS_CHECK_IERR()
   elseif ( stage == 'm' ) then
-    call solver_handle_m%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
+    call solver_handle_m%setup_matrix(C) !; FORTRILINOS_CHECK_IERR()
   endif
 
 
@@ -474,14 +813,20 @@ module ocn_fortrilinos_imp_mod
   endif
 
 
+! call MPI_BARRIER(dminfo%comm,mpi_ierr)
+! stop
+
   call mpas_timer_stop("fort solver setup")
 
   call mpas_timer_start("fort init resid")
   ! Calculate initial residual
-  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
+  call C%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
   call residual%update(sone, B, -sone) !; FORTRILINOS_CHECK_IERR()
   call residual%norm2(norms) !; FORTRILINOS_CHECK_IERR()
   r0 = norms(1)
+! print*, r0
+! call mpi_barrier(dminfo%comm,mpi_ierr)
+! stop
   call mpas_timer_stop("fort init resid")
 
   call mpas_timer_start("fort solve")
@@ -498,7 +843,7 @@ module ocn_fortrilinos_imp_mod
 
   call mpas_timer_start("fort check")
   ! Check the solution
-  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
+  call C%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
   call residual%update(sone, B, -sone) !; FORTRILINOS_CHECK_IERR()
   call residual%norm2(norms) !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort check")
@@ -512,6 +857,7 @@ module ocn_fortrilinos_imp_mod
     stop 1
   end if
 
+! r0 = norms(1)
 
   ! Get solution
   solvec => X%getData(ione)
