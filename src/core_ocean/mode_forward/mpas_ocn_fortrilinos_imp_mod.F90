@@ -45,9 +45,10 @@ module ocn_fortrilinos_imp_mod
   real(scalar_type), dimension(:), allocatable :: values_a, val_res_a
 
   !integer(size_type), dimension(:), allocatable :: row_ptrs_c, rp_res_c
-  integer(global_ordinal_type), dimension(:), allocatable :: row_ptrs_c, rp_res_c
+  !integer(global_ordinal_type), dimension(:), allocatable :: row_ptrs_c, rp_res_c
+  integer(size_type), dimension(:), allocatable :: row_ptrs_c, rp_res_c
   integer(int_type), dimension(:), allocatable :: colind_c, col_res_c, col_gbl_c
-  real(mag_type), dimension(:), allocatable :: values_c, val_res_c
+  real(scalar_type), dimension(:), allocatable :: values_c, val_res_c
 
   integer :: row,col(1)
   integer,dimension(:),allocatable :: cole
@@ -125,7 +126,7 @@ module ocn_fortrilinos_imp_mod
 
   integer :: numrow, numnnz, id
   integer(global_ordinal_type), dimension(:), allocatable :: rowptr, rowchk
-  integer, dimension(:), allocatable :: ind, indchk, indgbl, indlcl
+  integer, dimension(:), allocatable :: ind, indchk, indgbl, indlcl,rowptrs
   real(mag_type), dimension(:), allocatable :: vala, valchk
 
   type(TpetraMap),save :: colmap
@@ -356,8 +357,8 @@ module ocn_fortrilinos_imp_mod
 
   call C%getAllValues(row_ptrs_c, colind_c, values_c)
 
-  print*, numrow_c,numnnz_c,maxval(colind_c),maxval(row_ptrs_c),nCellsArray(1),nCellsArray(2)
-
+  print*, numrow_c,numnnz_c,maxval(colind_c),maxval(row_ptrs_c),maxval(values_c)
+! print*, size(row_ptrs_c)
 
 ! do i = 1,numnnz_c
     !col_res_c(i) = map%getLocalElement(int(colind_c(i), global_ordinal_type))
@@ -368,11 +369,14 @@ module ocn_fortrilinos_imp_mod
 ! print*, numrow_c,numnnz_c,maxval(col_res_c)
 
   !call C%resumeFill() !; FORTRILINOS_CHECK_IERR()
+
+  print*, 'before'
+
   call C%setAllValues(row_ptrs_c, colind_c, values_c)
+  print*, 'after'
 
   call MPI_BARRIER(dminfo%comm,mpi_ierr)
   stop
-
 
 ! print*,numrow_a,numrow_c,numnnz_a,numnnz_c, maxval(row_ptrs_a),maxval(row_ptrs_c),maxval(colind_a),maxval(colind_c)
 ! print*,numrow_a,numnnz_a, maxval(row_ptrs_a),maxval(colind_a),nCellsArray(2)
