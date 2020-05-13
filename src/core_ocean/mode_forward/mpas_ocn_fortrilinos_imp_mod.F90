@@ -236,7 +236,8 @@ module ocn_fortrilinos_imp_mod
   !map = TpetraMap(n_global, globalIdx_fort(1:nCellsArray(1)), comm)
   mape = TpetraMap(n_global,globalIdx_fort(1:nCellsArray(2)), comm) !; FORTRILINOS_CHECK_IERR()
   max_entries_per_row = 8
-  C = TpetraCrsMatrix(map,mape,max_entries_per_row, TpetraStaticProfile)
+  !C = TpetraCrsMatrix(map,mape,max_entries_per_row, TpetraStaticProfile)
+  C = TpetraCrsMatrix(map,max_entries_per_row, TpetraStaticProfile)
   graph = TpetraCrsGraph(map,mape,max_entries_per_row, TpetraStaticProfile)
   graph1 = TpetraCrsGraph(map,mape,max_entries_per_row, TpetraStaticProfile)
   !A = TpetraCrsMatrix(map,mape,max_entries_per_row, TpetraStaticProfile)
@@ -526,38 +527,39 @@ module ocn_fortrilinos_imp_mod
           thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1),bottomDepth(cell2))
           fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
 
-!         if ( cell2 > 0 ) then
-!           cols(1) = globalIdx(cell1) !map%getLocalElement((map%getGlobalElement(cell1)))
-!           vals(1) = -fluxAx 
-!           numvalid = C%sumIntoGlobalValues(gblrow,cols,vals)
-  
-            col(1) = cell1
+          if ( cell2 > 0 ) then
+            cols(1) = globalIdx(cell1) !map%getLocalElement((map%getGlobalElement(cell1)))
             vals(1) = -fluxAx 
-            numvalid = C%sumIntoLocalValues(row,col,vals)
+            numvalid = C%sumIntoGlobalValues(gblrow,cols,vals)
   
-            !cols(1) = globalIdx(cell2) !map%getLocalElement((map%getGlobalElement(cell1)))
-            !vals(1) = +fluxAx 
-            !numvalid = C%sumIntoGlobalValues(gblrow,cols,vals)
+!           col(1) = cell1
+!           vals(1) = -fluxAx 
+!           numvalid = C%sumIntoLocalValues(row,col,vals)
   
-            col(1) = cell2
+            cols(1) = globalIdx(cell2) !map%getLocalElement((map%getGlobalElement(cell1)))
             vals(1) = +fluxAx 
-            numvalid = C%sumIntoLocalValues(row,col,vals)
-!         endif
+            numvalid = C%sumIntoGlobalValues(gblrow,cols,vals)
+  
+!           col(1) = cell2
+!           vals(1) = +fluxAx 
+!           numvalid = C%sumIntoLocalValues(row,col,vals)
+          endif
 
         end do ! i
 
-!       cols(1) = globalIdx(iCell) !map%getLocalElement((map%getGlobalElement(iCell)))
-!       vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
-!       numvalid = C%sumIntoGlobalValues(gblrow,cols,vals)
-
-        col(1) = iCell !map%getLocalElement((map%getGlobalElement(iCell)))
+        cols(1) = globalIdx(iCell) !map%getLocalElement((map%getGlobalElement(iCell)))
         vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
-        numvalid = C%sumIntoLocalValues(row,col,vals)
+        numvalid = C%sumIntoGlobalValues(gblrow,cols,vals)
+
+!       col(1) = iCell !map%getLocalElement((map%getGlobalElement(iCell)))
+!       vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+!       numvalid = C%sumIntoLocalValues(row,col,vals)
 
      end do ! iCell
 
   call mpas_timer_start("fort mat complete")
-  call C%fillComplete() !; FORTRILINOS_CHECK_IERR()
+  call C%fillComplete(map,map) !; FORTRILINOS_CHECK_IERR()
+! call C%expertStaticFillComplete(map)
   call mpas_timer_stop("fort mat complete")
 
   call mpas_timer_stop("fort mat setup")
