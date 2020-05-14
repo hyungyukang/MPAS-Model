@@ -40,6 +40,7 @@ module ocn_fortrilinos_imp_mod
   type(TeuchosComm),save :: comm
   type(ParameterList),save:: plist_o, linear_solver_list_o, belos_list_o, solver_list_o, krylov_list_o
   type(ParameterList),save:: plist_m, linear_solver_list_m, belos_list_m, solver_list_m, krylov_list_m
+  type(ParameterList),save:: plist_a
   type(TrilinosSolver),save :: solver_handle_o,solver_handle_m
   type(TpetraMap),save :: map
   type(TpetraCrsMatrix),save :: A
@@ -101,6 +102,9 @@ module ocn_fortrilinos_imp_mod
   integer, dimension(:), allocatable,save :: globalIdx
   integer :: sCellIdx,eCellIdx,mpi_ierr
   logical :: init_belos = .true., init_belos_o = .true., init_belos_m = .true.
+  type(TpetraImport) :: importer
+  type(TpetraExport) :: exporter
+  type(TpetraCrsGraph) :: graph
   ! ----------------------------------------------------------------------------
 
   dminfo = domain % dminfo
@@ -266,6 +270,15 @@ module ocn_fortrilinos_imp_mod
      block => block % next
   end do  ! block
 
+  graph = A%getCrsGraph()
+
+
+  importer = graph%getImporter()
+  exporter = graph%getExporter()
+  plist_a = ParameterList("ANONYMOUS")
+  !call plist_a%set("compute global constants", .true.)
+  call plist_a%set("No Nonlocal Changes", .true.)
+
   ! Read in the parameterList
   plist_o = ParameterList("Stratimikos") !; FORTRILINOS_CHECK_IERR()
   plist_m = ParameterList("Stratimikos") !; FORTRILINOS_CHECK_IERR()
@@ -378,7 +391,20 @@ module ocn_fortrilinos_imp_mod
 
      end do ! iCell
 
-  call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
+
+  if ( stage == 'o' ) then
+  call mpas_timer_start("fort mat setup 'o'")
+  !call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
+  !call A%fillComplete(plist_a) !; FORTRILINOS_CHECK_IERR()
+  call A%expertStaticFillComplete(map,map,importer,exporter,plist_a) !; FORTRILINOS_CHECK_IERR()
+  call mpas_timer_stop("fort mat setup 'o'")
+  elseif ( stage == 'm' ) then
+  call mpas_timer_start("fort mat setup 'm'")
+  !call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
+  !call A%fillComplete(plist_a) !; FORTRILINOS_CHECK_IERR()
+  call A%expertStaticFillComplete(map,map,importer,exporter,plist_a) !; FORTRILINOS_CHECK_IERR()
+  call mpas_timer_stop("fort mat setup 'm'")
+  endif
 
   call mpas_timer_stop("fort mat setup")
 
