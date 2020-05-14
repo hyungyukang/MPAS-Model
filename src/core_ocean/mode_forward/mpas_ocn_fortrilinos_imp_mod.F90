@@ -436,7 +436,6 @@ module ocn_fortrilinos_imp_mod
   residual = TpetraMultiVector(map,num_vecs,.false.) !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort Vector")
 
-
   call mpas_timer_start("fort solver setup")
 
   ! ------------------------------------------------------------------
