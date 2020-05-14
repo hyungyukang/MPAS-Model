@@ -796,9 +796,6 @@ module ocn_fortrilinos_imp_mod
      block => block % next
   end do  ! block
 
-<<<<<<< HEAD
-=======
-
 ! call mpas_timer_start("si halo ssh")
 ! call mpas_dmpar_exch_group_create(domain, iterGroupName)
 ! call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
@@ -811,7 +808,6 @@ module ocn_fortrilinos_imp_mod
 ! call A%release()
 ! call mpas_timer_stop("fort release")
 
->>>>>>> 5c7f960daabda5f66159c64d29571e759eb24d78
 ! call mpas_timer_start("fort final")
 ! ! Step 5: clean up
 ! call solver_handle%finalize() !; FORTRILINOS_CHECK_IERR()
