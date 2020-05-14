@@ -923,7 +923,7 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si fortrilinos btrmode")
 
-         call ocn_time_integration_imp_btrmode(domain,dt,itotal_num_cells,area_mean,'o')
+         call ocn_time_integration_imp_btrmode(domain,dt,itotal_num_cells,'o')
 
          call mpas_timer_stop("si fortrilinos btrmode")
 
@@ -1055,7 +1055,7 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si fortrilinos btrmode")
 
-         call ocn_time_integration_imp_btrmode(domain,dt,itotal_num_cells,area_mean,'m')
+         call ocn_time_integration_imp_btrmode(domain,dt,itotal_num_cells,'m')
 
          call mpas_timer_stop ("si fortrilinos btrmode")
 
