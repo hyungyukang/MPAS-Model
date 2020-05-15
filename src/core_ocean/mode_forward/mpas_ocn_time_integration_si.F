@@ -755,7 +755,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur, 1)
    
                nCells = nCellsArray(1)
-               nEdges = nEdgesArray(1)
+               nEdges = nEdgesArray(3)
 
    
                if (config_filter_btr_mode) then
@@ -766,13 +766,15 @@ module ocn_time_integration_si
                   !$omp end do
                endif
    
-               do iCell = 1, nCells
-                  ! sshSubcycleOld = sshOld
-                  sshSubcycleCur(iCell) = sshCur(iCell)
-               end do
+!              do iCell = 1, nCells
+!                 ! sshSubcycleOld = sshOld
+!                 sshSubcycleCur(iCell) = sshCur(iCell)
+!              end do
+                  sshSubcycleCur(:) = sshCur(:)
 
+                  normalBarotropicVelocitySubcycleCur(:) = normalBarotropicVelocityCur(:)
                do iEdge = 1, nEdges
-                  normalBarotropicVelocitySubcycleCur(iEdge) = normalBarotropicVelocityCur(iEdge)
+!                 normalBarotropicVelocitySubcycleCur(iEdge) = normalBarotropicVelocityCur(iEdge)
 
                   ! Compute the barotropic Coriolis term, -f*uPerp
                   barotropicCoriolisTerm(iEdge) = 0.0_RKIND
@@ -789,9 +791,9 @@ module ocn_time_integration_si
    
             call mpas_timer_start("si halo init")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'barotropicCoriolisTerm', 1 )
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocitySubcycle', 1 )
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
+!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'barotropicCoriolisTerm', 1 )
+!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocitySubcycle', 1 )
+!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
@@ -830,7 +832,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, 1)
    
                nCells = nCellsArray(1)
-               nEdges = nEdgesArray(2)
+               nEdges = nEdgesArray(3)
    
                if (config_filter_btr_mode) then
                   !$omp do schedule(runtime)
@@ -840,13 +842,16 @@ module ocn_time_integration_si
                   !$omp end do
                endif
    
-               do iCell = 1, nCells
-                          sshCur(iCell) = sshNew(iCell)
-                  sshSubcycleCur(iCell) = sshCur(iCell)
-               end do
+!              do iCell = 1, nCells
+!                         sshCur(iCell) = sshNew(iCell)
+!                 sshSubcycleCur(iCell) = sshCur(iCell)
+!              end do
+                          sshCur(:) = sshNew(:)
+                  sshSubcycleCur(:) = sshCur(:)
 
+                  normalBarotropicVelocityCur(:) = normalBarotropicVelocitySubcycleCur(:)
                do iEdge = 1, nEdges
-                  normalBarotropicVelocityCur(iEdge) = normalBarotropicVelocitySubcycleCur(iEdge)
+!                 normalBarotropicVelocityCur(iEdge) = normalBarotropicVelocitySubcycleCur(iEdge)
 
                   ! Compute the barotropic Coriolis term, -f*uPerp
                   barotropicCoriolisTerm(iEdge) = 0.0_RKIND
@@ -899,10 +904,10 @@ module ocn_time_integration_si
 
             call mpas_timer_start("si halo init")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'barotropicCoriolisTerm', 1 )
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocity', 1 )
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'ssh', 1 )
+!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'barotropicCoriolisTerm', 1 )
+!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocity', 1 )
+!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
+!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'ssh', 1 )
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
