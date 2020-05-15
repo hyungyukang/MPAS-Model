@@ -200,7 +200,7 @@ module ocn_fortrilinos_imp_mod
   map = TpetraMap(n_global, nCellsArray(1), comm) !; FORTRILINOS_CHECK_IERR()
 
   max_entries_per_row = 8
-  A = TpetraCrsMatrix(map, max_entries_per_row, TpetraStaticProfile)
+  graph = TpetraCrsGraph(map, max_entries_per_row, TpetraStaticProfile)
 
   ! -- MPAS-O SpMV -------------------------------------------------------------
   block => domain % blocklist
@@ -246,37 +246,30 @@ module ocn_fortrilinos_imp_mod
           cell1 = cellsOnEdge(1, iEdge)
           cell2 = cellsOnEdge(2, iEdge)
 
-          sshEdgeLag = 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2))
-          thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1),bottomDepth(cell2))
-          fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
-
           if ( globalIdx(cell2) >  0 ) then
           cols(1) = globalIdx(cell1)
-          call A%insertGlobalValues(gblrow, cols, vals)
+          call graph%insertGlobalIndices(gblrow, cols)
 
           cols(1) = globalIdx(cell2)
-          call A%insertGlobalValues(gblrow, cols, vals)
+          call graph%insertGlobalIndices(gblrow, cols)
           endif
 
         end do ! i
 
         cols(1) = globalIdx(iCell)
-        call A%insertGlobalValues(gblrow, cols, vals)
+        call graph%insertGlobalIndices(gblrow, cols)
           
      end do ! iCell
 
-     call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
+     call graph%fillComplete() !; FORTRILINOS_CHECK_IERR()
 
      block => block % next
   end do  ! block
 
-  graph = A%getCrsGraph()
+! Define matrix using graph
+  A = TpetraCrsMatrix(graph)
 
-
-  importer = graph%getImporter()
-  exporter = graph%getExporter()
   plist_a = ParameterList("ANONYMOUS")
-  !call plist_a%set("compute global constants", .true.)
   call plist_a%set("No Nonlocal Changes", .true.)
 
   ! Read in the parameterList
@@ -312,7 +305,6 @@ module ocn_fortrilinos_imp_mod
   call solver_handle_o%init(comm) !; FORTRILINOS_CHECK_IERR()
   call solver_handle_m%init(comm) !; FORTRILINOS_CHECK_IERR()
   endif ! INIT_belos :: Initial only =============================================================!
-
 
   call mpas_timer_start("fort mat setup")
 
@@ -391,20 +383,10 @@ module ocn_fortrilinos_imp_mod
 
      end do ! iCell
 
-
-  if ( stage == 'o' ) then
-  call mpas_timer_start("fort mat setup 'o'")
-  !call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
-  !call A%fillComplete(plist_a) !; FORTRILINOS_CHECK_IERR()
-  call A%expertStaticFillComplete(map,map,importer,exporter,plist_a) !; FORTRILINOS_CHECK_IERR()
-  call mpas_timer_stop("fort mat setup 'o'")
-  elseif ( stage == 'm' ) then
-  call mpas_timer_start("fort mat setup 'm'")
-  !call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
-  !call A%fillComplete(plist_a) !; FORTRILINOS_CHECK_IERR()
-  call A%expertStaticFillComplete(map,map,importer,exporter,plist_a) !; FORTRILINOS_CHECK_IERR()
-  call mpas_timer_stop("fort mat setup 'm'")
-  endif
+  
+  call mpas_timer_start("fort mat complete")
+  call A%fillComplete(plist_a) !; FORTRILINOS_CHECK_IERR()
+  call mpas_timer_stop("fort mat complete")
 
   call mpas_timer_stop("fort mat setup")
 
@@ -462,7 +444,6 @@ module ocn_fortrilinos_imp_mod
   residual = TpetraMultiVector(map,num_vecs,.false.) !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort Vector")
 
-
   call mpas_timer_start("fort solver setup")
 
   ! ------------------------------------------------------------------
@@ -476,7 +457,6 @@ module ocn_fortrilinos_imp_mod
     call solver_handle_m%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
   endif
 
-
   ! Step 3: setup the solver - Initial only
   if ( init_belos_o .and. stage == 'o') then
     call solver_handle_o%setup_solver(plist_o) !; FORTRILINOS_CHECK_IERR()
@@ -486,51 +466,44 @@ module ocn_fortrilinos_imp_mod
     init_belos_m = .false.
   endif
 
-
   call mpas_timer_stop("fort solver setup")
 
-  call mpas_timer_start("fort init resid")
-  ! Calculate initial residual
-  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
-  call residual%update(sone, B, -sone) !; FORTRILINOS_CHECK_IERR()
-  call residual%norm2(norms) !; FORTRILINOS_CHECK_IERR()
-  r0 = norms(1)
-  call mpas_timer_stop("fort init resid")
-
+! call mpas_timer_start("fort init resid")
+! ! Calculate initial residual
+! call A%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
+! call residual%update(sone, B, -sone) !; FORTRILINOS_CHECK_IERR()
+! call residual%norm2(norms) !; FORTRILINOS_CHECK_IERR()
+! r0 = norms(1)
+! call mpas_timer_stop("fort init resid")
+!
   call mpas_timer_start("fort solve")
-
-
   if ( stage == 'o' ) then
     call solver_handle_o%solve(B, X) !; FORTRILINOS_CHECK_IERR()
   elseif ( stage == 'm' ) then
     call solver_handle_m%solve(B, X) !; FORTRILINOS_CHECK_IERR()
   endif
-
-
   call mpas_timer_stop("fort solve")
 
-  call mpas_timer_start("fort check")
-  ! Check the solution
-  call A%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
-  call residual%update(sone, B, -sone) !; FORTRILINOS_CHECK_IERR()
-  call residual%norm2(norms) !; FORTRILINOS_CHECK_IERR()
-  call mpas_timer_stop("fort check")
-
-
-  if ( stage == 'o' .and. norms(1)/r0 > tol_o) then
-    write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
-    stop 1
-  elseif ( stage == 'm' .and. norms(1)/r0 > tol_m) then
-    write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
-    stop 1
-  end if
-
+! call mpas_timer_start("fort check")
+! ! Check the solution
+! call A%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
+! call residual%update(sone, B, -sone) !; FORTRILINOS_CHECK_IERR()
+! call residual%norm2(norms) !; FORTRILINOS_CHECK_IERR()
+! call mpas_timer_stop("fort check")
+!
+!
+! if ( stage == 'o' .and. norms(1)/r0 > tol_o) then
+!   write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
+!   stop 1
+! elseif ( stage == 'm' .and. norms(1)/r0 > tol_m) then
+!   write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
+!   stop 1
+! end if
 
   ! Get solution
   solvec => X%getData(ione)
   sshSubcycleCur(1:nCellsArray(1)) = solvec(1:nCellsArray(1))
   nullify(solvec)
-
 
   call mpas_timer_start("si halo ssh")
   call mpas_dmpar_exch_group_create(domain, iterGroupName)
