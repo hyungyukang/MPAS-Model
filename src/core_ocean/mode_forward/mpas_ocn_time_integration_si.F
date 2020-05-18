@@ -789,16 +789,16 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
    
-            call mpas_timer_start("si halo init")
-            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!           call mpas_timer_start("si halo init")
+!           call mpas_dmpar_exch_group_create(domain, iterGroupName)
 !           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'barotropicCoriolisTerm', 1 )
 !           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocitySubcycle', 1 )
 !           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
-            call mpas_threading_barrier()
-            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo init")
-   
+!           call mpas_threading_barrier()
+!           call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!           call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!           call mpas_timer_stop("si halo init")
+
             call mpas_timer_stop('btr vel si init')
 
          else ! split_implicit_step
@@ -902,16 +902,16 @@ module ocn_time_integration_si
 
             endif !config_use_tidal_potential_forcing
 
-            call mpas_timer_start("si halo init")
-            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!           call mpas_timer_start("si halo init")
+!           call mpas_dmpar_exch_group_create(domain, iterGroupName)
 !           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'barotropicCoriolisTerm', 1 )
 !           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocity', 1 )
 !           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
 !           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'ssh', 1 )
-            call mpas_threading_barrier()
-            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo init")
+!           call mpas_threading_barrier()
+!           call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!           call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!           call mpas_timer_stop("si halo init")
 
             call mpas_timer_stop('btr vel si init')
 
