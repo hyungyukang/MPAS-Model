@@ -548,25 +548,9 @@ module ocn_fortrilinos_imp_mod
     call solver_handle_m%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
   endif
 
-  ! Step 3: setup the solver - Initial only
-! if ( init_belos_o .and. stage == 'o') then
-!   call solver_handle_o%setup_solver(plist_o) !; FORTRILINOS_CHECK_IERR()
-!   init_belos_o = .false.
-! elseif ( init_belos_m .and. stage == 'm') then
-!   call solver_handle_m%setup_solver(plist_m) !; FORTRILINOS_CHECK_IERR()
-!   init_belos_m = .false.
-! endif
-
   call mpas_timer_stop("fort setup problem")
 
-! call mpas_timer_start("fort init resid")
-! ! Calculate initial residual
-! call A%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
-! call residual%update(sone, B, -sone) !; FORTRILINOS_CHECK_IERR()
-! call residual%norm2(norms) !; FORTRILINOS_CHECK_IERR()
-! r0 = norms(1)
-! call mpas_timer_stop("fort init resid")
-!
+
   call mpas_timer_start("fort solve")
   if ( stage == 'o' ) then
     call solver_handle_o%solve(B, X) !; FORTRILINOS_CHECK_IERR()
@@ -575,21 +559,6 @@ module ocn_fortrilinos_imp_mod
   endif
   call mpas_timer_stop("fort solve")
 
-! call mpas_timer_start("fort check")
-! ! Check the solution
-! call A%apply(X, residual, TeuchosNO_TRANS, sone, szero) !; FORTRILINOS_CHECK_IERR()
-! call residual%update(sone, B, -sone) !; FORTRILINOS_CHECK_IERR()
-! call residual%norm2(norms) !; FORTRILINOS_CHECK_IERR()
-! call mpas_timer_stop("fort check")
-!
-!
-! if ( stage == 'o' .and. norms(1)/r0 > tol_o) then
-!   write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
-!   stop 1
-! elseif ( stage == 'm' .and. norms(1)/r0 > tol_m) then
-!   write(error_unit, '(A)') 'The solver did not converge to the specified residual!'
-!   stop 1
-! end if
 
   ! Get solution
   solvec => X%getData(ione)
@@ -607,16 +576,6 @@ module ocn_fortrilinos_imp_mod
 
      block => block % next
   end do  ! block
-
-
-! call mpas_timer_start("si halo ssh")
-! call mpas_dmpar_exch_group_create(domain, iterGroupName)
-! call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
-! call mpas_threading_barrier()
-! call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-! call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-! call mpas_timer_stop("si halo ssh")
-       
 
 ! call mpas_timer_start("fort final")
 ! ! Step 5: clean up
