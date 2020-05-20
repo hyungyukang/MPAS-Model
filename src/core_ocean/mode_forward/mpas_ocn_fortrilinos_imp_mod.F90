@@ -111,7 +111,9 @@ module ocn_fortrilinos_imp_mod
    
   ! INIT belos :: Initial only ===================================================================!
   if ( init_belos ) then
-    print*, 'PRINT in init'
+
+  call mpas_timer_start("fort init")
+
     init_belos = .false.
     comm = TeuchosComm(dminfo % comm)
     my_rank = comm%getRank()
@@ -189,12 +191,12 @@ module ocn_fortrilinos_imp_mod
       block => block % next
     end do
 
-      ! ------------------------------------------------------------------------
+  ! ----------------------------------------------------------------------------
 
-      lda = nCellsArray(1)
-
+  lda = nCellsArray(1)
 
   ! ----------------------------------------------------------------------------
+
   ! Step 0: Construct coefficient matrix
   n_global = -1
   map = TpetraMap(n_global, nCellsArray(1), comm) !; FORTRILINOS_CHECK_IERR()
@@ -266,9 +268,11 @@ module ocn_fortrilinos_imp_mod
      block => block % next
   end do  ! block
 
-! Define matrix using graph
+
+  ! Initialize the coefficient matrix using graph
   A = TpetraCrsMatrix(graph)
 
+  ! Plist_a for fillComplete() to skip global communication
   plist_a = ParameterList("ANONYMOUS")
   call plist_a%set("No Nonlocal Changes", .true.)
 
@@ -297,13 +301,102 @@ module ocn_fortrilinos_imp_mod
   call krylov_list_m%set('Convergence Tolerance', 1e-8)
   tol_m = 1.0d-8
 
-
   ! Trilinos solver handle:  'o' for outer iteration, 'm' for main iteration
   solver_handle_o = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
   solver_handle_m = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
 
   call solver_handle_o%init(comm) !; FORTRILINOS_CHECK_IERR()
   call solver_handle_m%init(comm) !; FORTRILINOS_CHECK_IERR()
+
+
+ ! Construction of preconditioner through setup_solver
+
+  ! -- MPAS-O SpMV -------------------------------------------------------------
+  block => domain % blocklist
+  do while (associated(block))
+
+     call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+     call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+
+     call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
+     call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
+     call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+
+     call mpas_pool_get_array(meshPool, 'nEdgesOnCell',            nEdgesOnCell           )
+     call mpas_pool_get_array(meshPool, 'edgesOnCell',             edgesOnCell            )
+     call mpas_pool_get_array(meshPool, 'cellsOnEdge',             cellsOnEdge            )
+     call mpas_pool_get_array(meshPool, 'dcEdge',                  dcEdge                 )
+     call mpas_pool_get_array(meshPool, 'bottomDepth',             bottomDepth            )
+     call mpas_pool_get_array(meshPool, 'edgeSignOnCell',          edgeSignOnCell         )
+     call mpas_pool_get_array(meshPool, 'dvEdge',                  dvEdge                 )
+     call mpas_pool_get_array(meshPool, 'areaCell',                areaCell               )
+
+     call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
+     call mpas_pool_get_array(statePool, 'ssh', sshNew, 2)
+     call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
+     call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
+     call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur,1)
+     call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
+     call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
+
+     call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0 )
+     call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1 )
+
+     nCells = nCellsArray(1)
+     nEdges = nEdgesArray(2)
+ 
+     ! A : Coefficient matrix -------------------------------------------------!
+
+     call A%resumeFill() !; FORTRILINOS_CHECK_IERR()
+
+     call A%setAllToScalar(szero)
+
+     do iCell = 1, nCellsArray(1)
+
+        gblrow  = globalIdx(iCell)
+
+        do i = 1, nEdgesOnCell(iCell)
+          iEdge = edgesOnCell(i, iCell)
+          cell1 = cellsOnEdge(1, iEdge)
+          cell2 = cellsOnEdge(2, iEdge)
+
+          ! Interpolation sshEdge
+          thicknessSumLag = min(bottomDepth(cell1),bottomDepth(cell2))
+          fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
+
+          if ( globalIdx(cell2) > 0) then
+          cols(1) = globalIdx(cell1)
+          vals(1) = -fluxAx 
+          numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+
+          cols(1) = globalIdx(cell2)
+          vals(1) = +fluxAx 
+          numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+          endif
+
+        end do ! i
+
+        cols(1) = globalIdx(iCell)
+        vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+        numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
+
+     end do ! iCell
+
+     block => block % next
+  end do  ! block
+
+  call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
+
+  ! Step 2: setup the problem
+  call solver_handle_o%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
+  call solver_handle_m%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
+
+  ! Step 3: setup the solver - Initial only
+  call solver_handle_o%setup_solver(plist_o) !; FORTRILINOS_CHECK_IERR()
+  call solver_handle_m%setup_solver(plist_m) !; FORTRILINOS_CHECK_IERR()
+
+  call mpas_timer_stop("fort init")
+
   endif ! INIT_belos :: Initial only =============================================================!
 
   call mpas_timer_start("fort mat setup")
@@ -342,7 +435,6 @@ module ocn_fortrilinos_imp_mod
      nCells = nCellsArray(1)
      nEdges = nEdgesArray(2)
  
-
      ! A : Coefficient matrix -------------------------------------------------!
 
      call A%resumeFill() !; FORTRILINOS_CHECK_IERR()
@@ -382,11 +474,10 @@ module ocn_fortrilinos_imp_mod
         numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
 
      end do ! iCell
-
   
-  call mpas_timer_start("fort mat complete")
-  call A%fillComplete(plist_a) !; FORTRILINOS_CHECK_IERR()
-  call mpas_timer_stop("fort mat complete")
+     call mpas_timer_start("fort mat fillComplete")
+     call A%fillComplete(plist_a) !; FORTRILINOS_CHECK_IERR()
+     call mpas_timer_stop("fort mat fillComplete")
 
   call mpas_timer_stop("fort mat setup")
 
@@ -444,7 +535,7 @@ module ocn_fortrilinos_imp_mod
   residual = TpetraMultiVector(map,num_vecs,.false.) !; FORTRILINOS_CHECK_IERR()
   call mpas_timer_stop("fort Vector")
 
-  call mpas_timer_start("fort solver setup")
+  call mpas_timer_start("fort setup problem")
 
   ! ------------------------------------------------------------------
   ! Explicit setup and solve
@@ -458,15 +549,15 @@ module ocn_fortrilinos_imp_mod
   endif
 
   ! Step 3: setup the solver - Initial only
-  if ( init_belos_o .and. stage == 'o') then
-    call solver_handle_o%setup_solver(plist_o) !; FORTRILINOS_CHECK_IERR()
-    init_belos_o = .false.
-  elseif ( init_belos_m .and. stage == 'm') then
-    call solver_handle_m%setup_solver(plist_m) !; FORTRILINOS_CHECK_IERR()
-    init_belos_m = .false.
-  endif
+! if ( init_belos_o .and. stage == 'o') then
+!   call solver_handle_o%setup_solver(plist_o) !; FORTRILINOS_CHECK_IERR()
+!   init_belos_o = .false.
+! elseif ( init_belos_m .and. stage == 'm') then
+!   call solver_handle_m%setup_solver(plist_m) !; FORTRILINOS_CHECK_IERR()
+!   init_belos_m = .false.
+! endif
 
-  call mpas_timer_stop("fort solver setup")
+  call mpas_timer_stop("fort setup problem")
 
 ! call mpas_timer_start("fort init resid")
 ! ! Calculate initial residual
@@ -518,13 +609,13 @@ module ocn_fortrilinos_imp_mod
   end do  ! block
 
 
-  call mpas_timer_start("si halo ssh")
-  call mpas_dmpar_exch_group_create(domain, iterGroupName)
-  call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
-  call mpas_threading_barrier()
-  call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-  call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-  call mpas_timer_stop("si halo ssh")
+! call mpas_timer_start("si halo ssh")
+! call mpas_dmpar_exch_group_create(domain, iterGroupName)
+! call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
+! call mpas_threading_barrier()
+! call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+! call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+! call mpas_timer_stop("si halo ssh")
        
 
 ! call mpas_timer_start("fort final")
