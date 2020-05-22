@@ -37,6 +37,7 @@ module ocn_forward_mode
    use ocn_time_integration
    use ocn_time_integration_split
    use ocn_time_integration_si
+   use ocn_fortrilinos_imp_mod
    use ocn_tendency
    use ocn_diagnostics
    use ocn_test
@@ -392,16 +393,18 @@ module ocn_forward_mode
 
       endif
 
-      ! Preconditioner for the semi-implicit barotropic mode solver
+      ! Initialization of the ForTrilinos solver
       if (config_time_integrator == 'semi_implicit' ) then
 
-         call mpas_log_write(' Building a preconditioning matrix: ')
-         call mpas_timer_start("preconditioning matrix build")
+         call mpas_log_write(' Initializing the ForTrilinos solver')
+         call mpas_timer_start("Init fort solver")
 
-         ! Building a preconditioning matrix
-         call ocn_time_integrator_si_preconditioner(domain, dt)
+         call ocn_time_integration_imp_btrmode_init (domain,dt)
 
-         call mpas_timer_stop("preconditioning matrix build")
+!        ! Building a preconditioning matrix
+!        call ocn_time_integrator_si_preconditioner(domain, dt)
+
+         call mpas_timer_stop("Init fort solver")
       endif
 
       call mpas_dmpar_exch_group_create(domain, 'subcycleFields')
