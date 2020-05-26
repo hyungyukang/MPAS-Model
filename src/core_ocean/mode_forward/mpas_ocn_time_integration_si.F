@@ -64,6 +64,7 @@ module ocn_time_integration_si
 
    public :: ocn_time_integrator_si, ocn_time_integration_si_init
    public :: ocn_time_integrator_si_preconditioner
+   public :: prec_mat_vec
 
    character (len=*), parameter :: iterGroupName = 'iterFields'
    character (len=*), parameter :: finalBtrGroupName = 'finalBtrFields'
@@ -72,7 +73,8 @@ module ocn_time_integration_si
    ! Global variables for the semi-implicit time stepper ---------------
    real (kind=RKIND), allocatable,dimension(:,:) :: prec_ivmat
    real (kind=RKIND) :: total_num_cells,mean_num_cells,area_mean
-   integer :: nPrecVec
+   integer,allocatable,dimension(:) :: colidx,rowidx
+   integer :: nPrecVec,nelem
 
    contains
 
@@ -272,14 +274,18 @@ module ocn_time_integration_si
       character (len=StrKIND) :: configName
       integer :: threadNum
 
-      integer :: temp_mask
+      integer :: temp_mask,rank,ncpus
       real (kind=RKIND) :: tracer2_value, lat
 
       real(kind=RKIND) :: alpha1,alpha2
       logical :: first_step = .true.
+!@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+      integer :: maxNumArray,maxNumArrayRank,mpi_ierr,itmp1,itmp2
 
 
       dminfo = domain % dminfo
+        rank = dminfo % my_proc_id
+       ncpus = dminfo % nprocs
 
       call mpas_timer_start("si timestep")
 
@@ -327,12 +333,14 @@ module ocn_time_integration_si
       call mpas_pool_get_config(domain % configs, 'config_btr_si_tolerance'     , config_btr_si_tolerance     )
       call mpas_pool_get_config(domain % configs, 'config_n_btr_si_outer_iter'  , config_n_btr_si_outer_iter  )
 
+
+
       ! Tolerance for main iteration -- !
       crit_main  = config_btr_si_tolerance * area_mean
 
       !--- Backward-Euler at the 1st time step only to remove spurious oscillation caused by CN method
       if ( first_step ) then
-         first_step = .false.
+!        first_step = .false.
          alpha1 = 1.0
          alpha2 = 0.0
       else
@@ -388,6 +396,153 @@ module ocn_time_integration_si
 
          nCells = nCellsPtr
          nEdges = nEdgesPtr
+
+!@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+      if ( first_step ) then
+         if ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
+
+         first_step = .false.
+!        itmp1 = nCellsArray(1)
+!        call mpas_dmpar_max_int(dminfo,itmp1, maxNumArray)
+!        endif
+!        call mpas_dmpar_sum_int(dminfo,itmp1,maxNumArrayRank)
+
+!        print*, rank,nCellsArray(1)
+!        !print*, maxNumArray,maxNumArrayRank
+!  
+!        print*, ncpus-1
+!        maxNumArrayRank = ncpus-1
+
+!        call mpi_barrier(dminfo%comm, mpi_ierr)
+!        stop
+
+!           itmp1 = 0
+!           itmp2 = 0
+!           do i = 1,nPrecVec
+!           do j = 1,nPrecVec
+!             if ( log10(dabs(prec_ivmat(i,j))) < -6.d0 ) then
+!               prec_ivmat(i,j) = 0.d0
+!             endif
+
+!             if ( log10(dabs(prec_ivmat(i,j))) >= -6.d0 ) then
+!               itmp2 = itmp2 + 1
+!             endif
+!             itmp1 = itmp1 + 1
+!           end do
+!           end do
+
+!           print*, itmp1,itmp2,(real(itmp2)/real(itmp1)) * 100.d0
+!           print*, real(itmp2) / real(nPrecVec)
+
+
+!        do i = 1,nCellsArray(1)
+!        do j = 1,nCellsArray(1)
+!          if ( log10(dabs(prec_ivmat(i,j))) < -7.0 ) then
+!            prec_ivmat(i,j) = 0.d0
+!          endif
+!        end do
+!        end do
+
+!        if ( rank == ncpus-1 ) then
+!          maxNumArray     = nCellsArray(1)
+!          maxNumArrayRank = ncpus-1
+!          print*, maxNumArray,maxNumArrayRank
+
+!          allocate(prec_smmat(nCellsArray(1),nCellsArray(1)))
+
+!          do i = 1,nCellsArray(1)
+!          do j = 1,nCellsArray(1)
+!            prec_smmat(i,j) = log10(dabs(prec_ivmat(i,j)))
+!          end do
+!          end do
+
+!          open(11,file='mat.bin',status='unknown',access='direct', &
+!               form='unformatted',recl=nCellsArray(1)*nCellsArray(1)*8,convert='little_endian')
+!          write(11,rec=1) prec_smmat
+!          close(11)
+
+!          print*, nCellsArray(1) 
+
+!        endif
+
+!        call mpas_dmpar_bcast_int(dminfo,maxNumArray,maxNumArrayRank)
+!        call mpas_dmpar_bcast_int(dminfo,itmp1,maxNumArrayRank)
+
+!        call mpi_barrier(dminfo%comm, mpi_ierr)
+!        stop
+
+!        maxNumArrayRank = itmp1
+
+!        print*, maxNumArray,maxNumArrayRank
+
+!        allocate(prec_smmat(maxNumArray,maxNumArray))
+!        allocate(prec_test(nCellsArray(1),nCellsArray(1)))
+
+!        prec_smmat(:,:) = prec_ivmat(:,:)
+
+!        if ( rank == maxNumArrayRank ) then
+!          prec_smmat(:,:) = prec_ivmat(:,:)
+
+!        endif
+!        call mpas_dmpar_bcast_doubles(dminfo,maxNumArray*maxNumArray,prec_smmat,maxNumArrayRank)
+    
+!        prec_ivmat(:,:) = 0.d0
+
+!        do i = 1,nCellsArray(1)
+!          prec_ivmat(i,i) = 1.d0
+!        end do
+
+!        do i = 1,maxNumArray
+!        do j = 1,maxNumArray
+!          prec_ivmat(i,j) = prec_smmat(i,j)
+!          !prec_ivmat(i,i) = 1.d0
+!        end do
+!        end do
+!        print*, rank,nCellsArray(1)
+
+!        prec_test(:,:) = 0.d0 
+!        do i = 1,nCellsArray(1)
+!          prec_test(i,i) = 1.d0
+!        end do
+
+!        do i = 1,nCellsArray(1)
+!        do j = 1,nCellsArray(1)
+!          prec_test(i,j) = prec_ivmat(i,j)
+!        end do
+!        end do
+
+!        do i = nCellsArray(1)-1,nCellsArray(1)-1
+!        do j = 1,nCellsArray(1)
+!          prec_test(i+1,j) = prec_ivmat(i,j)
+!        end do
+!        end do
+
+!        do j = nCellsArray(1)-1,nCellsArray(1)-1
+!        do i = 1,nCellsArray(1)
+!          prec_test(i,j+1) = prec_ivmat(i,j)
+!        end do
+!        end do
+
+!        prec_ivmat(:,:) = 0.d0
+!        prec_ivmat(:,:) = prec_test(:,:)
+
+!        print*,prec_ivmat(nCellsArray(1),nCellsArray(1))
+      
+!        if ( rank == maxNumArrayRank ) then
+!        do i = 1,nCellsArray(1)
+!        do j = 1,nCellsArray(1)
+!          prec_smmat(i,j) = prec_test(i,j) - prec_ivmat(i,j)
+!        end do
+!        end do
+!        print*, minval(prec_smmat),maxval(prec_smmat)
+
+!        endif
+
+!        call mpi_barrier(dminfo%comm, mpi_ierr)
+!        stop
+        endif
+      endif
+!@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
          ! Initialize * variables that are used to compute baroclinic tendencies below.
 
@@ -1031,7 +1186,8 @@ module ocn_time_integration_si
 
             elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_rh0(1:nPrecVec), 1)
+               !call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_rh0(1:nPrecVec), 1)
+               call prec_mat_vec(CGvec_r0(1:nPrecVec),CGvec_rh0(1:nPrecVec))
 
             elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                ! Jacobi preconditioning 
@@ -1166,7 +1322,8 @@ module ocn_time_integration_si
  
             elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_w0(1:nPrecVec), 1, 0.0_RKIND, CGvec_wh0(1:nPrecVec), 1)
+               !call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_w0(1:nPrecVec), 1, 0.0_RKIND, CGvec_wh0(1:nPrecVec), 1)
+               call prec_mat_vec(CGvec_w0(1:nPrecVec),CGvec_wh0(1:nPrecVec))
  
             elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                ! Jacobi preconditioning 
@@ -1415,7 +1572,8 @@ module ocn_time_integration_si
    
                elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                   ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_z1(1:nPrecVec), 1, 0.0_RKIND, CGvec_zh1(1:nPrecVec), 1)
+                  !call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_z1(1:nPrecVec), 1, 0.0_RKIND, CGvec_zh1(1:nPrecVec), 1)
+                  call prec_mat_vec(CGvec_z1(1:nPrecVec),CGvec_zh1(1:nPrecVec))
    
                elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                   ! Jacobi preconditioning 
@@ -1596,7 +1754,9 @@ module ocn_time_integration_si
    
                elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                   ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_w1(1:nPrecVec), 1, 0.0_RKIND, CGvec_wh1(1:nPrecVec), 1)
+                  !call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_w1(1:nPrecVec), 1, 0.0_RKIND, CGvec_wh1(1:nPrecVec), 1)
+                  call prec_mat_vec(CGvec_w1(1:nPrecVec),CGvec_wh1(1:nPrecVec))
+
                elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                   ! Jacobi preconditioning 
                   CGvec_wh1(1:nPrecVec) = CGvec_w1(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
@@ -2007,7 +2167,8 @@ module ocn_time_integration_si
 
             elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_rh0(1:nPrecVec), 1)
+               !call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_rh0(1:nPrecVec), 1)
+               call prec_mat_vec(CGvec_r0(1:nPrecVec),CGvec_rh0(1:nPrecVec))
 
             elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                ! Jacobi preconditioning
@@ -2143,7 +2304,8 @@ module ocn_time_integration_si
  
             elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_w0(1:nPrecVec), 1, 0.0_RKIND, CGvec_wh0(1:nPrecVec), 1)
+               !call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_w0(1:nPrecVec), 1, 0.0_RKIND, CGvec_wh0(1:nPrecVec), 1)
+               call prec_mat_vec(CGvec_w0(1:nPrecVec),CGvec_wh0(1:nPrecVec))
  
             elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                ! Jacobi preconditioning
@@ -2391,7 +2553,8 @@ module ocn_time_integration_si
    
                elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                   ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_z1(1:nPrecVec), 1, 0.0_RKIND, CGvec_zh1(1:nPrecVec), 1)
+                  !call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_z1(1:nPrecVec), 1, 0.0_RKIND, CGvec_zh1(1:nPrecVec), 1)
+                  call prec_mat_vec(CGvec_z1(1:nPrecVec),CGvec_zh1(1:nPrecVec))
    
                elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                   ! Jacobi preconditioning 
@@ -2569,7 +2732,9 @@ module ocn_time_integration_si
    
                elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                   ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_w1(1:nPrecVec), 1, 0.0_RKIND, CGvec_wh1(1:nPrecVec), 1)
+                  !call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_w1(1:nPrecVec), 1, 0.0_RKIND, CGvec_wh1(1:nPrecVec), 1)
+                  call prec_mat_vec(CGvec_w1(1:nPrecVec),CGvec_wh1(1:nPrecVec))
+
                elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                   ! Jacobi preconditioning 
                   CGvec_wh1(1:nPrecVec) = CGvec_w1(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
@@ -2816,9 +2981,12 @@ module ocn_time_integration_si
             end do ! iEdge
 
             ! #Iteration  check
-!           if ( split_implicit_step == 2 ) then
-!           call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
-!           endif
+            if ( split_implicit_step == 2 ) then
+            call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
+              if ( rank == 0 ) then
+                print*, 'Iteration ',iter 
+              endif
+            endif
 
             block => block % next
          end do  ! block
@@ -3778,6 +3946,7 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:)  , pointer :: dcEdge,bottomDepth
       real (kind=RKIND), dimension(:)  , pointer :: dvEdge,areaCell
       real (kind=RKIND), dimension(:)  , pointer :: CGvec_u1
+      real (kind=RKIND), allocatable,dimension(:,:) :: temp_mat
       real (kind=RKIND) :: temp1,temp2
       !------------------------------------------!
       integer,dimension(:)  ,pointer     :: globalCellId
@@ -3793,6 +3962,7 @@ module ocn_time_integration_si
       dminfo = domain % dminfo
         rank = dminfo % my_proc_id
        ncpus = dminfo % nprocs
+
 
       call mpas_pool_get_config(domain % configs, 'config_btr_si_preconditioner', config_btr_si_preconditioner)
 
@@ -3837,6 +4007,12 @@ module ocn_time_integration_si
          call mpas_dmpar_sum_int(dminfo,local_num_cells,total_num_cells)
 
 
+!     print*,'AAA'
+!     print*, nCellsArray(1),nCellsArray(2),nCellsArray(3)
+!     call mpi_barrier(dminfo%comm,mpi_ierr)
+!     stop
+
+
          ! Restricted Additive Schwarz preconditioner ---------------------------------------------!
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
  
@@ -3879,7 +4055,47 @@ module ocn_time_integration_si
   
            ! Preconditioning matrix inversion
             call inverse(nPrecVec,prec_ivmat)
-  
+
+
+           ! Removing some entries under criteria
+!          allocate(ncol(nPrecVec))
+
+!          do i = 1,nPrecVec
+!            itmp1 = 0 
+!          do j = 1,nPrecVec
+!            if ( dlog10(dabs(prec_ivmat(i,j))) >= -6.d0 ) then
+!              itmp1 = itmp1 + 1
+!              prec_ivmat(i,j) = 0.d0
+!            endif
+!          end do
+!            ncol(i) = itmp1
+!          end do
+! 
+!          nelem = itmp1
+!          ncol_max = maxval(ncol)
+
+!          allocate(temp_mat(nPrecVec,ncol_max))
+!          allocate(  colidx(nPrecVec,ncol_max))
+!  
+!          temp_mat(:,:) = 0.d0
+
+!          do i = 1,nPrecVec
+!          itmp1 = 0
+!          do j = i,nPrecVec
+!            if ( dlog10(dabs(prec_ivmat(i,j))) >= -6.d0 ) then
+!              itmp1 = itmp1 + 1
+!              temp_mat(i,itmp1) = prec_ivmat(i,j)
+!              colidx(i,itmp1) = j
+!            endif
+!          end do
+!          end do
+
+!          deallocate(prec_ivmat)
+!          allocate(prec_ivmat(nPrecVec,ncol_max))
+
+!          prec_ivmat(:,:) = temp_mat(:,:)
+!          deallocate(prec_ivmat)
+ 
 
          ! Block-Jacobi preconditioner ------------------------------------------------------------!
          elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
@@ -3921,6 +4137,59 @@ module ocn_time_integration_si
   
             ! Preconditioning matrix inversion
             call inverse(nPrecVec,prec_ivmat)
+
+           ! Removing some entries under criteria
+
+!          allocate(ncol(nPrecVec))
+
+           itmp1 = 0 
+           itmp2 = 0 
+           do i = 1,nPrecVec
+           do j = 1,nPrecVec
+             if ( dlog10(dabs(prec_ivmat(i,j))) >= -6.d0 ) then
+               itmp1 = itmp1 + 1
+             endif
+               itmp2 = itmp2 + 1
+           end do
+           end do
+  
+           nelem = itmp1
+           print*, nelem,real(itmp1)/real(itmp2) * 100.0
+!          ncol_max = maxval(ncol)
+
+!          allocate(temp_mat(nPrecVec,ncol_max))
+!          allocate(  colidx(nPrecVec,ncol_max))
+
+           allocate(prec_mat(nelem))
+           allocate(  colidx(nelem))
+           allocate(  rowidx(nelem))
+   
+!          temp_mat(:,:) = 0.d0
+
+           itmp1 = 0
+           do i = 1,nPrecVec
+           do j = 1,nPrecVec
+             if ( dlog10(dabs(prec_ivmat(i,j))) >= -6.d0 ) then
+               itmp1 = itmp1 + 1
+               prec_mat(itmp1) = prec_ivmat(i,j)
+               colidx(itmp1) = i
+               rowidx(itmp1) = j
+!              temp_mat(i,itmp1) = prec_ivmat(i,j)
+!              colidx(i,itmp1) = j
+             endif
+             if ( dlog10(dabs(prec_ivmat(i,j))) < -6.d0 ) then
+               prec_ivmat(i,j) = 0.d0
+             endif
+           end do
+           end do
+
+           deallocate(prec_ivmat)
+
+!          allocate(prec_ivmat(nPrecVec,ncol_max))
+
+!          prec_ivmat(:,:) = temp_mat(:,:)
+
+!          deallocate(temp_mat)
  
 
          ! Jacobi preconditioner ------------------------------------------------------------------!
@@ -3979,6 +4248,21 @@ module ocn_time_integration_si
 
    end subroutine ocn_time_integrator_si_preconditioner !}}}
 
+
+   subroutine prec_mat_vec(invec,outvec)
+     implicit none
+     real(kind=RKIND),dimension(nPrecVec),intent(in)  :: invec
+     real(kind=RKIND),dimension(nPrecVec),intent(out) :: outvec
+     real(kind=RKIND) :: sum1
+     integer :: i,j
+
+     outvec(:) = 0.d0
+     do i = 1,nelem
+       outvec(rowidx(i)) = outvec(rowidx(i)) + prec_mat(i) * invec(colidx(i))
+     end do
+
+   end subroutine prec_mat_vec
+
 end module ocn_time_integration_si
 
 !***********************************************************************
@@ -4005,16 +4289,16 @@ subroutine inverse (n,Ainv) !{{{
 
     ! DPOTRF computes the Cholesky factorizaton of a symmetric positive
     ! defnitie matrix.
-    call DPOTRF('U',n,Ainv,n,info)
-!   call DGETRF(n,n,Ainv,n,ipiv,info) ! For unsymmetric matrix
+!   call DPOTRF('U',n,Ainv,n,info)
+    call DGETRF(n,n,Ainv,n,ipiv,info) ! For unsymmetric matrix
 
     if (info.lt.0) stop 'ERROR in inverse routine: Matrix is numerically singular!'
     if (info.gt.0) stop 'ERROR in inverse routine: Matrix is not positive definite!'
 
     ! DPOTRI computes the inverse of a symmetric positive definite matrix,
     ! using the Cholesky factorization computed by DPOTRF
-    call DPOTRI('U',n,Ainv,n,info)
-!   call DGETRI(n,Ainv,n,ipiv,work,n,info) ! For unsymmetric matrix
+!   call DPOTRI('U',n,Ainv,n,info)
+    call DGETRI(n,Ainv,n,ipiv,work,n,info) ! For unsymmetric matrix
 
     Ainv = -Ainv ! (-) sign to restore a matrix sign
     if (info.ne.0) stop 'ERROR in inverse routine: Matrix inversion failed!'
