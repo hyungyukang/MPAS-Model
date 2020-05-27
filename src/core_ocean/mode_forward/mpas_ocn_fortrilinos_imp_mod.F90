@@ -109,10 +109,6 @@ module ocn_fortrilinos_imp_mod
 
   dminfo = domain % dminfo
    
-  ! INIT belos :: Initial only ===================================================================!
-  if ( init_belos ) then
-
-    init_belos = .false.
     comm = TeuchosComm(dminfo % comm)
     my_rank = comm%getRank()
     num_procs = comm%getSize()
@@ -393,13 +389,8 @@ module ocn_fortrilinos_imp_mod
   call solver_handle_o%setup_solver(plist_o) !; FORTRILINOS_CHECK_IERR()
   call solver_handle_m%setup_solver(plist_m) !; FORTRILINOS_CHECK_IERR()
 
-  endif ! INIT_belos :: Initial only =============================================================!
   end subroutine ocn_time_integration_imp_btrmode_init
 
-
-!@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@2
-!@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@2
-!@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@2
   subroutine ocn_time_integration_imp_btrmode(domain,dt,stage)
    
   implicit none
@@ -415,10 +406,6 @@ module ocn_fortrilinos_imp_mod
   type(TeuchosComm),save :: comm
   type(ParameterList),save:: plist_o, linear_solver_list_o, belos_list_o, solver_list_o, krylov_list_o
   type(ParameterList),save:: plist_m, linear_solver_list_m, belos_list_m, solver_list_m, krylov_list_m
-! type(ParameterList),save:: plist_a
-! type(TrilinosSolver),save :: solver_handle_o,solver_handle_m
-! type(TpetraMap),save :: map
-! type(TpetraCrsMatrix),save :: A
   type(TpetraMultiVector),save :: B, X, residual
 
   real(scalar_type), dimension(:), allocatable :: lhs, rhs
@@ -474,7 +461,6 @@ module ocn_fortrilinos_imp_mod
 
   ! For User defined variables -------------------------------------------------
   integer :: ierr,nvec
-! integer, dimension(:), allocatable,save :: globalIdx
   integer :: sCellIdx,eCellIdx,mpi_ierr
   logical :: init_belos = .true., init_belos_o = .true., init_belos_m = .true.
   type(TpetraImport) :: importer
@@ -484,292 +470,6 @@ module ocn_fortrilinos_imp_mod
 
   dminfo = domain % dminfo
    
-  ! INIT belos :: Initial only ===================================================================!
-! if ( init_belos ) then
-
-!   init_belos = .false.
-!   comm = TeuchosComm(dminfo % comm)
-!   my_rank = comm%getRank()
-!   num_procs = comm%getSize()
-
-!   ! Defining global index ----------------------------------------------------
-!   block => domain % blocklist
-!   do while (associated(block))
-!     call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-!     call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-!     call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0 )
-
-!     if (num_procs == 1) then
-
-!       allocate(globalIdx(nCellsArray(4)+1))
-!       do iCell = 1,nCellsArray(4)
-!         globalIdx(iCell) = iCell
-!       end do
-!         globalIdx(nCellsArray(4)+1) = 0
-
-!     else
-
-!       call MPI_BARRIER(dminfo%comm,mpi_ierr)
-!       do i = 0,num_procs - 1
-!         if ( my_rank == i ) then
-! 
-!           if ( my_rank == 0 ) then
-!             call MPI_SEND(nCellsArray(1),1,MPI_INTEGER,my_rank+1,1,dminfo%comm,mpi_ierr)
-!             eCellIdx = nCellsArray(1)
-!           elseif ( my_rank == num_procs-1 ) then
-!             call MPI_RECV(eCellIdx,1,MPI_INTEGER,my_rank-1,1,dminfo%comm,MPI_STATUS_IGNORE,mpi_ierr)
-!             eCellIdx = eCellIdx + nCellsArray(1)
-!           else
-!             call MPI_RECV(eCellIdx,1,MPI_INTEGER,my_rank-1,1,dminfo%comm,MPI_STATUS_IGNORE,mpi_ierr)
-!             eCellIdx = eCellIdx + nCellsArray(1)
-!             call MPI_SEND(eCellIdx,1,MPI_INTEGER,my_rank+1,1,dminfo%comm,mpi_ierr)
-!           endif ! my_rank
-!         
-!       endif  ! my_rank
-!       call MPI_BARRIER(dminfo%comm,mpi_ierr)
-!       end do ! i
-! 
-! 
-!       do i = 0,num_procs - 1
-!         if ( my_rank == i ) then
-!           sCellIdx = eCellIdx - nCellsArray(1) + 1
-!         endif 
-!         call MPI_BARRIER(dminfo%comm,mpi_ierr)
-!       end do
-! 
-! 
-!       ! My global cell ID ------------------------------------------------------
-!       allocate(globalIdx(nCellsArray(4)+1))
-!       globalIdx(:) = 0
-!       CGvec_r0(:) = 0.0
-!       do iCell = 1,nCellsArray(1)
-!         globalIdx(iCell) = sCellIdx + iCell - 1
-!         CGvec_r0(iCell) = real(globalIdx(iCell))
-!       end do
-! 
-!       call mpas_dmpar_exch_group_create(domain, iterGroupName)
-!       call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-!       call mpas_threading_barrier()
-!       call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-!       call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-! 
-!       do iCell = 1,nCellsArray(4)+1
-!         globalIdx(iCell) = int(CGvec_r0(iCell)) 
-!       end do
-
-!       CGvec_r0(:) = 0.0_RKIND
-
-!     endif ! num_procs
-
-!     block => block % next
-!   end do
-
-! ! ----------------------------------------------------------------------------
-
-! lda = nCellsArray(1)
-
-! ! ----------------------------------------------------------------------------
-
-! ! Step 0: Construct coefficient matrix
-! n_global = -1
-! map = TpetraMap(n_global, nCellsArray(1), comm) !; FORTRILINOS_CHECK_IERR()
-
-! max_entries_per_row = 8
-! graph = TpetraCrsGraph(map, max_entries_per_row, TpetraStaticProfile)
-
-! ! -- MPAS-O SpMV -------------------------------------------------------------
-! block => domain % blocklist
-! do while (associated(block))
-
-!    call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-!    call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
-!    call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
-!    call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
-!    call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-
-!    call mpas_pool_get_array(meshPool, 'nEdgesOnCell',            nEdgesOnCell           )
-!    call mpas_pool_get_array(meshPool, 'edgesOnCell',             edgesOnCell            )
-!    call mpas_pool_get_array(meshPool, 'cellsOnEdge',             cellsOnEdge            )
-!    call mpas_pool_get_array(meshPool, 'dcEdge',                  dcEdge                 )
-!    call mpas_pool_get_array(meshPool, 'bottomDepth',             bottomDepth            )
-!    call mpas_pool_get_array(meshPool, 'edgeSignOnCell',          edgeSignOnCell         )
-!    call mpas_pool_get_array(meshPool, 'dvEdge',                  dvEdge                 )
-!    call mpas_pool_get_array(meshPool, 'areaCell',                areaCell               )
-
-!    call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
-!    call mpas_pool_get_array(statePool, 'ssh', sshNew, 2)
-!    call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
-!    call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
-!    call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur,1)
-!    call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
-!    call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
-
-!    call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0 )
-!    call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1 )
-
-!    nCells = nCellsArray(1)
-!    nEdges = nEdgesArray(2)
-
-!    vals(1) = szero
-
-!    do iCell = 1, nCellsArray(1)
-!       gblrow  = globalIdx(iCell)
-
-!       do i = 1, nEdgesOnCell(iCell)
-!         iEdge = edgesOnCell(i, iCell)
-!         cell1 = cellsOnEdge(1, iEdge)
-!         cell2 = cellsOnEdge(2, iEdge)
-
-!         if ( globalIdx(cell2) >  0 ) then
-!         cols(1) = globalIdx(cell1)
-!         call graph%insertGlobalIndices(gblrow, cols)
-
-!         cols(1) = globalIdx(cell2)
-!         call graph%insertGlobalIndices(gblrow, cols)
-!         endif
-
-!       end do ! i
-
-!       cols(1) = globalIdx(iCell)
-!       call graph%insertGlobalIndices(gblrow, cols)
-!         
-!    end do ! iCell
-
-!    call graph%fillComplete() !; FORTRILINOS_CHECK_IERR()
-
-!    block => block % next
-! end do  ! block
-
-
-! ! Initialize the coefficient matrix using graph
-! A = TpetraCrsMatrix(graph)
-
-! ! Plist_a for fillComplete() to skip global communication
-! plist_a = ParameterList("ANONYMOUS")
-! call plist_a%set("No Nonlocal Changes", .true.)
-
-! ! Read in the parameterList
-! plist_o = ParameterList("Stratimikos") !; FORTRILINOS_CHECK_IERR()
-! plist_m = ParameterList("Stratimikos") !; FORTRILINOS_CHECK_IERR()
-
-! call load_from_xml(plist_o, "stratimikos.xml") !; FORTRILINOS_CHECK_IERR()
-! call load_from_xml(plist_m, "stratimikos.xml") !; FORTRILINOS_CHECK_IERR()
-
-! ! Get tolerance from the parameter list
-! linear_solver_list_o = plist_o%sublist('Linear Solver Types')
-! linear_solver_list_m = plist_m%sublist('Linear Solver Types')
-
-! belos_list_o = linear_solver_list_o%sublist(plist_o%get_string('Linear Solver Type'))
-! belos_list_m = linear_solver_list_m%sublist(plist_m%get_string('Linear Solver Type'))
-
-! solver_list_o = belos_list_o%sublist('Solver Types')
-! solver_list_m = belos_list_m%sublist('Solver Types')
-
-! krylov_list_o = solver_list_o%sublist(belos_list_o%get_string('Solver Type'))
-! krylov_list_m = solver_list_m%sublist(belos_list_m%get_string('Solver Type'))
-
-! call krylov_list_o%set('Convergence Tolerance', 1e-2)
-! tol_o = 1.0d-2
-! call krylov_list_m%set('Convergence Tolerance', 1e-8)
-! tol_m = 1.0d-8
-
-! ! Trilinos solver handle:  'o' for outer iteration, 'm' for main iteration
-! solver_handle_o = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
-! solver_handle_m = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
-
-! call solver_handle_o%init(comm) !; FORTRILINOS_CHECK_IERR()
-! call solver_handle_m%init(comm) !; FORTRILINOS_CHECK_IERR()
-
-
-!! Construction of preconditioner through setup_solver
-
-! ! -- MPAS-O SpMV -------------------------------------------------------------
-! block => domain % blocklist
-! do while (associated(block))
-
-!    call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-!    call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
-!    call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
-!    call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
-!    call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-
-!    call mpas_pool_get_array(meshPool, 'nEdgesOnCell',            nEdgesOnCell           )
-!    call mpas_pool_get_array(meshPool, 'edgesOnCell',             edgesOnCell            )
-!    call mpas_pool_get_array(meshPool, 'cellsOnEdge',             cellsOnEdge            )
-!    call mpas_pool_get_array(meshPool, 'dcEdge',                  dcEdge                 )
-!    call mpas_pool_get_array(meshPool, 'bottomDepth',             bottomDepth            )
-!    call mpas_pool_get_array(meshPool, 'edgeSignOnCell',          edgeSignOnCell         )
-!    call mpas_pool_get_array(meshPool, 'dvEdge',                  dvEdge                 )
-!    call mpas_pool_get_array(meshPool, 'areaCell',                areaCell               )
-
-!    call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
-!    call mpas_pool_get_array(statePool, 'ssh', sshNew, 2)
-!    call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
-!    call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
-!    call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur,1)
-!    call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
-!    call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
-
-!    call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0 )
-!    call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1 )
-
-!    nCells = nCellsArray(1)
-!    nEdges = nEdgesArray(2)
-!
-!    ! A : Coefficient matrix -------------------------------------------------!
-
-!    call A%resumeFill() !; FORTRILINOS_CHECK_IERR()
-
-!    call A%setAllToScalar(szero)
-
-!    do iCell = 1, nCellsArray(1)
-
-!       gblrow  = globalIdx(iCell)
-
-!       do i = 1, nEdgesOnCell(iCell)
-!         iEdge = edgesOnCell(i, iCell)
-!         cell1 = cellsOnEdge(1, iEdge)
-!         cell2 = cellsOnEdge(2, iEdge)
-
-!         ! Interpolation sshEdge
-!         thicknessSumLag = min(bottomDepth(cell1),bottomDepth(cell2))
-!         fluxAx = edgeSignOnCell(i, iCell) * (thicknessSumLag / dcEdge(iEdge)) * dvEdge(iEdge)
-
-!         if ( globalIdx(cell2) > 0) then
-!         cols(1) = globalIdx(cell1)
-!         vals(1) = -fluxAx 
-!         numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
-
-!         cols(1) = globalIdx(cell2)
-!         vals(1) = +fluxAx 
-!         numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
-!         endif
-
-!       end do ! i
-
-!       cols(1) = globalIdx(iCell)
-!       vals(1) = (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
-!       numvalid = A%sumIntoGlobalValues(gblrow,cols,vals)
-
-!    end do ! iCell
-
-!    block => block % next
-! end do  ! block
-
-! call A%fillComplete() !; FORTRILINOS_CHECK_IERR()
-
-! ! Step 2: setup the problem
-! call solver_handle_o%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
-! call solver_handle_m%setup_matrix(A) !; FORTRILINOS_CHECK_IERR()
-
-! ! Step 3: setup the solver - Initial only
-! call solver_handle_o%setup_solver(plist_o) !; FORTRILINOS_CHECK_IERR()
-! call solver_handle_m%setup_solver(plist_m) !; FORTRILINOS_CHECK_IERR()
-
-! endif ! INIT_belos :: Initial only =============================================================!
-
   call mpi_barrier(dminfo%comm,mpi_ierr)
 
   call mpas_timer_start("fort mat setup")
