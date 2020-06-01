@@ -448,7 +448,9 @@ llvm:
 #PIO = /global/u2/h/hgkang/my_programs/ParallelIO_1.9.23_large/build/pio
 #PNETCDF = /global/homes/h/hgkang/my_programs/parallel-netcdf_1.8.0_large
 
-FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos
+#FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos
+FORTRILINOS_ROOT    = /global/cscratch1/sd/hgkang/my_programs/Trilinos_zoltan2
+#FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos
 #FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos_MPI_Release_test
 #FORTRILINOS_ROOT   = /Users/3hk/home/programs/Trilinos_MPI_Release_test
 #FORTRILINOS_ROOT   = /Users/3hk/home/programs/Trilinos
