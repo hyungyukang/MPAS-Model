@@ -448,10 +448,10 @@ llvm:
 #PIO = /global/u2/h/hgkang/my_programs/ParallelIO_1.9.23_large/build/pio
 #PNETCDF = /global/homes/h/hgkang/my_programs/parallel-netcdf_1.8.0_large
 
-#FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos
+FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos
 #FORTRILINOS_ROOT    = /global/u2/h/hgkang/my_programs/Trilinos_MPI_Release_test
 #FORTRILINOS_ROOT   = /Users/3hk/home/programs/Trilinos_MPI_Release_test
-FORTRILINOS_ROOT   = /Users/3hk/home/programs/Trilinos
+#FORTRILINOS_ROOT   = /Users/3hk/home/programs/Trilinos
 FORTRILINOS_BUILD   = $(FORTRILINOS_ROOT)/build
 FORTRILINOS_INSTALL = $(FORTRILINOS_ROOT)/build/Trilinos_install
 FORTRILINOS_INCLUDES = -I$(FORTRILINOS_INSTALL)/include -I/$(FORTRILINOS_INSTALL)/lib  -I/$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src -I/$(FORTRILINOS_ROOT)/build/ForTrilinos/src/interface -I$(FORTRILINOS_BUILD)/packages/nox/src
