@@ -2356,6 +2356,26 @@
 			 description="time tendency of low frequency-filtered divergence"
 			 packages="thicknessFilter"
 		/>
+		<var name="tendNormalVelocitySave" type="real" dimensions="nVertLevels nEdges Time" units="m s^{-2}" name_in_code="normalVelocitySave"
+			 description="time tendency of normal component of velocity"
+			 packages="forwardMode"
+		/>
+		<var name="tendLayerThicknessSave" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1}" name_in_code="layerThicknessSave"
+			 description="time tendency of layer thickness"
+			 packages="forwardMode"
+		/>
+		<var name="tendSSHSave" type="real" dimensions="nCells Time" units="m s^{-1}" name_in_code="sshSave"
+			 description="time tendency of sea-surface height"
+			 packages="forwardMode"
+		/>
+		<var name="tendHighFreqThicknessSave" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1}" name_in_code="highFreqThicknessSave"
+			 description="time tendency of high frequency-filtered layer thickness"
+			 packages="thicknessFilter"
+		/>
+		<var name="tendLowFreqDivergenceSave" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1}" name_in_code="lowFreqDivergenceSave"
+			 description="time tendency of low frequency-filtered divergence"
+			 packages="thicknessFilter"
+		/>
 	</var_struct>
 	<var_struct name="diagnostics" time_levs="1">
 		<var name="xtime" type="text" dimensions="Time" units="unitless"
