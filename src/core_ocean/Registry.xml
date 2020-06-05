@@ -2364,6 +2364,10 @@
 			 description="time tendency of layer thickness"
 			 packages="forwardMode"
 		/>
+		<var name="tendLayerThicknessSave2" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1}" name_in_code="layerThicknessSave2"
+			 description="time tendency of layer thickness"
+			 packages="forwardMode"
+		/>
 		<var name="tendSSHSave" type="real" dimensions="nCells Time" units="m s^{-1}" name_in_code="sshSave"
 			 description="time tendency of sea-surface height"
 			 packages="forwardMode"
@@ -2605,6 +2609,10 @@
 			 packages="forwardMode;analysisMode"
 		/>
 		<var name="barotropicForcing" type="real" dimensions="nEdges Time" units="m s^{-2}"
+			 description="Barotropic tendency computed from the baroclinic equations in stage 1 of the split-explicit algorithm."
+			 packages="forwardMode;analysisMode"
+		/>
+		<var name="barotropicForcingSave" type="real" dimensions="nEdges Time" units="m s^{-2}"
 			 description="Barotropic tendency computed from the baroclinic equations in stage 1 of the split-explicit algorithm."
 			 packages="forwardMode;analysisMode"
 		/>
@@ -3019,6 +3027,22 @@
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
+		<var name="salinityTendSave" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1}" 
+			 description="time tendency of low frequency-filtered divergence"
+			 packages="forwardMode;analysisMode"
+		/>
+		<var name="temperatureTendSave" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1}" 
+			 description="time tendency of low frequency-filtered divergence"
+			 packages="forwardMode;analysisMode"
+		/>
+		<var name="layerThicknessOld1" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1}" 
+			 description="time tendency of low frequency-filtered divergence"
+			 packages="forwardMode;analysisMode"
+		/>
+		<var name="layerThicknessOld2" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1}" 
+			 description="time tendency of low frequency-filtered divergence"
+			 packages="forwardMode;analysisMode"
+		/>
 	</var_struct>
 	<var_struct name="shortwave" time_levs="1">
 		<!-- **********************************************************************

@@ -177,7 +177,7 @@ module ocn_time_integration_split
       real (kind=RKIND), dimension(:), pointer :: normalBarotropicVelocityCur, normalBarotropicVelocityNew
       real (kind=RKIND), dimension(:,:), pointer :: normalBaroclinicVelocityCur, normalBaroclinicVelocityNew
       real (kind=RKIND), dimension(:,:), pointer :: normalVelocityCur, normalVelocityNew
-      real (kind=RKIND), dimension(:,:), pointer :: layerThicknessCur, layerThicknessNew
+      real (kind=RKIND), dimension(:,:), pointer :: layerThicknessCur, layerThicknessNew,layerThicknessOld2,layerThicknessOld1
       real (kind=RKIND), dimension(:,:), pointer :: highFreqThicknessCur, highFreqThicknessNew
       real (kind=RKIND), dimension(:,:), pointer :: lowFreqDivergenceCur, lowFreqDivergenceNew
       real (kind=RKIND), dimension(:,:,:), pointer :: tracersGroupCur, tracersGroupNew
@@ -188,9 +188,15 @@ module ocn_time_integration_split
       real (kind=RKIND), dimension(:,:), pointer :: lowFreqDivergenceTend
       real (kind=RKIND), dimension(:,:), pointer :: normalVelocityTend, layerThicknessTend
       real (kind=RKIND), dimension(:,:,:), pointer :: tracersGroupTend, activeTracersTend
+      real (kind=RKIND), dimension(:), pointer :: sshTendSave
+      real (kind=RKIND), dimension(:,:), pointer :: highFreqThicknessTendSave
+      real (kind=RKIND), dimension(:,:), pointer :: lowFreqDivergenceTendSave
+      real (kind=RKIND), dimension(:,:), pointer :: normalVelocityTendSave, layerThicknessTendSave,layerThicknessTendSave2
+      real (kind=RKIND), dimension(:,:), pointer :: salinityTendSave, temperatureTendSave
+      real (kind=RKIND), dimension(:,:,:), pointer :: tracersGroupTendSave, activeTracersTendSave
 
       ! Diagnostics Array Pointers
-      real (kind=RKIND), dimension(:), pointer :: barotropicForcing, barotropicThicknessFlux
+      real (kind=RKIND), dimension(:), pointer :: barotropicForcing,barotropicForcingSave, barotropicThicknessFlux
       real (kind=RKIND), dimension(:,:), pointer :: layerThicknessEdge, normalTransportVelocity, normalGMBolusVelocity
       real (kind=RKIND), dimension(:,:), pointer :: vertAleTransportTop
       real (kind=RKIND), dimension(:,:), pointer :: velocityX, velocityY, velocityZ
@@ -223,12 +229,29 @@ module ocn_time_integration_split
 
       ! tracer iterators
       type (mpas_pool_iterator_type) :: groupItr
-      character (len=StrKIND) :: modifiedGroupName
+      character (len=StrKIND) :: modifiedGroupName,modifiedGroupNameSave
       character (len=StrKIND) :: configName
       integer :: threadNum
 
       integer :: temp_mask
-      real (kind=RKIND) :: tracer2_value, lat
+      real (kind=RKIND) :: tracer2_value, lat, eab,aab,bab,ab1,ab2,ab3
+
+      logical,save :: first_step = .true.
+
+      integer,save :: istep = 0
+
+      eab = 0.5d0
+
+      aab = 0.5d0
+      !bab = 0.0
+      !bab = 5.d0/12.d0
+      bab = 0.2811d0
+
+      ab1 = 23.d0/12.d0
+      ab2 = 16.d0/12.d0
+      ab3 =  5.d0/12.d0
+
+      istep = istep + 1
 
       call mpas_timer_start("se timestep")
 
@@ -318,6 +341,7 @@ module ocn_time_integration_split
 
          nCells = nCellsPtr
          nEdges = nEdgesPtr
+
 
          ! Initialize * variables that are used to compute baroclinic tendencies below.
 
@@ -556,9 +580,11 @@ module ocn_time_integration_split
                call mpas_pool_get_array(statePool, 'ssh', sshNew, 2)
 
                call mpas_pool_get_array(tendPool, 'normalVelocity', normalVelocityTend)
+               call mpas_pool_get_array(tendPool, 'normalVelocitySave', normalVelocityTendSave)
 
                call mpas_pool_get_array(diagnosticsPool, 'layerThicknessEdge', layerThicknessEdge)
                call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
+               call mpas_pool_get_array(diagnosticsPool, 'barotropicForcingSave', barotropicForcingSave)
 
                ! Only need to loop over the 1 halo, since there is a halo exchange immediately after this computation.
                nEdges = nEdgesArray( 1 )
@@ -567,6 +593,8 @@ module ocn_time_integration_split
                call ocn_fuperp(statePool, meshPool, 2)
 
                allocate(uTemp(nVertLevels))
+
+               if ( istep <= 3 ) then
 
                !$omp do schedule(runtime)
                do iEdge = 1, nEdges
@@ -584,6 +612,11 @@ module ocn_time_integration_split
                          + normalVelocityNew(k,iEdge) &  ! this is f*normalBaroclinicVelocity^{perp}
                          + split * gravity * (  sshNew(cell2) - sshNew(cell1) ) &
                           / dcEdge(iEdge) )
+
+                      normalVelocityTendSave(k,iEdge) = (normalVelocityTend(k,iEdge) &
+                                                        + normalVelocityNew(k,iEdge) &  
+                                                        + split * gravity * (  sshNew(cell2) - sshNew(cell1) ) &
+                                                        / dcEdge(iEdge) )
                   enddo
 
                   ! thicknessSum is initialized outside the loop because on land boundaries
@@ -611,6 +644,62 @@ module ocn_time_integration_split
 
                enddo ! iEdge
                !$omp end do
+
+               barotropicForcingSave = barotropicForcing
+
+               else
+
+               do iEdge = 1, nEdges
+                  cell1 = cellsOnEdge(1,iEdge)
+                  cell2 = cellsOnEdge(2,iEdge)
+
+                  uTemp = 0.0_RKIND  ! could put this after with uTemp(maxleveledgetop+1:nvertlevels)=0
+                  do k = 1, maxLevelEdgeTop(iEdge)
+
+                     ! normalBaroclinicVelocityNew = normalBaroclinicVelocityOld + dt*(-f*normalBaroclinicVelocityPerp
+                     !                             + T(u*,w*,p*) + g*grad(SSH*) )
+                     ! Here uNew is a work variable containing -fEdge(iEdge)*normalBaroclinicVelocityPerp(k,iEdge)
+                      uTemp(k) = normalBaroclinicVelocityCur(k,iEdge) &
+                         + dt *( (1.d0+eab)*( normalVelocityTend(k,iEdge) &
+                         + normalVelocityNew(k,iEdge) &  ! this is f*normalBaroclinicVelocity^{perp}
+                         + split * gravity * (  sshNew(cell2) - sshNew(cell1) ) &
+                          / dcEdge(iEdge) ) - eab * normalVelocityTendSave(k,iEdge))
+                  enddo
+
+                  do k = 1, maxLevelEdgeTop(iEdge)
+                      normalVelocityTendSave(k,iEdge) = (normalVelocityTend(k,iEdge) &
+                                                        + normalVelocityNew(k,iEdge) &  
+                                                        + split * gravity * (  sshNew(cell2) - sshNew(cell1) ) &
+                                                        / dcEdge(iEdge) )
+                  enddo
+                  ! thicknessSum is initialized outside the loop because on land boundaries
+                  ! maxLevelEdgeTop=0, but I want to initialize thicknessSum with a
+                  ! nonzero value to avoid a NaN.
+                  normalThicknessFluxSum = layerThicknessEdge(1,iEdge) * uTemp(1)
+                  thicknessSum  = layerThicknessEdge(1,iEdge)
+
+                  do k = 2, maxLevelEdgeTop(iEdge)
+                     normalThicknessFluxSum = normalThicknessFluxSum + layerThicknessEdge(k,iEdge) * uTemp(k)
+                     thicknessSum  =  thicknessSum + layerThicknessEdge(k,iEdge)
+                  enddo
+                  barotropicForcing(iEdge) = split * normalThicknessFluxSum / thicknessSum / dt
+
+
+                  do k = 1, maxLevelEdgeTop(iEdge)
+                     ! These two steps are together here:
+                     !{\bf u}'_{k,n+1} = {\bf u}'_{k,n} - \Delta t {\overline {\bf G}}
+                     !{\bf u}'_{k,n+1/2} = \frac{1}{2}\left({\bf u}^{'}_{k,n} +{\bf u}'_{k,n+1}\right)
+                     ! so that normalBaroclinicVelocityNew is at time n+1/2
+                     normalBaroclinicVelocityNew(k,iEdge) = 0.5_RKIND*( &
+                       normalBaroclinicVelocityCur(k,iEdge) + uTemp(k) - dt * ( (1.d0+eab)*barotropicForcing(iEdge) &
+                                                                               -      eab *barotropicForcingSave(iEdge)) )
+                  enddo
+               enddo ! iEdge
+               !$omp end do
+
+               barotropicForcingSave = barotropicForcing
+
+               endif
 
                deallocate(uTemp)
 
@@ -1461,6 +1550,9 @@ module ocn_time_integration_split
             call mpas_pool_get_array(diagnosticsPool, 'normalTransportVelocity', normalTransportVelocity)
             call mpas_pool_get_array(diagnosticsPool, 'vertAleTransportTop', vertAleTransportTop)
 
+            call mpas_pool_get_array(tendPool, 'layerThickness', layerThicknessTend)
+            call mpas_pool_get_array(tendPool, 'layerThicknessSave', layerThicknessTendSave)
+
             ! compute vertAleTransportTop.  Use normalTransportVelocity for advection of layerThickness and tracers.
             ! Use time level 1 values of layerThickness and layerThicknessEdge because
             ! layerThickness has not yet been computed for time level 2.
@@ -1477,6 +1569,9 @@ module ocn_time_integration_split
             call mpas_timer_stop('thick vert trans vel top')
 
             call ocn_tend_thick(tendPool, forcingPool, diagnosticsPool, meshPool)
+
+            print*, 'aaa',minval(layerThicknessTend),maxval(layerThicknessTend)
+                
 
             block => block % next
          end do
@@ -1562,9 +1657,17 @@ module ocn_time_integration_split
             call mpas_pool_get_array(statePool, 'normalBaroclinicVelocity', normalBaroclinicVelocityNew, 2)
 
             call mpas_pool_get_array(tendPool, 'layerThickness', layerThicknessTend)
+            call mpas_pool_get_array(tendPool, 'layerThicknessSave', layerThicknessTendSave)
+            call mpas_pool_get_array(tendPool, 'layerThicknessSave2', layerThicknessTendSave2)
             call mpas_pool_get_array(tendPool, 'normalVelocity', normalVelocityTend)
+            call mpas_pool_get_array(tendPool, 'normalVelocitySave', normalVelocityTendSave)
             call mpas_pool_get_array(tendPool, 'highFreqThickness', highFreqThicknessTend)
             call mpas_pool_get_array(tendPool, 'lowFreqDivergence', lowFreqDivergenceTend)
+
+            call mpas_pool_get_array(diagnosticsPool, 'temperatureTendSave', temperatureTendSave)
+            call mpas_pool_get_array(diagnosticsPool, 'salinityTendSave', salinityTendSave)
+            call mpas_pool_get_array(diagnosticsPool, 'layerThicknessOld1', layerThicknessOld1)
+            call mpas_pool_get_array(diagnosticsPool, 'layerThicknessOld2', layerThicknessOld2)
 
             call mpas_pool_get_array(tracersTendPool, 'activeTracersTend', activeTracersTend)
 
@@ -1656,6 +1759,20 @@ module ocn_time_integration_split
             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             elseif (split_explicit_step == config_n_ts_iter) then
 
+               if ( istep == 2 ) then
+                 !layerThicknessOld2 = layerThicknessCur
+                 layerThicknessTendSave = layerThicknessTend
+!              elseif ( istep == 2 ) then
+!                layerThicknessTendSave = layerThicknessTend
+                 !layerThicknessOld1     = layerThicknessCur
+               end if
+
+               !print*, shape(layerThicknessTendSave2),maxval(layerThicknessTendSave2),maxval(layerThicknessTendSave)
+
+               if ( istep <= 2 ) then
+
+!                layerThicknessTendSave(:,:) = layerThicknessTend(:,:)
+
                !$omp do schedule(runtime) private(k)
                do iCell = 1, nCells
                   do k = 1, maxLevelCell(iCell)
@@ -1664,6 +1781,47 @@ module ocn_time_integration_split
                   end do
                end do
                !$omp end do
+
+               else
+
+!              layerThicknessTendSave  = layerThicknessTend
+!              do iCell = 1, nCells
+!                 do k = 1, maxLevelCell(iCell)
+!                   layerThicknessCur(k,iCell) = layerThicknessOld2(k,iCell) + 1.d0 * dt * layerThicknessTendSave(k,iCell)
+!                 end do
+!               end do
+
+               !$omp do schedule(runtime) private(k)
+               do iCell = 1, nCells
+                  do k = 1, maxLevelCell(iCell)
+                     ! this is h_{n+1}
+
+!                    layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) + dt * ( (1.d0+eab)*layerThicknessTend(k,iCell) &
+!                                                                                          -eab *layerThicknessTendSave(k,iCell))
+!                    layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) + dt * ( (1.d0+eab)*layerThicknessTend(k,iCell) - eab *layerThicknessTendSave(k,iCell))
+!                    layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) + dt * ( (1.d0+aab+bab)*layerThicknessTend(k,iCell) &
+!                                                                                    -(aab+2.d0*bab)*layerThicknessTendSave(k,iCell) &
+!                                                                                    +(         bab)*layerThicknessTendSave2(k,iCell) )
+!                    layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) + dt * ( (ab1)*layerThicknessTend(k,iCell) &
+!                                                                                    -(ab2)*layerThicknessTendSave(k,iCell) &
+!                                                                                    +(ab3)*layerThicknessTendSave2(k,iCell) )
+ 
+!                    layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) + dt * layerThicknessTend(k,iCell)
+
+                     layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) + dt * ( (1.d0+eab)*layerThicknessTend(k,iCell) &
+                                                                                           -eab *layerThicknessTendSave(k,iCell))
+
+                  end do
+               end do
+               !$omp end do
+
+               layerThicknessTendSave = layerThicknessTend
+!              layerThicknessOld2 = layerThicknessOld1
+!              layerThicknessOld1 = layerThicknessCur
+
+               end if
+
+!              print*,istep, shape(layerThicknessTendSave),minval(layerThicknessTendSave),maxval(layerThicknessTendSave)
 
                if (config_compute_active_tracer_budgets) then
                   call mpas_pool_get_array(diagnosticsPool,'activeTracerHorizontalAdvectionTendency', &
@@ -1724,8 +1882,17 @@ module ocn_time_integration_split
                         call mpas_pool_get_array(tracersPool, groupItr % memberName, tracersGroupCur, 1)
                         call mpas_pool_get_array(tracersPool, groupItr % memberName, tracersGroupNew, 2)
 
-                        modifiedGroupName = trim(groupItr % memberName) // 'Tend'
+                        modifiedGroupName     = trim(groupItr % memberName) // 'Tend'
+
+
+
                         call mpas_pool_get_array(tracersTendPool, modifiedGroupName, tracersGroupTend)
+
+
+                        if ( istep <= 2 ) then
+
+                        temperatureTendSave(:,:) = tracersGroupTend(1,:,:)
+                        salinityTendSave(:,:) = tracersGroupTend(2,:,:)
 
                         !$omp do schedule(runtime) private(k)
                         do iCell = 1, nCells
@@ -1735,6 +1902,36 @@ module ocn_time_integration_split
                            end do
                         end do
                         !$omp end do
+
+                        else
+
+                        !$omp do schedule(runtime) private(k)
+!                       do iCell = 1, nCells
+!                          do k = 1, maxLevelCell(iCell)
+!                             tracersGroupNew(:,k,iCell) = (tracersGroupCur(:,k,iCell) * layerThicknessCur(k,iCell) + dt &
+!                                                        * tracersGroupTend(:,k,iCell) ) / layerThicknessNew(k,iCell)
+!                          end do
+!                       end do
+
+                        do iCell = 1, nCells
+                           do k = 1, maxLevelCell(iCell)
+                              tracersGroupNew(1,k,iCell) = (tracersGroupCur(1,k,iCell) * layerThicknessCur(k,iCell) + dt &
+                                                         * ((1.d0+eab)*tracersGroupTend(1,k,iCell)-eab*temperatureTendSave(k,iCell))) &
+                                                         / layerThicknessNew(k,iCell)
+!                             tracersGroupNew(2,k,iCell) = (tracersGroupCur(2,k,iCell) * layerThicknessCur(k,iCell) + dt &
+!                                                        * (tracersGroupTend(2,k,iCell))) &
+!                                                        / layerThicknessNew(k,iCell)
+                              tracersGroupNew(2,k,iCell) = (tracersGroupCur(2,k,iCell) * layerThicknessCur(k,iCell) + dt &
+                                                         * ((1.d0+eab)*tracersGroupTend(2,k,iCell)-eab*salinityTendSave(k,iCell))) &
+                                                         / layerThicknessNew(k,iCell)
+                           end do
+                        end do
+                        !$omp end do
+            
+                        temperatureTendSave(:,:) = tracersGroupTend(1,:,:)
+                           salinityTendSave(:,:) = tracersGroupTend(2,:,:)
+
+                        endif
 
                         ! limit salinity in separate loop
                         if ( trim(groupItr % memberName) == 'activeTracers' ) then

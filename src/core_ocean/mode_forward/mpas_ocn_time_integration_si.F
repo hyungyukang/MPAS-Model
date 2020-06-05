@@ -215,6 +215,7 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:,:), pointer :: lowFreqDivergenceTendSave
       real (kind=RKIND), dimension(:,:), pointer :: normalVelocityTendSave, layerThicknessTendSave
       real (kind=RKIND), dimension(:,:,:), pointer :: tracersGroupTendSave, activeTracersTendSave
+      real (kind=RKIND), dimension(:,:), pointer :: salinityTendSave, temperatureTendSave
 
       ! Diagnostics Array Pointers
       real (kind=RKIND), dimension(:), pointer :: barotropicForcing, barotropicThicknessFlux
@@ -284,6 +285,10 @@ module ocn_time_integration_si
       logical,save :: first_step = .true.
  
       integer,save :: istep = 0
+
+      real (kind=RKIND),save :: dt2
+
+      dt2 = dt*1.0d0
 
       istep = istep + 1
 
@@ -670,12 +675,10 @@ module ocn_time_integration_si
                  normalVelocityTendSave = normalVelocityTend
                end if
 
-    
                ! Put f*normalBaroclinicVelocity^{perp} in normalVelocityNew as a work variable
                call ocn_fuperp(statePool, meshPool, 2)
 
                allocate(uTemp(nVertLevels))
-
                
                if ( istep == 1 ) then 
 
@@ -994,10 +997,10 @@ module ocn_time_integration_si
                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                end do ! i
 
-               sshTendb1 = (1.0_RKIND/(gravity*dt*alpha1**2.0)) * sshTendb1
+               sshTendb1 = (1.0_RKIND/(gravity*dt2*alpha1**2.0)) * sshTendb1
                sshTendb2 = (1.0_RKIND/(gravity   *alpha1     )) * sshTendb2
 
-               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) *   sshCur(iCell) * areaCell(iCell)
+               sshCurArea = (1.0_RKIND/(gravity*dt2**2.0*alpha1**2.0)) *   sshCur(iCell) * areaCell(iCell)
 
                CGvec_r0(iCell) = (-sshCurArea - sshTendb1 + sshTendb2)   &
                                 -(-sshCurArea - sshTendAx) 
@@ -1130,7 +1133,7 @@ module ocn_time_integration_si
    
                end do ! i
   
-               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_rh0(iCell) * areaCell(iCell)
+               sshCurArea = (1.0_RKIND/(gravity*dt2**2.0*alpha1**2.0)) * CGvec_rh0(iCell) * areaCell(iCell)
                   
                CGvec_w0(iCell) = -sshCurArea - sshTendAx 
   
@@ -1269,7 +1272,7 @@ module ocn_time_integration_si
    
                end do ! i
  
-               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_wh0(iCell) * areaCell(iCell)
+               sshCurArea = (1.0_RKIND/(gravity*dt2**2.0*alpha1**2.0)) * CGvec_wh0(iCell) * areaCell(iCell)
                 
                CGvec_t0(iCell) = -sshCurArea - sshTendAx 
             
@@ -1516,7 +1519,7 @@ module ocn_time_integration_si
                      sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                   end do ! i
                    
-                  sshLagArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_zh1(iCell) * areaCell(iCell)
+                  sshLagArea = (1.0_RKIND/(gravity*dt2**2.0*alpha1**2.0)) * CGvec_zh1(iCell) * areaCell(iCell)
    
                   CGvec_v1(iCell) = -sshLagArea - sshTendAx
        
@@ -1705,7 +1708,7 @@ module ocn_time_integration_si
                      sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                   end do ! i
                    
-                  sshLagArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_wh1(iCell) * areaCell(iCell)
+                  sshLagArea = (1.0_RKIND/(gravity*dt2**2.0*alpha1**2.0)) * CGvec_wh1(iCell) * areaCell(iCell)
    
                   CGvec_t1(iCell) = -sshLagArea - sshTendAx
                end do ! iCell
@@ -1788,10 +1791,9 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
             call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
 
-            nCells = nCellsArray( cellHaloComputeCounter )
-            nEdges = nEdgesArray( edgeHaloComputeCounter )
+            nCells = nCellsArray(1)
+            nEdges = nEdgesArray(2)
 
-            !$omp do schedule(runtime) private(cell1, cell2, CoriolisTerm, i, eoe)
             do iEdge = 1, nEdges
 
                temp_mask = edgeMask(1, iEdge)
@@ -1813,7 +1815,41 @@ module ocn_time_integration_si
                normalBarotropicVelocitySubcycleNew(iEdge) &
                   = temp_mask &
                   * (normalBarotropicVelocityCur(iEdge) &
-                  - dt * (-barotropicCoriolisTerm(iEdge) + gravity &
+                  - dt2 * (-barotropicCoriolisTerm(iEdge) + gravity &
+                  * ( (alpha1*sshNew(cell2)+alpha2*sshCur(cell2)) - (alpha1*sshNew(cell1)+alpha2*sshCur(cell1))) &
+                  / dcEdge(iEdge) - barotropicForcing(iEdge)))
+            end do ! iEdge
+
+            do iEdge = 1, nEdges
+               normalBarotropicVelocitySubcycleCur(iEdge) =  0.5d0 * normalBarotropicVelocitySubcycleNew(iEdge)  &
+                                                           + 0.5d0 * normalBarotropicVelocityCur(iEdge)        
+            end do ! iEdge
+
+            nCells = nCellsArray(1)
+            nEdges = nEdgesArray(1)
+
+            do iEdge = 1, nEdges
+
+               temp_mask = edgeMask(1, iEdge)
+
+               cell1 = cellsOnEdge(1,iEdge)
+               cell2 = cellsOnEdge(2,iEdge)
+
+               ! Compute the barotropic Coriolis term, -f*uPerp
+               CoriolisTerm = 0.0_RKIND
+
+               do i = 1, nEdgesOnEdge(iEdge)
+                  eoe = edgesOnEdge(i,iEdge)
+                  wgt = weightsOnEdge(i,iEdge)
+                  CoriolisTerm = CoriolisTerm + wgt  &
+                               * normalBarotropicVelocitySubcycleCur(eoe) * fEdge(eoe)
+               end do
+                    barotropicCoriolisTerm(iEdge) = CoriolisTerm
+
+               normalBarotropicVelocitySubcycleNew(iEdge) &
+                  = temp_mask &
+                  * (normalBarotropicVelocityCur(iEdge) &
+                  - dt2 * (-barotropicCoriolisTerm(iEdge) + gravity &
                   * ( (alpha1*sshNew(cell2)+alpha2*sshCur(cell2)) - (alpha1*sshNew(cell1)+alpha2*sshCur(cell1))) &
                   / dcEdge(iEdge) - barotropicForcing(iEdge)))
             end do ! iEdge
@@ -1822,9 +1858,6 @@ module ocn_time_integration_si
                normalBarotropicVelocitySubcycleCur(iEdge) =  alpha1* normalBarotropicVelocitySubcycleNew(iEdge)  &
                                                            + alpha2* normalBarotropicVelocityCur(iEdge)        
             end do ! iEdge
-!           do iEdge = 1, nEdges
-!              normalBarotropicVelocitySubcycleCur(iEdge) = normalBarotropicVelocitySubcycleNew(iEdge) 
-!           end do ! iEdge
 
             block => block % next
          end do  ! block
@@ -1972,11 +2005,11 @@ module ocn_time_integration_si
                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                end do ! i
  
-               sshTendb1 = (1.0_RKIND/(gravity*dt*alpha1**2.0)) * sshTendb1
+               sshTendb1 = (1.0_RKIND/(gravity*dt2*alpha1**2.0)) * sshTendb1
                sshTendb2 = (1.0_RKIND/(gravity   *alpha1     )) * sshTendb2
 
-               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * sshCur(iCell) * areaCell(iCell)
-               sshLagArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * sshNew(iCell) * areaCell(iCell)
+               sshCurArea = (1.0_RKIND/(gravity*dt2**2.0*alpha1**2.0)) * sshCur(iCell) * areaCell(iCell)
+               sshLagArea = (1.0_RKIND/(gravity*dt2**2.0*alpha1**2.0)) * sshNew(iCell) * areaCell(iCell)
 
                CGvec_r0(iCell) = (-sshCurArea - sshTendb1 + sshTendb2)   &
                                 -(-sshLagArea - sshTendAx) 
@@ -2111,7 +2144,7 @@ module ocn_time_integration_si
  
                end do ! i
  
-               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_rh0(iCell) * areaCell(iCell)
+               sshCurArea = (1.0_RKIND/(gravity*dt2**2.0*alpha1**2.0)) * CGvec_rh0(iCell) * areaCell(iCell)
  
                CGvec_w0(iCell) = -sshCurArea - sshTendAx
  
@@ -2244,7 +2277,7 @@ module ocn_time_integration_si
                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                end do ! i
  
-               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_wh0(iCell) * areaCell(iCell)
+               sshCurArea = (1.0_RKIND/(gravity*dt2**2.0*alpha1**2.0)) * CGvec_wh0(iCell) * areaCell(iCell)
 
                CGvec_t0(iCell) = -sshCurArea - sshTendAx
 
@@ -2495,7 +2528,7 @@ module ocn_time_integration_si
                      sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                   end do ! i
                    
-                  sshLagArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_zh1(iCell) * areaCell(iCell)
+                  sshLagArea = (1.0_RKIND/(gravity*dt2**2.0*alpha1**2.0)) * CGvec_zh1(iCell) * areaCell(iCell)
     
                   CGvec_v1(iCell) = -sshLagArea - sshTendAx
             
@@ -2683,7 +2716,7 @@ module ocn_time_integration_si
                      sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                   end do ! i
                      
-                  sshLagArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_wh1(iCell) * areaCell(iCell)
+                  sshLagArea = (1.0_RKIND/(gravity*dt2**2.0*alpha1**2.0)) * CGvec_wh1(iCell) * areaCell(iCell)
    
                   CGvec_t1(iCell) = -sshLagArea - sshTendAx
                end do ! iCell
@@ -2782,7 +2815,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'barotropicThicknessFlux', barotropicThicknessFlux)
 
             nCells = nCellsArray(1)
-            nEdges = nEdgesArray(1)
+            nEdges = nEdgesArray(2)
 
             do iEdge = 1, nEdges
 
@@ -2798,42 +2831,113 @@ module ocn_time_integration_si
                   eoe = edgesOnEdge(i,iEdge)
                   wgt = weightsOnEdge(i,iEdge)
                   CoriolisTerm = Coriolisterm + wgt  &
-                               * normalBarotropicVelocitySubcycleCur(eoe) * fEdge(eoe)
+                               * normalBarotropicVelocityCur(eoe) * fEdge(eoe)
                end do
                barotropicCoriolisTerm(iEdge) = CoriolisTerm
 
                normalBarotropicVelocitySubcycleNew(iEdge) &
                   = temp_mask &
                   * (normalBarotropicVelocityCur(iEdge) &
-                  - (dt) * (-barotropicCoriolisTerm(iEdge) + gravity &
+                  - (dt2) * (-barotropicCoriolisTerm(iEdge) + gravity &
                   * ( (alpha1*sshSubcycleCur(cell2)+alpha2*sshCur(cell2)) - (alpha1*sshSubcycleCur(cell1)+alpha2*sshCur(cell1)) ) &
                   / dcEdge(iEdge) - barotropicForcing(iEdge)))
 
             end do ! iEdge
 
-!           do iEdge = 1, nEdges
-!              normalBarotropicVelocitySubcycleCur(iEdge) =   0.5*normalBarotropicVelocitySubcycleNew(iEdge)  &
-!                                                           + 0.5*normalBarotropicVelocityCur(iEdge)
-!           end do ! iEdge
+
             do iEdge = 1, nEdges
-               normalBarotropicVelocitySubcycleCur(iEdge) = normalBarotropicVelocitySubcycleNew(iEdge)
+               normalBarotropicVelocitySubcycleCur(iEdge) =   0.50*normalBarotropicVelocitySubcycleNew(iEdge)  &
+                                                            + 0.50*normalBarotropicVelocityCur(iEdge)
             end do ! iEdge
+
+
+!           nCells = nCellsArray(1)
+!           nEdges = nEdgesArray(1)
+
+!           do iEdge = 1, nEdges
+
+!              temp_mask = edgeMask(1, iEdge)
+
+!              cell1 = cellsOnEdge(1,iEdge)
+!              cell2 = cellsOnEdge(2,iEdge)
+
+!              ! Compute the barotropic Coriolis term, -f*uPerp
+!              CoriolisTerm = 0.0_RKIND
+
+!              do i = 1, nEdgesOnEdge(iEdge)
+!                 eoe = edgesOnEdge(i,iEdge)
+!                 wgt = weightsOnEdge(i,iEdge)
+!                 CoriolisTerm = Coriolisterm + wgt  &
+!                              * normalBarotropicVelocitySubcycleCur(eoe) * fEdge(eoe)
+!              end do
+!              barotropicCoriolisTerm(iEdge) = CoriolisTerm
+
+!              normalBarotropicVelocitySubcycleNew(iEdge) &
+!                 = temp_mask &
+!                 * (normalBarotropicVelocityCur(iEdge) &
+!                 - (dt2) * (-barotropicCoriolisTerm(iEdge) + gravity &
+!                 * ( (alpha1*sshSubcycleCur(cell2)+alpha2*sshCur(cell2)) - (alpha1*sshSubcycleCur(cell1)+alpha2*sshCur(cell1)) ) &
+!                 / dcEdge(iEdge) - barotropicForcing(iEdge)))
+
+!           end do ! iEdge
+
+!           do iEdge = 1, nEdges
+!              normalBarotropicVelocityCur(iEdge) =   0.5*normalBarotropicVelocitySubcycleNew(iEdge)  &
+!                                                   + 0.5*normalBarotropicVelocityCur(iEdge)
+!           end do ! iEdge
+
+!           nCells = nCellsArray(1)
+!           nEdges = nEdgesArray(1)
+
+!           do iEdge = 1, nEdges
+
+!              temp_mask = edgeMask(1, iEdge)
+
+!              cell1 = cellsOnEdge(1,iEdge)
+!              cell2 = cellsOnEdge(2,iEdge)
+
+!              ! Compute the barotropic Coriolis term, -f*uPerp
+!              CoriolisTerm = 0.0_RKIND
+
+!              do i = 1, nEdgesOnEdge(iEdge)
+!                 eoe = edgesOnEdge(i,iEdge)
+!                 wgt = weightsOnEdge(i,iEdge)
+!                 CoriolisTerm = Coriolisterm + wgt  &
+!                              * normalBarotropicVelocitySubcycleNew(eoe) * fEdge(eoe)
+!                              * normalBarotropicVelocityCur(eoe) * fEdge(eoe)
+!              end do
+!              barotropicCoriolisTerm(iEdge) = CoriolisTerm
+
+!              normalBarotropicVelocitySubcycleNew(iEdge) &
+!                 = temp_mask &
+!                 * (normalBarotropicVelocityCur(iEdge) &
+!                 - (dt) * (-barotropicCoriolisTerm(iEdge) + gravity &
+!                 * ( (alpha1*sshSubcycleCur(cell2)+alpha2*sshCur(cell2)) - (alpha1*sshSubcycleCur(cell1)+alpha2*sshCur(cell1)) ) &
+!                 / dcEdge(iEdge) - barotropicForcing(iEdge)))
+
+!           end do ! iEdge
+
+!           do iEdge = 1, nEdges
+!              normalBarotropicVelocitySubcycleCur(iEdge) =    0.5*normalBarotropicVelocitySubcycleNew(iEdge)  &
+!                                                            + 0.5*normalBarotropicVelocityCur(iEdge)
+!           end do ! iEdge
 
             do iEdge = 1, nEdges
                cell1 = cellsOnEdge(1,iEdge)
                cell2 = cellsOnEdge(2,iEdge)
 
-!              sshEdge =  0.5*( 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))) &
-!                       + 0.5*( 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2)))
-               sshEdge = 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2))
+               sshEdge =  0.50*( 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))) &
+                        + 0.50*( 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2)))
+!              sshEdge = 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2))
 
                thicknessSum = sshEdge + min(bottomDepth(cell1), bottomDepth(cell2))
 
+!              flux =normalBarotropicVelocitySubcycleNew(iEdge) * thicknessSum
                flux =normalBarotropicVelocitySubcycleCur(iEdge) * thicknessSum
 
                barotropicThicknessFlux(iEdge) = flux
 
-               normalBarotropicVelocityNew(iEdge) = normalBarotropicVelocitySubcycleCur(iEdge)
+               normalBarotropicVelocityNew(iEdge) = normalBarotropicVelocitySubcycleNew(iEdge)
             end do ! iEdge
 
             ! #Iteration  check
@@ -3202,7 +3306,6 @@ module ocn_time_integration_si
 !                   first_step = .false.
                endif
 
-               call mpi_barrier(dminfo%comm,temp_mask)
 
                if ( istep == 1 ) then
 
@@ -3290,13 +3393,17 @@ module ocn_time_integration_si
                      if ( config_use_tracerGroup ) then
                         call mpas_pool_get_array(tracersPool, groupItr % memberName, tracersGroupCur, 1)
                         call mpas_pool_get_array(tracersPool, groupItr % memberName, tracersGroupNew, 2)
+                        call mpas_pool_get_array(tendPool, 'salinityTendSave', salinityTendSave)
+                        call mpas_pool_get_array(tendPool, 'temperatureTendSave', temperatureTendSave)
 
                         modifiedGroupName = trim(groupItr % memberName) // 'Tend'
                         call mpas_pool_get_array(tracersTendPool, modifiedGroupName, tracersGroupTend)
 
-!                       if ( first_step ) then
-!                         tracersGroupTend(:,:,:) = tracersGroupTendSave(:,:,:)
-!                       endif
+                        if ( first_step ) then
+                          temperatureTendSave(:,:) = tracersGroupTend(1,:,:)
+                          salinityTendSave(:,:) = tracersGroupTend(2,:,:)
+                          first_step = .false.
+                        endif
 
                         !$omp do schedule(runtime) private(k)
                         do iCell = 1, nCells
@@ -3838,7 +3945,7 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:)  , pointer :: dcEdge,bottomDepth
       real (kind=RKIND), dimension(:)  , pointer :: dvEdge,areaCell
       real (kind=RKIND), dimension(:)  , pointer :: CGvec_u1
-      real (kind=RKIND) :: temp1,temp2
+      real (kind=RKIND) :: temp1,temp2,dt2
       !------------------------------------------!
       integer,dimension(:)  ,pointer     :: globalCellId
       integer,dimension(:)  ,allocatable :: numCellRank,numCellRankA2,myGlobalCellId
@@ -3853,6 +3960,8 @@ module ocn_time_integration_si
       dminfo = domain % dminfo
         rank = dminfo % my_proc_id
        ncpus = dminfo % nprocs
+
+         dt2 = dt * 1.0d0
 
       call mpas_pool_get_config(domain % configs, 'config_btr_si_preconditioner', config_btr_si_preconditioner)
 
@@ -3933,7 +4042,7 @@ module ocn_time_integration_si
    
                end do ! i
   
-               prec_ivmat(iCell,iCell) = prec_ivmat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0)) * areaCell(iCell)
+               prec_ivmat(iCell,iCell) = prec_ivmat(iCell,iCell) - (4.0_RKIND/(gravity*dt2**2.0)) * areaCell(iCell)
   
             end do ! iCell
   
@@ -3975,7 +4084,7 @@ module ocn_time_integration_si
                   !-------------------------------------------------------------------------------!
                end do ! i
    
-               prec_ivmat(iCell,iCell) = prec_ivmat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+               prec_ivmat(iCell,iCell) = prec_ivmat(iCell,iCell) - (4.0_RKIND/(gravity*dt2**2.0))*areaCell(iCell)
   
             end do ! iCell
   
@@ -4012,7 +4121,7 @@ module ocn_time_integration_si
                   !-------------------------------------------------------------------------!
                end do ! i
   
-               temp1 = prec_ivmat(iCell,1) - (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+               temp1 = prec_ivmat(iCell,1) - (4.0_RKIND/(gravity*dt2**2.0))*areaCell(iCell)
   
                prec_ivmat(iCell,1) = 1.0_RKIND / temp1
   
