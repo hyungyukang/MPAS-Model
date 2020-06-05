@@ -235,6 +235,7 @@ module ocn_time_integration_split
 
       integer :: temp_mask
       real (kind=RKIND) :: tracer2_value, lat, eab,aab,bab,ab1,ab2,ab3
+      real (kind=RKIND) :: nnm1,nnp1,nnm12,nnp12,nn0
 
       logical,save :: first_step = .true.
 
@@ -1570,9 +1571,6 @@ module ocn_time_integration_split
 
             call ocn_tend_thick(tendPool, forcingPool, diagnosticsPool, meshPool)
 
-            print*, 'aaa',minval(layerThicknessTend),maxval(layerThicknessTend)
-                
-
             block => block % next
          end do
          call mpas_timer_stop('se thick tend')
@@ -1806,16 +1804,19 @@ module ocn_time_integration_split
 !                                                                                    -(ab2)*layerThicknessTendSave(k,iCell) &
 !                                                                                    +(ab3)*layerThicknessTendSave2(k,iCell) )
  
-!                    layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) + dt * layerThicknessTend(k,iCell)
+                     layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) + dt * layerThicknessTend(k,iCell)
 
-                     layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) + dt * ( (1.d0+eab)*layerThicknessTend(k,iCell) &
-                                                                                           -eab *layerThicknessTendSave(k,iCell))
+!                    layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) + dt * ( (1.d0+eab)*layerThicknessTend(k,iCell) &
+!                                                                                          -eab *layerThicknessTendSave(k,iCell))
 
                   end do
                end do
                !$omp end do
 
                layerThicknessTendSave = layerThicknessTend
+
+!              print*, layerThicknessCur(1:5,1)
+               print*, layerThicknessCur(2,10)-layerThicknessCur(3,10),layerThicknessCur(3,10)-layerThicknessCur(4,10),layerThicknessCur(4,10)-layerThicknessCur(5,10)
 !              layerThicknessOld2 = layerThicknessOld1
 !              layerThicknessOld1 = layerThicknessCur
 
