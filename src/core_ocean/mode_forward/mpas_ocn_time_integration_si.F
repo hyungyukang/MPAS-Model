@@ -230,12 +230,15 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:), pointer :: CGvec_w0,CGvec_w1,CGvec_wh0,CGvec_wh1
       real (kind=RKIND), dimension(:), pointer :: CGvec_t0,CGvec_t1,CGvec_q0,CGvec_q1,CGvec_qh0
       real (kind=RKIND), dimension(:), pointer :: CGvec_z0,CGvec_z1,CGvec_zh0,CGvec_zh1
-      real (kind=RKIND), dimension(:), pointer :: CGvec_y0
+      real (kind=RKIND), dimension(:), pointer :: CGvec_y0,CGvec_h0
       real (kind=RKIND), dimension(:), pointer :: CGvec_u0,CGvec_u1,CGvec_f0,CGvec_g1,CGvec_g2
-      real (kind=RKIND), dimension(:), pointer :: CGvec_j0,CGvec_p0,CGvec_k0,CGvec_x0,CGvec_x1,CGvec_e0
+      real (kind=RKIND), dimension(:), pointer :: CGvec_j0,CGvec_p0,CGvec_p1,CGvec_k0,CGvec_x0,CGvec_x1,CGvec_e0
       real (kind=RKIND), dimension(:), pointer :: barotropicCoriolisTerm
       ! Semi-implicit variables
       real (kind=RKIND), dimension(7) :: CGcst_allreduce,CGcst_allreduce_global
+      real (kind=RKIND), dimension(2) :: CGcst_allreduce2,CGcst_allreduce_global2
+      real (kind=RKIND), dimension(10) :: CGcst_allreduce10,CGcst_allreduce_global10
+      real (kind=RKIND), dimension(16) :: CGcst_allreduce16,CGcst_allreduce_global16
       real (kind=RKIND) :: CGcst_r00r0,CGcst_r00w0,CGcst_r00r1,CGcst_r00w1
       real (kind=RKIND) :: CGcst_r00r0_global,CGcst_r00w0_global,CGcst_r00r1_global,CGcst_r00w1_global
 
@@ -246,9 +249,11 @@ module ocn_time_integration_si
       real (kind=RKIND) :: CGcst_r00s0_global,CGcst_r00z0_global,CGcst_q0y0_global,CGcst_y0y0_global
 
       real (kind=RKIND) :: CGcst_alpha0,CGcst_alpha1,CGcst_beta0,CGcst_beta1,CGcst_omega0,CGcst_omega1
-      real (kind=RKIND) :: r0s0,r0q0,f0s0,f0t0,s0t0,t0t0,sig1,sig2,sig0,pi0,phi0,gam0,gam1,rho0,rho1,alph0,omega0
-      real (kind=RKIND) :: kappa0,theta0,eta0,eta1,pi1,alph1,omega1,phi1,tau0,tau1,del0,beta0,beta1
+      real (kind=RKIND) :: r0r0,s0t0,s0s0,r00t0,r00s0,f0s0,f0t0,f0q0,f0p0
+      real (kind=RKIND) :: s0y0,y0t0,y0y0,r00y0,r00r0,f0y0,f0h0
+      real (kind=RKIND) :: zeta0,eta0,rr1,fr1,fu0,beta0,beta1,fp1,alph0,alph1
       real (kind=RKIND) :: sshCurArea,sshLagArea,sshTendA,sshTendB,sshTendC,temp1,temp2,crit_main,resid,wgt
+      integer :: mm,ll
 
       ! Diagnostics Field Pointers
       type (field2DReal), pointer :: normalizedRelativeVorticityEdgeField, divergenceField, relativeVorticityField
@@ -925,6 +930,8 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si btr residual")
 
+         mm = 0 ; ll = 1
+
          ! SpMV -----------------------------------------------------------------------------------!
 
          block => domain % blocklist
@@ -954,7 +961,8 @@ module ocn_time_integration_si
 
             call mpas_pool_get_array(diagnosticsPool, 'barotropicForcing', barotropicForcing)
             call mpas_pool_get_array(diagnosticsPool, 'barotropicCoriolisTerm',barotropicCoriolisTerm)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0', CGvec_p0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00', CGvec_r00)
 
             nCells = nCellsArray( 1 )
@@ -983,7 +991,7 @@ module ocn_time_integration_si
                   fluxb1 = thicknessSumCur * normalBarotropicVelocityCur(iEdge)
                   fluxb2 = thicknessSumCur * (alpha2*gravity*sshDiffCur + (-barotropicCoriolisTerm(iEdge)-barotropicForcing(iEdge)))
                   fluxAx = thicknessSumCur * sshDiffCur
-  
+ 
                   sshTendb1 = sshTendb1 + edgeSignOnCell(i, iCell) * fluxb1 * dvEdge(iEdge)
                   sshTendb2 = sshTendb2 + edgeSignOnCell(i, iCell) * fluxb2 * dvEdge(iEdge)
                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
@@ -994,15 +1002,15 @@ module ocn_time_integration_si
 
                sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) *   sshCur(iCell) * areaCell(iCell)
 
-               CGvec_r1(iCell) = (-sshCurArea - sshTendb1 + sshTendb2)   &
+               CGvec_r0(iCell) = (-sshCurArea - sshTendb1 + sshTendb2)   &
                                 -(-sshCurArea - sshTendAx) 
-               CGvec_r00(iCell) = CGvec_r1(iCell)
+               CGvec_p0(iCell) = CGvec_r0(iCell)
+               CGvec_r00(iCell) = CGvec_r0(iCell)
             end do ! iCell
-
 
             call mpas_timer_start("si halo r0")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
@@ -1040,17 +1048,18 @@ module ocn_time_integration_si
  
             call mpas_pool_get_array(statePool, 'ssh', sshCur,1)
  
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_f0', CGvec_f0)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_u1', CGvec_u1)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_q1', CGvec_q1)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_v1', CGvec_v1)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_z1', CGvec_z1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0', CGvec_p0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_t1', CGvec_t1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_w1', CGvec_w1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0', CGvec_q0)
  
             nCells = nCellsArray( 1 )
             nEdges = nEdgesArray( 2 )
 
-            sig1 = 0.d0
+            r0r0 = 0.d0
+            f0p0 = 0.d0
  
             do iCell = 1, nCells
  
@@ -1069,46 +1078,41 @@ module ocn_time_integration_si
                   thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
    
                   ! nabla (ssh^0)
-                  sshDiffCur = (CGvec_r1(cell2)- CGvec_r1(cell1)) / dcEdge(iEdge)
+                  sshDiffCur = (CGvec_r0(cell2)- CGvec_r0(cell1)) / dcEdge(iEdge)
                       fluxAx = thicknessSumCur * sshDiffCur
                    sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
    
                end do ! i
   
-               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_r1(iCell) * areaCell(iCell)
+               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_r0(iCell) * areaCell(iCell)
                   
-               CGvec_u1(iCell) = -sshCurArea - sshTendAx 
                CGvec_f0(iCell) = -sshCurArea - sshTendAx 
+               CGvec_q0(iCell) = CGvec_f0(iCell)
   
-               sig1 = sig1 + CGvec_r1(iCell) * CGvec_u1(iCell)
-   
-               CGvec_q1(iCell) = 0.d0
-               CGvec_v1(iCell) = 0.d0
-               CGvec_z1(iCell) = 0.d0
+               CGvec_t1(iCell) = 0.d0
+               CGvec_w1(iCell) = 0.d0
 
+               r0r0 = r0r0 + CGvec_r0(iCell) * CGvec_r0(iCell)
+               f0p0 = f0p0 + CGvec_f0(iCell) * CGvec_p0(iCell)
+      
             end do ! iCell
 
-            pi1  = 0.d0
-            phi1 = 0.d0
-            tau1 = 0.d0
-         
-            sig2 = 1.d0   
-            rho1   = 1.d0
-            alph1  = 1.d0
-            omega1 = 1.d0
-
-            CGcst_allreduce(:) = 0.d0
-            CGcst_allreduce(1) = sig1
-             
-            call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 7, CGcst_allreduce, CGcst_allreduce_global)
-            call mpas_timer_stop("si reduction iter")
-
-            sig1 = CGcst_allreduce_global(1)
-         
             block => block % next
          end do  ! block
 
+            CGcst_allreduce2(:) = 0.d0
+            CGcst_allreduce2(1) = r0r0
+            CGcst_allreduce2(2) = f0p0
+             
+            call mpas_timer_start("si reduction iter")
+            call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+            call mpas_timer_stop("si reduction iter")
+
+            r0r0 = CGcst_allreduce_global2(1)
+            f0p0 = CGcst_allreduce_global2(2)
+
+            alph0 = r0r0 / f0p0
+    
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
@@ -1123,8 +1127,6 @@ module ocn_time_integration_si
          do iter = 1,100
          !**************************************************************!
 
-!           print*, sig2,sig1,gam1,phi1,tau1,eta1,rho1,pi1,omega1,alph1
-
             block => domain % blocklist
             do while (associated(block))
                call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
@@ -1135,40 +1137,34 @@ module ocn_time_integration_si
                call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
                call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
     
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_v0' , CGvec_v0)
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_v1' , CGvec_v1)
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_u1' , CGvec_u1)
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_q1' , CGvec_q1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0' , CGvec_t0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_t1' , CGvec_t1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_y0' , CGvec_y0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_w1' , CGvec_w1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0' , CGvec_q0)
     
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
 
-! 4:
-               rho0 = phi1 - omega1 * sig2 + omega1 * alph1 * pi1
-! 5:
-               del0 = (rho0/rho1)*alph1 
-               beta0 = del0 / omega1
-! 6:            
-               tau0 = sig1 + beta0 * tau1 - del0 * pi1
-! 7:
-               alph0 = rho0 / tau0
-! 8:
                do iCell = 1,nCells
-                 CGvec_v0(iCell) = CGvec_u1(iCell) + beta0*CGvec_v1(iCell) - del0*CGvec_q1(iCell)
-               end do       
-
+                 CGvec_t0(iCell) = CGvec_r0(iCell) - alph0 * CGvec_q0(iCell)
+                 CGvec_y0(iCell) = CGvec_t1(iCell) - CGvec_t0(iCell) - alph0 * CGvec_w1(iCell)
+               end do
+                
             block => block % next
          end do  ! block
+         
 
             call mpas_timer_start("si halo r0")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_v0', 1)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_t0', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo r0")
 
-! 9:      
+
          ! SpMV -----------------------------------------------------------------------------------!
 
          block => domain % blocklist
@@ -1197,17 +1193,7 @@ module ocn_time_integration_si
  
             call mpas_pool_get_array(statePool, 'ssh', sshCur,1)
  
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00', CGvec_r00)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0', CGvec_q0)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_v0', CGvec_v0)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_v1', CGvec_v1)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0', CGvec_s0)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_z1', CGvec_z1)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_z0', CGvec_z0)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_f0', CGvec_f0)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0', CGvec_u0)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_u1', CGvec_u1)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0', CGvec_t0)
  
             nCells = nCellsArray( 1 )
@@ -1230,229 +1216,445 @@ module ocn_time_integration_si
                   thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
    
                   ! nabla (ssh^0)
-                  sshDiffCur = (CGvec_v0(cell2)- CGvec_v0(cell1)) / dcEdge(iEdge)
+                  sshDiffCur = (CGvec_t0(cell2)- CGvec_t0(cell1)) / dcEdge(iEdge)
                       fluxAx = thicknessSumCur * sshDiffCur
                    sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
    
                end do ! i
   
-               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_v0(iCell) * areaCell(iCell)
+               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_t0(iCell) * areaCell(iCell)
                   
-               CGvec_q0(iCell) = -sshCurArea - sshTendAx 
+               CGvec_s0(iCell) = -sshCurArea - sshTendAx 
   
             end do ! iCell
 
-  
-            phi0   = 0.d0
-            pi0    = 0.d0
-            gam0   = 0.d0
-            eta0   = 0.d0
-            theta0 = 0.d0
-            kappa0 = 0.d0
-            resid  = 0.d0
-
-            do iCell = 1,nCells
-! 10:
-              CGvec_s0(iCell) = CGvec_r1(iCell) - alph0 * CGvec_v0(iCell)
-! 11:
-              CGvec_t0(iCell) = CGvec_u1(iCell) - alph0 * CGvec_q0(iCell)
-! 12:
-              CGvec_z0(iCell) =   alph0 * CGvec_r1(iCell) + beta0 * CGvec_z1(iCell) &
-                                - alph0 * del0 * CGvec_v1(iCell)
-! 13:
-              phi0   = phi0   + CGvec_r00(iCell) * CGvec_s0(iCell)
-! 14:
-              pi0    = pi0    + CGvec_r00(iCell) * CGvec_q0(iCell)
-! 15:
-              gam0   = gam0   + CGvec_f0(iCell) * CGvec_s0(iCell)
-! 16:
-              eta0   = eta0   + CGvec_f0(iCell) * CGvec_t0(iCell)
-! 17:
-              theta0 = theta0 + CGvec_s0(iCell) * CGvec_t0(iCell)
-! 18:
-              kappa0 = kappa0 + CGvec_t0(iCell) * CGvec_t0(iCell)
-
-              resid  = resid  + CGvec_r1(iCell) * CGvec_r1(iCell)
-
-            end do
-
             block => block % next
          end do  ! block
-            
-            CGcst_allreduce(1) = phi0
-            CGcst_allreduce(2) = pi0
-            CGcst_allreduce(3) = gam0 
-            CGcst_allreduce(4) = eta0
-            CGcst_allreduce(5) = theta0
-            CGcst_allreduce(6) = kappa0
-            CGcst_allreduce(7) = resid
-             
-            call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 7, CGcst_allreduce, CGcst_allreduce_global)
-            call mpas_timer_stop("si reduction iter")
 
-            phi0   = CGcst_allreduce_global(1)
-            pi0    = CGcst_allreduce_global(2)
-            gam0   = CGcst_allreduce_global(3)
-            eta0   = CGcst_allreduce_global(4)
-            theta0 = CGcst_allreduce_global(5)
-            kappa0 = CGcst_allreduce_global(6)
-            resid  = CGcst_allreduce_global(7)
 
-            omega0 = theta0 / kappa0
-            sig0 = gam0 - omega0 / eta0
-
+         if ( mod(iter-1,mm+ll) < mm .or. iter-1 == 0 ) then
 
             block => domain % blocklist
             do while (associated(block))
-   
                call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
                call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
     
-               call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
-               call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
-               call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-               call mpas_pool_get_subpool(block % structs, 'state', statePool)
-               call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-               call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-    
-               call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
-               call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
-               call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
-               call mpas_pool_get_array(meshPool, 'dcEdge', dcEdge)
-               call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
-               call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
-               call mpas_pool_get_array(meshPool, 'refBottomDepthTopOfCell', refBottomDepthTopOfCell)
-               call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
-               call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
-               call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
- 
-               call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
-               call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
-               call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
-
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0', CGvec_s0)
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0', CGvec_t0)
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_z0', CGvec_z0)
-
-               nCells = nCellsArray(1)
-        
-               do iCell = 1,nCells
-                 CGvec_r0(iCell) = CGvec_s0(iCell) - omega0 * CGvec_t0(iCell)
-                 sshSubcycleNew(iCell) = sshSubcycleCur(iCell) + CGvec_z0(iCell) + omega0 * CGvec_s0(iCell)
-               end do
-
-               block => block % next
-            end do  ! block
-
-
-            call mpas_timer_start("si halo r0")
-            call mpas_dmpar_exch_group_create(domain, iterGroupName)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-            call mpas_threading_barrier()
-            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
-
-
-            ! SpMV -----------------------------------------------------------------------------------!
-   
-            block => domain % blocklist
-            do while (associated(block))
-   
-               call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-               call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-   
                call mpas_pool_get_subpool(block % structs, 'tend'       , tendPool       )
                call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
                call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
                call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-   
-               call mpas_pool_get_array(meshPool, 'nEdgesOnCell',            nEdgesOnCell           )
-               call mpas_pool_get_array(meshPool, 'edgesOnCell',             edgesOnCell            )
-               call mpas_pool_get_array(meshPool, 'cellsOnEdge',             cellsOnEdge            )
-               call mpas_pool_get_array(meshPool, 'dcEdge',                  dcEdge                 )
-               call mpas_pool_get_array(meshPool, 'bottomDepth',             bottomDepth            )
-               call mpas_pool_get_array(meshPool, 'edgeSignOnCell',          edgeSignOnCell         )
-               call mpas_pool_get_array(meshPool, 'dvEdge',                  dvEdge                 )
-               call mpas_pool_get_array(meshPool, 'areaCell',                areaCell               )
-   
-               call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
-               call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
-               call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
-
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0', CGvec_q0)
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_q1', CGvec_q1)
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_z0', CGvec_z0)
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_z1', CGvec_z1)
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0 )
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1 )
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0', CGvec_u0 )
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_u1', CGvec_u1 )
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_v0', CGvec_v0 )
-               call mpas_pool_get_array(diagnosticsPool, 'CGvec_v1', CGvec_v1 )
-   
+    
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0' , CGvec_t0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00' , CGvec_r00)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0' , CGvec_s0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0' , CGvec_p0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0' , CGvec_q0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_f0' , CGvec_f0)
+    
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
-   
-               do iCell = 1, nCells
-                  sshTendAx = 0.0_RKIND
-   
-                  do i = 1, nEdgesOnCell(iCell)
-                     iEdge = edgesOnCell(i, iCell)
-     
-                     cell1 = cellsOnEdge(1, iEdge)
-                     cell2 = cellsOnEdge(2, iEdge)
-     
-                     ! Interpolation sshEdge
-                     sshEdgeLag = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
-     
-                     ! method 1, matches method 0 without pbcs, works with pbcs.
-                     thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1), bottomDepth(cell2))
-     
-                     ! nabla (ssh^0)
-                     sshDiffNew = (CGvec_r0(cell2)-CGvec_r0(cell1)) / dcEdge(iEdge)
-     
-                     fluxAx = thicknessSumLag * sshDiffNew
+
+               s0t0  = 0.d0
+               s0s0  = 0.d0
+               r00t0 = 0.d0
+               r00s0 = 0.d0
+               r00r0 = 0.d0
+               f0s0  = 0.d0
+               f0t0  = 0.d0
+               f0q0  = 0.d0
+               f0p0  = 0.d0
+               resid  = 0.d0
+
+               do iCell = 1,nCells
+                 
+               s0t0  = s0t0  + CGvec_s0(iCell)  * CGvec_t0(iCell)
+               s0s0  = s0s0  + CGvec_s0(iCell)  * CGvec_s0(iCell)
+               r00t0 = r00t0 + CGvec_r00(iCell) * CGvec_t0(iCell)
+               r00s0 = r00s0 + CGvec_r00(iCell) * CGvec_s0(iCell)
+               r00r0 = r00r0 + CGvec_r00(iCell) * CGvec_r0(iCell)
+               f0s0  = f0s0  + CGvec_f0(iCell)  * CGvec_s0(iCell)
+               f0t0  = f0t0  + CGvec_f0(iCell)  * CGvec_t0(iCell)
+               f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_q0(iCell)
+               f0p0  = f0p0  + CGvec_f0(iCell)  * CGvec_p0(iCell)
+               resid  = resid  + CGvec_r0(iCell)  * CGvec_r0(iCell)
+
+               end do
+                
+            block => block % next
+         end do  ! block
+                 
+            CGcst_allreduce10(1)  = s0t0  
+            CGcst_allreduce10(2)  = s0s0  
+            CGcst_allreduce10(3)  = r00t0
+            CGcst_allreduce10(4)  = r00s0
+            CGcst_allreduce10(5)  = r00r0
+            CGcst_allreduce10(6)  = f0s0
+            CGcst_allreduce10(7)  = f0t0
+            CGcst_allreduce10(8)  = f0q0
+            CGcst_allreduce10(9)  = f0p0
+            CGcst_allreduce10(10) = resid
+             
+            call mpas_timer_start("si reduction iter")
+            call mpas_dmpar_sum_real_array(dminfo, 10, CGcst_allreduce10, CGcst_allreduce_global10)
+            call mpas_timer_stop("si reduction iter")
+
+            s0t0  = CGcst_allreduce_global10(1)
+            s0s0  = CGcst_allreduce_global10(2)
+            r00t0 = CGcst_allreduce_global10(3)
+            r00s0 = CGcst_allreduce_global10(4)
+            r00r0 = CGcst_allreduce_global10(5)
+            f0s0  = CGcst_allreduce_global10(6)
+            f0t0  = CGcst_allreduce_global10(7)
+            f0q0  = CGcst_allreduce_global10(8)
+            f0p0  = CGcst_allreduce_global10(9)
+            resid = CGcst_allreduce_global10(10)
+
+            block => domain % blocklist
+            do while (associated(block))
+               call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+               call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
     
-                     sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
-                  end do ! i
-                   
-                  sshLagArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_r0(iCell) * areaCell(iCell)
-   
-                  CGvec_u0(iCell) = -sshLagArea - sshTendAx
-               end do ! iCell
-          
+               call mpas_pool_get_subpool(block % structs, 'tend'       , tendPool       )
+               call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
+               call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
+               call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+    
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0' , CGvec_t0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0' , CGvec_s0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0' , CGvec_u0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_z0' , CGvec_z0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0' , CGvec_q0)
+    
+               nCells = nCellsArray(1)
+               nEdges = nEdgesArray(2)
+
+               zeta0 = s0t0 / s0s0
+               eta0 = 0.d0
+               rr1 = r00t0 - zeta0 * r00s0
+               fu0 = zeta0 * f0q0
+               fr1 = f0t0 - zeta0 * f0s0
 
                do iCell = 1,nCells
 
-                 CGvec_r1(iCell) = CGvec_r0(iCell)
-                 CGvec_q1(iCell) = CGvec_q0(iCell)
-                 CGvec_u1(iCell) = CGvec_u0(iCell)
-                 CGvec_v1(iCell) = CGvec_v0(iCell)
-                 CGvec_z1(iCell) = CGvec_z0(iCell)
+                 CGvec_u0(iCell) = zeta0 * CGvec_q0(iCell)                 
+                 CGvec_z0(iCell) = zeta0 * CGvec_r0(iCell) - alph0 * CGvec_u0(iCell)
+                 CGvec_r1(iCell) = CGvec_t0(iCell) - zeta0 * CGvec_s0(iCell)              
 
-                 sshSubcycleCur(iCell) = sshSubcycleNew(iCell)
                end do
+                
+            block => block % next
+         end do  ! block
 
-      
-               block => block % next
-            end do  ! block
 
-            sig2 = sig1
-            sig1 = sig0
-            gam1 = gam0
-            phi1 = phi0
-            tau1 = tau0
-            eta1 = eta0
-            rho1 = rho0
-            pi1  = pi0
-            omega1 = omega0
-            alph1  = alph0
+         else 
 
-!           print*, sig2,sig1,gam1,phi1,tau1,eta1,rho1,pi1,omega1,alph1
+
+            block => domain % blocklist
+            do while (associated(block))
+               call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+               call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+    
+               call mpas_pool_get_subpool(block % structs, 'tend'       , tendPool       )
+               call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
+               call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
+               call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+    
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0' , CGvec_t0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_t1' , CGvec_t1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00' , CGvec_r00)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0' , CGvec_s0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_y0' , CGvec_y0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0' , CGvec_u0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_u1' , CGvec_u1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_z0' , CGvec_z0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0' , CGvec_p0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0' , CGvec_q0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_h0' , CGvec_h0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_f0' , CGvec_f0)
+    
+               nCells = nCellsArray(1)
+               nEdges = nEdgesArray(2)
+
+               s0s0 = 0.d0
+               s0y0 = 0.d0
+               s0t0 = 0.d0
+               y0t0 = 0.d0
+               y0y0 = 0.d0
+               r00t0 = 0.d0
+               r00y0 = 0.d0
+               r00s0 = 0.d0
+               r00r0 = 0.d0
+               f0t0 = 0.d0
+               f0y0 = 0.d0
+               f0s0 = 0.d0
+               f0h0 = 0.d0
+               f0q0 = 0.d0
+               f0p0 = 0.d0
+               resid = 0.d0
+
+
+               do iCell = 1,nCells
+
+                 CGvec_h0(iCell) = CGvec_t1(iCell) - CGvec_r0(iCell) + beta1 * CGvec_u1(iCell)
+
+                 s0s0  = s0s0  + CGvec_s0(iCell)  * CGvec_s0(iCell)
+                 s0y0  = s0y0  + CGvec_s0(iCell)  * CGvec_y0(iCell)
+                 s0t0  = s0t0  + CGvec_s0(iCell)  * CGvec_t0(iCell)
+                 y0t0  = y0t0  + CGvec_y0(iCell)  * CGvec_t0(iCell)
+                 y0y0  = y0y0  + CGvec_y0(iCell)  * CGvec_y0(iCell)
+                 r00t0 = r00t0 + CGvec_r00(iCell) * CGvec_t0(iCell)
+                 r00y0 = r00y0 + CGvec_r00(iCell) * CGvec_y0(iCell)
+                 r00s0 = r00s0 + CGvec_r00(iCell) * CGvec_s0(iCell)
+                 r00r0 = r00r0 + CGvec_r00(iCell) * CGvec_r0(iCell)
+                 f0t0  = f0t0  + CGvec_f0(iCell)  * CGvec_t0(iCell)
+                 f0y0  = f0y0  + CGvec_f0(iCell)  * CGvec_y0(iCell)
+                 f0s0  = f0s0  + CGvec_f0(iCell)  * CGvec_s0(iCell)
+                 f0h0  = f0h0  + CGvec_f0(iCell)  * CGvec_h0(iCell)
+                 f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_q0(iCell)
+                 f0p0  = f0p0  + CGvec_f0(iCell)  * CGvec_p0(iCell)
+                 resid = resid + CGvec_r0(iCell)  * CGvec_r0(iCell)
+                 
+               end do
+                
+            block => block % next
+         end do  ! block
+                 
+            CGcst_allreduce16(1) = s0s0
+            CGcst_allreduce16(2) = s0y0
+            CGcst_allreduce16(3) = s0t0
+            CGcst_allreduce16(4) = y0t0
+            CGcst_allreduce16(5) = y0y0
+            CGcst_allreduce16(6) = r00t0
+            CGcst_allreduce16(7) = r00y0
+            CGcst_allreduce16(8) = r00s0
+            CGcst_allreduce16(9) = r00r0
+            CGcst_allreduce16(10) = f0t0
+            CGcst_allreduce16(11) = f0y0
+            CGcst_allreduce16(12) = f0s0
+            CGcst_allreduce16(13) = f0h0
+            CGcst_allreduce16(14) = f0q0
+            CGcst_allreduce16(15) = f0p0
+            CGcst_allreduce16(16) = resid
+
+            call mpas_timer_start("si reduction iter")
+            call mpas_dmpar_sum_real_array(dminfo, 16, CGcst_allreduce16, CGcst_allreduce_global16)
+            call mpas_timer_stop("si reduction iter")
+
+            s0s0  = CGcst_allreduce_global16(1)
+            s0y0  = CGcst_allreduce_global16(2)
+            s0t0  = CGcst_allreduce_global16(3)
+            y0t0  = CGcst_allreduce_global16(4)
+            y0y0  = CGcst_allreduce_global16(5)
+            r00t0 = CGcst_allreduce_global16(6)
+            r00y0 = CGcst_allreduce_global16(7)
+            r00s0 = CGcst_allreduce_global16(8)
+            r00r0 = CGcst_allreduce_global16(9)
+            f0t0  = CGcst_allreduce_global16(10)
+            f0y0  = CGcst_allreduce_global16(11)
+            f0s0  = CGcst_allreduce_global16(12)
+            f0h0  = CGcst_allreduce_global16(13)
+            f0q0  = CGcst_allreduce_global16(14)
+            f0p0  = CGcst_allreduce_global16(15)
+            resid = CGcst_allreduce_global16(16)
+
+            eta0  = (s0s0*y0t0 - s0y0*s0t0) / (s0s0*y0y0 - s0y0*s0y0)
+            zeta0 = (y0y0*s0t0 - y0t0*s0y0) / (s0s0*y0y0 - s0y0*s0y0)
+
+            rr1 = r00t0 - eta0 * r00y0 - zeta0 * r00s0
+            fu0 = zeta0 * f0q0 + eta0 * f0h0
+            fr1 = f0t0 - eta0 * f0y0 - zeta0 * f0s0
+
+
+            block => domain % blocklist
+            do while (associated(block))
+               call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+               call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+    
+               call mpas_pool_get_subpool(block % structs, 'tend'       , tendPool       )
+               call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
+               call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
+               call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+
+               call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
+               call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
+    
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0' , CGvec_t0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0' , CGvec_s0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0' , CGvec_u0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_z0' , CGvec_z0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_z1' , CGvec_z1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0' , CGvec_q0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_h0' , CGvec_h0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_y0' , CGvec_y0)
+    
+               nCells = nCellsArray(1)
+               nEdges = nEdgesArray(2)
+
+               do iCell = 1,nCells
+
+                 CGvec_u0(iCell) = zeta0 * CGvec_q0(iCell) + eta0 * CGvec_h0(iCell)
+                 CGvec_z0(iCell) = zeta0 * CGvec_r0(iCell) + eta0 * CGvec_z1(iCell) &
+                                                           -alph0 * CGvec_u0(iCell)
+                 CGvec_r1(iCell) = CGvec_t0(iCell) - eta0 * CGvec_y0(iCell) - zeta0 * CGvec_s0(iCell)
+
+               end do
+                
+            block => block % next
+         end do  ! block
+
+         end if ! mod
+
+
+            block => domain % blocklist
+            do while (associated(block))
+               call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+               call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+    
+               call mpas_pool_get_subpool(block % structs, 'tend'       , tendPool       )
+               call mpas_pool_get_subpool(block % structs, 'mesh'       , meshPool       )
+               call mpas_pool_get_subpool(block % structs, 'state'      , statePool      )
+               call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+
+               call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
+               call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
+    
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0' , CGvec_s0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0' , CGvec_u0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_z0' , CGvec_z0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0' , CGvec_q0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0' , CGvec_p0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_p1' , CGvec_p1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_w0' , CGvec_w0)
+    
+               nCells = nCellsArray(1)
+               nEdges = nEdgesArray(2)
+
+               beta0 = (alph0/zeta0) * (rr1/r00r0)
+
+               do iCell = 1,nCells
+
+                 sshSubcycleNew(iCell) = sshSubcycleCur(iCell) + alph0*CGvec_p0(iCell) + CGvec_z0(iCell)
+                 CGvec_w0(iCell) = CGvec_s0(iCell) + beta0*CGvec_q0(iCell)
+                 CGvec_p1(iCell) = CGvec_r1(iCell) + beta0*(CGvec_p0(iCell) - CGvec_u0(iCell))
+  
+               end do
+                
+            block => block % next
+         end do  ! block
+
+
+         call mpas_timer_start("si halo iter")
+         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_p1', 1)
+         call mpas_threading_barrier()
+         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+         call mpas_timer_stop("si halo iter")
+
+
+         block => domain % blocklist
+         do while (associated(block))
+
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+ 
+            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+            call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+ 
+            call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
+            call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
+            call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
+            call mpas_pool_get_array(meshPool, 'dcEdge', dcEdge)
+            call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
+            call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
+            call mpas_pool_get_array(meshPool, 'refBottomDepthTopOfCell', refBottomDepthTopOfCell)
+            call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
+            call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
+            call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
+ 
+            call mpas_pool_get_array(statePool, 'ssh', sshCur,1)
+            call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur,1)
+            call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur,2)
+ 
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0', CGvec_t0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_t1', CGvec_t1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0', CGvec_q0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_q1', CGvec_q1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_z0', CGvec_z0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_z1', CGvec_z1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0', CGvec_u0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_u1', CGvec_u1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_w0', CGvec_w0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_w1', CGvec_w1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0', CGvec_p0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_p1', CGvec_p1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
+ 
+            nCells = nCellsArray( 1 )
+            nEdges = nEdgesArray( 2 )
+
+            do iCell = 1, nCells
+ 
+               sshTendAx = 0.0_RKIND
+  
+               do i = 1, nEdgesOnCell(iCell)
+                  iEdge = edgesOnCell(i, iCell)
    
+                  cell1 = cellsOnEdge(1, iEdge)
+                  cell2 = cellsOnEdge(2, iEdge)
+   
+                  ! Interpolation sshEdge
+                  sshEdgeCur = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
+   
+                  ! method 1, matches method 0 without pbcs, works with pbcs.
+                  thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
+   
+                  ! nabla (ssh^0)
+                  sshDiffCur = (CGvec_p1(cell2)- CGvec_p1(cell1)) / dcEdge(iEdge)
+                      fluxAx = thicknessSumCur * sshDiffCur
+                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
+   
+               end do ! i
+  
+               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_p1(iCell) * areaCell(iCell)
+                  
+               CGvec_q1(iCell) = -sshCurArea - sshTendAx 
+  
+            end do ! iCell
+
+
+            do iCell = 1,nCells
+              sshSubcycleNew(iCell) = sshSubcycleCur(iCell) 
+              CGvec_q0(iCell) = CGvec_q1(iCell)
+              CGvec_p0(iCell) = CGvec_p1(iCell)
+              CGvec_r0(iCell) = CGvec_r1(iCell)
+
+              CGvec_w1(iCell) = CGvec_w0(iCell) ! inverse 1-0 for (k-1) iter
+              CGvec_z1(iCell) = CGvec_z0(iCell) ! inverse 1-0 for (k-1) iter
+              CGvec_u1(iCell) = CGvec_u0(iCell) ! inverse 1-0 for (k-1) iter
+              CGvec_t1(iCell) = CGvec_t0(iCell) ! inverse 1-0 for (k-1) iter
+            end do
+
+            block => block % next
+         end do  ! block
+
+            fp1 = fr1 + beta0 * (f0p0 - fu0)
+
+            alph0 = rr1 / fp1
+            beta1 = beta0 ! inverse 1-0 for (k-1) iter
+
          if ( rank == 0 ) then
            print*, iter,resid
          endif
