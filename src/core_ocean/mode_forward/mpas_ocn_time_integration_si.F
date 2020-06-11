@@ -228,8 +228,8 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:), pointer :: CGvec_r0,CGvec_r00,CGvec_r1,CGvec_rh0,CGvec_rh1,CGvec_ph0,CGvec_ph1
       real (kind=RKIND), dimension(:), pointer :: CGvec_v0,CGvec_v1,CGvec_s0,CGvec_s1,CGvec_sh0,CGvec_sh1
       real (kind=RKIND), dimension(:), pointer :: CGvec_w0,CGvec_w1,CGvec_wh0,CGvec_wh1
-      real (kind=RKIND), dimension(:), pointer :: CGvec_t0,CGvec_t1,CGvec_q0,CGvec_q1,CGvec_qh0
-      real (kind=RKIND), dimension(:), pointer :: CGvec_z0,CGvec_z1,CGvec_zh0,CGvec_zh1
+      real (kind=RKIND), dimension(:), pointer :: CGvec_t0,CGvec_t1,CGvec_q0,CGvec_q1,CGvec_qh0,CGvec_qh1
+      real (kind=RKIND), dimension(:), pointer :: CGvec_z0,CGvec_z1,CGvec_zh0,CGvec_zh1,CGvec_fh0,CGvec_fh1
       real (kind=RKIND), dimension(:), pointer :: CGvec_y0,CGvec_h0
       real (kind=RKIND), dimension(:), pointer :: CGvec_u0,CGvec_u1,CGvec_f0,CGvec_g1,CGvec_g2
       real (kind=RKIND), dimension(:), pointer :: CGvec_j0,CGvec_p0,CGvec_p1,CGvec_k0,CGvec_x0,CGvec_x1,CGvec_e0
@@ -1004,10 +1004,24 @@ module ocn_time_integration_si
 
                CGvec_r0(iCell) = (-sshCurArea - sshTendb1 + sshTendb2)   &
                                 -(-sshCurArea - sshTendAx) 
-               CGvec_p0(iCell) = CGvec_r0(iCell)
+!              CGvec_p0(iCell) = CGvec_r0(iCell)
                CGvec_r00(iCell) = CGvec_r0(iCell)
             end do ! iCell
 
+!           call mpas_timer_start("si halo r0")
+!           call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+!           call mpas_threading_barrier()
+!           call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!           call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!           call mpas_timer_stop("si halo r0")
+
+            block => block % next
+         end do  ! block
+
+
+
+         ! Preconditioning ------------------------------------------------------------------------!
             call mpas_timer_start("si halo r0")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
@@ -1016,8 +1030,66 @@ module ocn_time_integration_si
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo r0")
 
+
+!        if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+!           call mpas_timer_start("si halo r0")
+!           call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+!           call mpas_threading_barrier()
+!           call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!           call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!           call mpas_timer_stop("si halo r0")
+!        end if
+
+
+
+         block => domain % blocklist
+         do while (associated(block))
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+
+            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+            call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_fh0', CGvec_fh0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0', CGvec_rh0)
+
+            nCells = nCellsArray( 1 )
+            nEdges = nEdgesArray( 2 )
+
+            if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+               ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_rh0(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
+               ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_rh0(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
+               ! Jacobi preconditioning
+               CGvec_rh0(1:nPrecVec) = CGvec_r0(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'none' ) then
+               ! No preconditioning
+               CGvec_rh0(1:nPrecVec) = CGvec_r0(1:nPrecVec)
+
+            end if
+
             block => block % next
          end do  ! block
+
+            call mpas_timer_start("si halo r0")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_rh0', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo r0")
 
 
          ! SpMV -----------------------------------------------------------------------------------!
@@ -1053,7 +1125,10 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0', CGvec_p0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_t1', CGvec_t1)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_w1', CGvec_w1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh1', CGvec_sh1)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0', CGvec_q0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_fh0', CGvec_fh0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0', CGvec_rh0)
  
             nCells = nCellsArray( 1 )
             nEdges = nEdgesArray( 2 )
@@ -1061,8 +1136,41 @@ module ocn_time_integration_si
             r0r0 = 0.d0
             f0p0 = 0.d0
  
+!           do iCell = 1, nCells
+!
+!              sshTendAx = 0.0_RKIND
+! 
+!              do i = 1, nEdgesOnCell(iCell)
+!                 iEdge = edgesOnCell(i, iCell)
+!  
+!                 cell1 = cellsOnEdge(1, iEdge)
+!                 cell2 = cellsOnEdge(2, iEdge)
+!  
+!                 ! Interpolation sshEdge
+!                 sshEdgeCur = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
+!  
+!                 ! method 1, matches method 0 without pbcs, works with pbcs.
+!                 thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
+!  
+!                 ! nabla (ssh^0)
+!                 sshDiffCur = (CGvec_fh0(cell2)- CGvec_fh0(cell1)) / dcEdge(iEdge)
+!                     fluxAx = thicknessSumCur * sshDiffCur
+!                  sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
+!  
+!              end do ! i
+! 
+!              sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_fh0(iCell) * areaCell(iCell)
+!                 
+!              CGvec_f0(iCell) = -sshCurArea - sshTendAx 
+! 
+!              CGvec_rh0(iCell) = CGvec_fh0(iCell)
+
+!           end do ! iCell
+
+               CGvec_p0(:) = CGvec_rh0(:)
+
             do iCell = 1, nCells
- 
+
                sshTendAx = 0.0_RKIND
   
                do i = 1, nEdgesOnCell(iCell)
@@ -1087,18 +1195,55 @@ module ocn_time_integration_si
                sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_r0(iCell) * areaCell(iCell)
                   
                CGvec_f0(iCell) = -sshCurArea - sshTendAx 
-               CGvec_q0(iCell) = CGvec_f0(iCell)
+              
+               sshTendAx = 0.0_RKIND
   
+               do i = 1, nEdgesOnCell(iCell)
+                  iEdge = edgesOnCell(i, iCell)
+   
+                  cell1 = cellsOnEdge(1, iEdge)
+                  cell2 = cellsOnEdge(2, iEdge)
+   
+                  ! Interpolation sshEdge
+                  sshEdgeCur = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
+   
+                  ! method 1, matches method 0 without pbcs, works with pbcs.
+                  thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
+   
+                  ! nabla (ssh^0)
+                  sshDiffCur = (CGvec_rh0(cell2)- CGvec_rh0(cell1)) / dcEdge(iEdge)
+                      fluxAx = thicknessSumCur * sshDiffCur
+                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
+   
+               end do ! i
+  
+               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_rh0(iCell) * areaCell(iCell)
+                  
+               CGvec_q0(iCell) = -sshCurArea - sshTendAx 
+
+               r0r0 = r0r0 + CGvec_r0(iCell) * CGvec_rh0(iCell)
+               f0p0 = f0p0 + CGvec_f0(iCell) * CGvec_p0(iCell)
+
                CGvec_t1(iCell) = 0.d0
                CGvec_w1(iCell) = 0.d0
+               CGvec_sh1(iCell) = 0.d0
 
-               r0r0 = r0r0 + CGvec_r0(iCell) * CGvec_r0(iCell)
-               f0p0 = f0p0 + CGvec_f0(iCell) * CGvec_p0(iCell)
-      
             end do ! iCell
 
             block => block % next
          end do  ! block
+
+         ! Preconditioning ------------------------------------------------------------------------!
+
+         if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+            call mpas_timer_start("si halo r0")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q0', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo r0")
+         end if
 
             CGcst_allreduce2(:) = 0.d0
             CGcst_allreduce2(1) = r0r0
@@ -1112,7 +1257,46 @@ module ocn_time_integration_si
             f0p0 = CGcst_allreduce_global2(2)
 
             alph0 = r0r0 / f0p0
-    
+
+            print*, alph0
+         block => domain % blocklist
+         do while (associated(block))
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+
+            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+            call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0', CGvec_q0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh0', CGvec_qh0)
+
+            nCells = nCellsArray( 1 )
+            nEdges = nEdgesArray( 2 )
+
+            if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+               ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_q0(1:nPrecVec), 1, 0.0_RKIND, CGvec_qh0(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
+               ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_q0(1:nPrecVec), 1, 0.0_RKIND, CGvec_qh0(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
+               ! Jacobi preconditioning
+               CGvec_qh0(1:nPrecVec) = CGvec_q0(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'none' ) then
+               ! No preconditioning
+               CGvec_qh0(1:nPrecVec) = CGvec_q0(1:nPrecVec)
+
+            end if
+
+            block => block % next
+         end do  ! block
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
@@ -1154,11 +1338,63 @@ module ocn_time_integration_si
                 
             block => block % next
          end do  ! block
+
+
+         ! Preconditioning ------------------------------------------------------------------------!
+
+         if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+            call mpas_timer_start("si halo r0")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_t0', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo r0")
+         end if
+
+         block => domain % blocklist
+         do while (associated(block))
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+
+            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+            call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0', CGvec_t0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh0', CGvec_sh0)
+
+            nCells = nCellsArray( 1 )
+            nEdges = nEdgesArray( 2 )
+
+            if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+               ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_t0(1:nPrecVec), 1, 0.0_RKIND, CGvec_sh0(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
+               ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_t0(1:nPrecVec), 1, 0.0_RKIND, CGvec_sh0(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
+               ! Jacobi preconditioning
+               CGvec_sh0(1:nPrecVec) = CGvec_t0(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'none' ) then
+               ! No preconditioning
+               CGvec_sh0(1:nPrecVec) = CGvec_t0(1:nPrecVec)
+
+            end if
+
+            block => block % next
+         end do  ! block
          
 
             call mpas_timer_start("si halo r0")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_t0', 1)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_sh0', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
@@ -1193,8 +1429,11 @@ module ocn_time_integration_si
  
             call mpas_pool_get_array(statePool, 'ssh', sshCur,1)
  
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh0', CGvec_sh0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0', CGvec_s0)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0', CGvec_t0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0', CGvec_rh0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0', CGvec_p0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh0', CGvec_qh0)
  
             nCells = nCellsArray( 1 )
             nEdges = nEdgesArray( 2 )
@@ -1216,15 +1455,17 @@ module ocn_time_integration_si
                   thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
    
                   ! nabla (ssh^0)
-                  sshDiffCur = (CGvec_t0(cell2)- CGvec_t0(cell1)) / dcEdge(iEdge)
+                  sshDiffCur = (CGvec_sh0(cell2)- CGvec_sh0(cell1)) / dcEdge(iEdge)
                       fluxAx = thicknessSumCur * sshDiffCur
                    sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
    
                end do ! i
   
-               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_t0(iCell) * areaCell(iCell)
+               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_sh0(iCell) * areaCell(iCell)
                   
                CGvec_s0(iCell) = -sshCurArea - sshTendAx 
+
+!              CGvec_rh0(iCell) = CGvec_sh0(iCell) + alph0 * CGvec_qh0(iCell)
   
             end do ! iCell
 
@@ -1250,6 +1491,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0' , CGvec_s0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0' , CGvec_p0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0' , CGvec_q0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh0' , CGvec_qh0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_f0' , CGvec_f0)
     
                nCells = nCellsArray(1)
@@ -1275,7 +1517,8 @@ module ocn_time_integration_si
                r00r0 = r00r0 + CGvec_r00(iCell) * CGvec_r0(iCell)
                f0s0  = f0s0  + CGvec_f0(iCell)  * CGvec_s0(iCell)
                f0t0  = f0t0  + CGvec_f0(iCell)  * CGvec_t0(iCell)
-               f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_q0(iCell)
+!              f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_q0(iCell)
+               f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_qh0(iCell)
                f0p0  = f0p0  + CGvec_f0(iCell)  * CGvec_p0(iCell)
                resid  = resid  + CGvec_r0(iCell)  * CGvec_r0(iCell)
 
@@ -1321,12 +1564,15 @@ module ocn_time_integration_si
                call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
     
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0' , CGvec_t0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0' , CGvec_rh0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh0' , CGvec_qh0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0' , CGvec_s0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0' , CGvec_u0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_z0' , CGvec_z0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0' , CGvec_q0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_f0' , CGvec_f0)
     
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
@@ -1339,15 +1585,32 @@ module ocn_time_integration_si
 
                do iCell = 1,nCells
 
-                 CGvec_u0(iCell) = zeta0 * CGvec_q0(iCell)                 
-                 CGvec_z0(iCell) = zeta0 * CGvec_r0(iCell) - alph0 * CGvec_u0(iCell)
-                 CGvec_r1(iCell) = CGvec_t0(iCell) - zeta0 * CGvec_s0(iCell)              
+                 CGvec_u0(iCell) = zeta0 * CGvec_qh0(iCell)                 
+                 CGvec_z0(iCell) = zeta0 * CGvec_rh0(iCell) - alph0 * CGvec_u0(iCell)
+                 CGvec_r1(iCell) = CGvec_t0(iCell) - zeta0 * CGvec_s0(iCell) 
 
                end do
+
+!           if ( rank == 3 ) then
+!           print*, minval(CGvec_u0),maxval(CGvec_u0),minval(CGvec_z0),maxval(CGvec_z0),minval(CGvec_r1),maxval(CGvec_r1)
+!           print*, minval(CGvec_r0(1:nCells)),maxval(CGvec_r0(1:nCells))
+!           print*, minval(CGvec_q0(1:nCells)),maxval(CGvec_q0(1:nCells))
+!           print*, minval(CGvec_r0(1:nCells)),maxval(CGvec_r0(1:nCells))
+!           print*, minval(CGvec_t1(1:nCells)),maxval(CGvec_t1(1:nCells))
+!           print*, minval(CGvec_s0(1:nCells)),maxval(CGvec_s0(1:nCells))
+!           print*, minval(CGvec_t0(1:nCells)),maxval(CGvec_t0(1:nCells))
+!           print*, minval(CGvec_f0(1:nCells)),maxval(CGvec_f0(1:nCells))
+!           print*, zeta0,alph0
+!           print*, s0t0,s0s0
+!           endif
                 
             block => block % next
          end do  ! block
 
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+!        stop
+
+       
 
          else 
 
@@ -1365,6 +1628,8 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0' , CGvec_t0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_t1' , CGvec_t1)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00' , CGvec_r00)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0' , CGvec_rh0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh0' , CGvec_qh0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0' , CGvec_s0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_y0' , CGvec_y0)
@@ -1399,7 +1664,7 @@ module ocn_time_integration_si
 
                do iCell = 1,nCells
 
-                 CGvec_h0(iCell) = CGvec_t1(iCell) - CGvec_r0(iCell) + beta1 * CGvec_u1(iCell)
+                 CGvec_h0(iCell) = CGvec_sh1(iCell) - CGvec_rh0(iCell) + beta1 * CGvec_u1(iCell)
 
                  s0s0  = s0s0  + CGvec_s0(iCell)  * CGvec_s0(iCell)
                  s0y0  = s0y0  + CGvec_s0(iCell)  * CGvec_y0(iCell)
@@ -1414,7 +1679,8 @@ module ocn_time_integration_si
                  f0y0  = f0y0  + CGvec_f0(iCell)  * CGvec_y0(iCell)
                  f0s0  = f0s0  + CGvec_f0(iCell)  * CGvec_s0(iCell)
                  f0h0  = f0h0  + CGvec_f0(iCell)  * CGvec_h0(iCell)
-                 f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_q0(iCell)
+!                f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_q0(iCell)
+                 f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_qh0(iCell)
                  f0p0  = f0p0  + CGvec_f0(iCell)  * CGvec_p0(iCell)
                  resid = resid + CGvec_r0(iCell)  * CGvec_r0(iCell)
                  
@@ -1483,6 +1749,8 @@ module ocn_time_integration_si
                call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
     
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0' , CGvec_t0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0' , CGvec_rh0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh0' , CGvec_qh0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0' , CGvec_s0)
@@ -1498,9 +1766,9 @@ module ocn_time_integration_si
 
                do iCell = 1,nCells
 
-                 CGvec_u0(iCell) = zeta0 * CGvec_q0(iCell) + eta0 * CGvec_h0(iCell)
-                 CGvec_z0(iCell) = zeta0 * CGvec_r0(iCell) + eta0 * CGvec_z1(iCell) &
-                                                           -alph0 * CGvec_u0(iCell)
+                 CGvec_u0(iCell) = zeta0 * CGvec_qh0(iCell) + eta0 * CGvec_h0(iCell)
+                 CGvec_z0(iCell) = zeta0 * CGvec_rh0(iCell) + eta0 * CGvec_z1(iCell) &
+                                                            -alph0 * CGvec_u0(iCell)
                  CGvec_r1(iCell) = CGvec_t0(iCell) - eta0 * CGvec_y0(iCell) - zeta0 * CGvec_s0(iCell)
 
                end do
@@ -1509,6 +1777,59 @@ module ocn_time_integration_si
          end do  ! block
 
          end if ! mod
+
+
+         ! Preconditioning ------------------------------------------------------------------------!
+
+         if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+            call mpas_timer_start("si halo r0")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo r0")
+         end if
+
+         block => domain % blocklist
+         do while (associated(block))
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+
+            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+            call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh1', CGvec_rh1)
+
+            nCells = nCellsArray( 1 )
+            nEdges = nEdgesArray( 2 )
+
+            if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+               ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r1(1:nPrecVec), 1, 0.0_RKIND, CGvec_rh1(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
+               ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r1(1:nPrecVec), 1, 0.0_RKIND, CGvec_rh1(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
+               ! Jacobi preconditioning
+               CGvec_rh1(1:nPrecVec) = CGvec_r1(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'none' ) then
+               ! No preconditioning
+               CGvec_rh1(1:nPrecVec) = CGvec_r1(1:nPrecVec)
+
+            end if
+
+            block => block % next
+         end do
+
 
 
             block => domain % blocklist
@@ -1524,6 +1845,8 @@ module ocn_time_integration_si
                call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
                call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
     
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh0' , CGvec_qh0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh1' , CGvec_rh1)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0' , CGvec_s0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0' , CGvec_u0)
@@ -1542,7 +1865,7 @@ module ocn_time_integration_si
 
                  sshSubcycleNew(iCell) = sshSubcycleCur(iCell) + alph0*CGvec_p0(iCell) + CGvec_z0(iCell)
                  CGvec_w0(iCell) = CGvec_s0(iCell) + beta0*CGvec_q0(iCell)
-                 CGvec_p1(iCell) = CGvec_r1(iCell) + beta0*(CGvec_p0(iCell) - CGvec_u0(iCell))
+                 CGvec_p1(iCell) = CGvec_rh1(iCell) + beta0*(CGvec_p0(iCell) - CGvec_u0(iCell))
   
                end do
                 
@@ -1557,6 +1880,123 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo iter")
+
+
+         block => domain % blocklist
+         do while (associated(block))
+
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+ 
+            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+            call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+ 
+            call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
+            call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
+            call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
+            call mpas_pool_get_array(meshPool, 'dcEdge', dcEdge)
+            call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
+            call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
+            call mpas_pool_get_array(meshPool, 'refBottomDepthTopOfCell', refBottomDepthTopOfCell)
+            call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
+            call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
+            call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
+ 
+            call mpas_pool_get_array(statePool, 'ssh', sshCur,1)
+ 
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_q1', CGvec_q1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_p1', CGvec_p1)
+ 
+            nCells = nCellsArray( 1 )
+            nEdges = nEdgesArray( 2 )
+
+            do iCell = 1, nCells
+ 
+               sshTendAx = 0.0_RKIND
+  
+               do i = 1, nEdgesOnCell(iCell)
+                  iEdge = edgesOnCell(i, iCell)
+   
+                  cell1 = cellsOnEdge(1, iEdge)
+                  cell2 = cellsOnEdge(2, iEdge)
+   
+                  ! Interpolation sshEdge
+                  sshEdgeCur = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
+   
+                  ! method 1, matches method 0 without pbcs, works with pbcs.
+                  thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
+   
+                  ! nabla (ssh^0)
+                  sshDiffCur = (CGvec_p1(cell2)- CGvec_p1(cell1)) / dcEdge(iEdge)
+                      fluxAx = thicknessSumCur * sshDiffCur
+                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
+   
+               end do ! i
+  
+               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_p1(iCell) * areaCell(iCell)
+                  
+               CGvec_q1(iCell) = -sshCurArea - sshTendAx 
+  
+            end do ! iCell
+
+            block => block % next
+         end do  ! block
+
+
+         ! Preconditioning ------------------------------------------------------------------------!
+
+         if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+            call mpas_timer_start("si halo r0")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q1', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo r0")
+         end if
+
+         block => domain % blocklist
+         do while (associated(block))
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+
+            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+            call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_q1', CGvec_q1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh1', CGvec_qh1)
+
+            nCells = nCellsArray( 1 )
+            nEdges = nEdgesArray( 2 )
+
+            if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+               ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_q1(1:nPrecVec), 1, 0.0_RKIND, CGvec_qh1(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
+               ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_q1(1:nPrecVec), 1, 0.0_RKIND, CGvec_qh1(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
+               ! Jacobi preconditioning
+               CGvec_qh1(1:nPrecVec) = CGvec_q1(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'none' ) then
+               ! No preconditioning
+               CGvec_qh1(1:nPrecVec) = CGvec_q1(1:nPrecVec)
+
+            end if
+
+            block => block % next
+         end do
 
 
          block => domain % blocklist
@@ -1601,38 +2041,12 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_p1', CGvec_p1)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
- 
-            nCells = nCellsArray( 1 )
-            nEdges = nEdgesArray( 2 )
-
-            do iCell = 1, nCells
- 
-               sshTendAx = 0.0_RKIND
-  
-               do i = 1, nEdgesOnCell(iCell)
-                  iEdge = edgesOnCell(i, iCell)
-   
-                  cell1 = cellsOnEdge(1, iEdge)
-                  cell2 = cellsOnEdge(2, iEdge)
-   
-                  ! Interpolation sshEdge
-                  sshEdgeCur = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
-   
-                  ! method 1, matches method 0 without pbcs, works with pbcs.
-                  thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
-   
-                  ! nabla (ssh^0)
-                  sshDiffCur = (CGvec_p1(cell2)- CGvec_p1(cell1)) / dcEdge(iEdge)
-                      fluxAx = thicknessSumCur * sshDiffCur
-                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
-   
-               end do ! i
-  
-               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_p1(iCell) * areaCell(iCell)
-                  
-               CGvec_q1(iCell) = -sshCurArea - sshTendAx 
-  
-            end do ! iCell
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh0', CGvec_qh0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh1', CGvec_qh1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0', CGvec_rh0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh1', CGvec_rh1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh0', CGvec_sh0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh1', CGvec_sh1)
 
 
             do iCell = 1,nCells
@@ -1640,11 +2054,15 @@ module ocn_time_integration_si
               CGvec_q0(iCell) = CGvec_q1(iCell)
               CGvec_p0(iCell) = CGvec_p1(iCell)
               CGvec_r0(iCell) = CGvec_r1(iCell)
+              CGvec_qh0(iCell) = CGvec_qh1(iCell)
+              CGvec_rh0(iCell) = CGvec_rh1(iCell)
 
               CGvec_w1(iCell) = CGvec_w0(iCell) ! inverse 1-0 for (k-1) iter
               CGvec_z1(iCell) = CGvec_z0(iCell) ! inverse 1-0 for (k-1) iter
               CGvec_u1(iCell) = CGvec_u0(iCell) ! inverse 1-0 for (k-1) iter
               CGvec_t1(iCell) = CGvec_t0(iCell) ! inverse 1-0 for (k-1) iter
+              CGvec_sh1(iCell) = CGvec_sh0(iCell) ! inverse 1-0 for (k-1) iter
+
             end do
 
             block => block % next
