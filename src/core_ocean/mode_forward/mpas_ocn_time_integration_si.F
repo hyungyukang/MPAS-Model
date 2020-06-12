@@ -231,14 +231,14 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:), pointer :: CGvec_t0,CGvec_t1,CGvec_q0,CGvec_q1,CGvec_qh0,CGvec_qh1
       real (kind=RKIND), dimension(:), pointer :: CGvec_z0,CGvec_z1,CGvec_zh0,CGvec_zh1,CGvec_fh0,CGvec_fh1
       real (kind=RKIND), dimension(:), pointer :: CGvec_y0,CGvec_h0
-      real (kind=RKIND), dimension(:), pointer :: CGvec_u0,CGvec_u1,CGvec_f0,CGvec_g1,CGvec_g2
+      real (kind=RKIND), dimension(:), pointer :: CGvec_u0,CGvec_u1,CGvec_f0,CGvec_g1,CGvec_g2,CGvec_th0,CGvec_th1
       real (kind=RKIND), dimension(:), pointer :: CGvec_j0,CGvec_p0,CGvec_p1,CGvec_k0,CGvec_x0,CGvec_x1,CGvec_e0
       real (kind=RKIND), dimension(:), pointer :: barotropicCoriolisTerm
       ! Semi-implicit variables
       real (kind=RKIND), dimension(7) :: CGcst_allreduce,CGcst_allreduce_global
       real (kind=RKIND), dimension(2) :: CGcst_allreduce2,CGcst_allreduce_global2
-      real (kind=RKIND), dimension(10) :: CGcst_allreduce10,CGcst_allreduce_global10
-      real (kind=RKIND), dimension(16) :: CGcst_allreduce16,CGcst_allreduce_global16
+      real (kind=RKIND), dimension(12) :: CGcst_allreduce12,CGcst_allreduce_global12
+      real (kind=RKIND), dimension(18) :: CGcst_allreduce18,CGcst_allreduce_global18
       real (kind=RKIND) :: CGcst_r00r0,CGcst_r00w0,CGcst_r00r1,CGcst_r00w1
       real (kind=RKIND) :: CGcst_r00r0_global,CGcst_r00w0_global,CGcst_r00r1_global,CGcst_r00w1_global
 
@@ -250,7 +250,7 @@ module ocn_time_integration_si
 
       real (kind=RKIND) :: CGcst_alpha0,CGcst_alpha1,CGcst_beta0,CGcst_beta1,CGcst_omega0,CGcst_omega1
       real (kind=RKIND) :: r0r0,s0t0,s0s0,r00t0,r00s0,f0s0,f0t0,f0q0,f0p0
-      real (kind=RKIND) :: s0y0,y0t0,y0y0,r00y0,r00r0,f0y0,f0h0
+      real (kind=RKIND) :: s0y0,y0t0,y0y0,r00y0,r00r0,f0y0,f0h0,f0qh0,f0sh0,f0th0,f0sh1,f0th1,f0qh1
       real (kind=RKIND) :: zeta0,eta0,rr1,fr1,fu0,beta0,beta1,fp1,alph0,alph1
       real (kind=RKIND) :: sshCurArea,sshLagArea,sshTendA,sshTendB,sshTendC,temp1,temp2,crit_main,resid,wgt
       integer :: mm,ll
@@ -1126,6 +1126,7 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_t1', CGvec_t1)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_w1', CGvec_w1)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh1', CGvec_sh1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_th1', CGvec_th1)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0', CGvec_q0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_fh0', CGvec_fh0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0', CGvec_rh0)
@@ -1221,12 +1222,13 @@ module ocn_time_integration_si
                   
                CGvec_q0(iCell) = -sshCurArea - sshTendAx 
 
-               r0r0 = r0r0 + CGvec_r0(iCell) * CGvec_rh0(iCell)
+               r0r0 = r0r0 + CGvec_r0(iCell) * CGvec_r0(iCell)
                f0p0 = f0p0 + CGvec_f0(iCell) * CGvec_p0(iCell)
 
                CGvec_t1(iCell) = 0.d0
                CGvec_w1(iCell) = 0.d0
                CGvec_sh1(iCell) = 0.d0
+               CGvec_th1(iCell) = 0.d0
 
             end do ! iCell
 
@@ -1258,7 +1260,11 @@ module ocn_time_integration_si
 
             alph0 = r0r0 / f0p0
 
-            print*, alph0
+            f0sh1 = 0.d0
+            f0th1 = 0.d0
+            f0qh1 = 0.d0
+ 
+
          block => domain % blocklist
          do while (associated(block))
             call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
@@ -1307,8 +1313,7 @@ module ocn_time_integration_si
          call mpas_timer_start("si btr iteration")
 
          !**************************************************************!
-         !do iter = 1,config_n_btr_si_outer_iter
-         do iter = 1,100
+         do iter = 1,config_n_btr_si_outer_iter
          !**************************************************************!
 
             block => domain % blocklist
@@ -1465,9 +1470,61 @@ module ocn_time_integration_si
                   
                CGvec_s0(iCell) = -sshCurArea - sshTendAx 
 
-!              CGvec_rh0(iCell) = CGvec_sh0(iCell) + alph0 * CGvec_qh0(iCell)
-  
             end do ! iCell
+
+            block => block % next
+         end do  ! block
+
+
+
+
+         ! Preconditioning ------------------------------------------------------------------------!
+
+         if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+            call mpas_timer_start("si halo r0")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_s0', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo r0")
+         end if
+
+         block => domain % blocklist
+         do while (associated(block))
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+
+            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+            call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0', CGvec_s0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_th0', CGvec_th0)
+
+            nCells = nCellsArray( 1 )
+            nEdges = nEdgesArray( 2 )
+
+            if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+               ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_s0(1:nPrecVec), 1, 0.0_RKIND, CGvec_th0(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
+               ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_s0(1:nPrecVec), 1, 0.0_RKIND, CGvec_th0(1:nPrecVec), 1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
+               ! Jacobi preconditioning
+               CGvec_th0(1:nPrecVec) = CGvec_s0(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
+
+            elseif ( trim(config_btr_si_preconditioner) == 'none' ) then
+               ! No preconditioning
+               CGvec_th0(1:nPrecVec) = CGvec_s0(1:nPrecVec)
+
+            end if
 
             block => block % next
          end do  ! block
@@ -1492,6 +1549,8 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0' , CGvec_p0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0' , CGvec_q0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh0' , CGvec_qh0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh0' , CGvec_sh0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_th0' , CGvec_th0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_f0' , CGvec_f0)
     
                nCells = nCellsArray(1)
@@ -1504,8 +1563,10 @@ module ocn_time_integration_si
                r00r0 = 0.d0
                f0s0  = 0.d0
                f0t0  = 0.d0
-               f0q0  = 0.d0
+               f0qh0  = 0.d0
                f0p0  = 0.d0
+               f0sh0  = 0.d0
+               f0th0  = 0.d0
                resid  = 0.d0
 
                do iCell = 1,nCells
@@ -1517,9 +1578,10 @@ module ocn_time_integration_si
                r00r0 = r00r0 + CGvec_r00(iCell) * CGvec_r0(iCell)
                f0s0  = f0s0  + CGvec_f0(iCell)  * CGvec_s0(iCell)
                f0t0  = f0t0  + CGvec_f0(iCell)  * CGvec_t0(iCell)
-!              f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_q0(iCell)
-               f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_qh0(iCell)
-               f0p0  = f0p0  + CGvec_f0(iCell)  * CGvec_p0(iCell)
+               f0qh0  = f0qh0  + CGvec_f0(iCell)  * CGvec_qh0(iCell)
+               f0p0  = f0p0    + CGvec_f0(iCell)  * CGvec_p0(iCell)
+               f0sh0  = f0sh0  + CGvec_f0(iCell)  * CGvec_sh0(iCell)
+               f0th0  = f0th0  + CGvec_f0(iCell)  * CGvec_th0(iCell)
                resid  = resid  + CGvec_r0(iCell)  * CGvec_r0(iCell)
 
                end do
@@ -1527,31 +1589,35 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
                  
-            CGcst_allreduce10(1)  = s0t0  
-            CGcst_allreduce10(2)  = s0s0  
-            CGcst_allreduce10(3)  = r00t0
-            CGcst_allreduce10(4)  = r00s0
-            CGcst_allreduce10(5)  = r00r0
-            CGcst_allreduce10(6)  = f0s0
-            CGcst_allreduce10(7)  = f0t0
-            CGcst_allreduce10(8)  = f0q0
-            CGcst_allreduce10(9)  = f0p0
-            CGcst_allreduce10(10) = resid
+            CGcst_allreduce12(1)  = s0t0  
+            CGcst_allreduce12(2)  = s0s0  
+            CGcst_allreduce12(3)  = r00t0
+            CGcst_allreduce12(4)  = r00s0
+            CGcst_allreduce12(5)  = r00r0
+            CGcst_allreduce12(6)  = f0s0
+            CGcst_allreduce12(7)  = f0t0
+            CGcst_allreduce12(8)  = f0qh0
+            CGcst_allreduce12(9)  = f0p0
+            CGcst_allreduce12(10)  = f0sh0
+            CGcst_allreduce12(11)  = f0th0
+            CGcst_allreduce12(12) = resid
              
             call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 10, CGcst_allreduce10, CGcst_allreduce_global10)
+            call mpas_dmpar_sum_real_array(dminfo, 12, CGcst_allreduce12, CGcst_allreduce_global12)
             call mpas_timer_stop("si reduction iter")
 
-            s0t0  = CGcst_allreduce_global10(1)
-            s0s0  = CGcst_allreduce_global10(2)
-            r00t0 = CGcst_allreduce_global10(3)
-            r00s0 = CGcst_allreduce_global10(4)
-            r00r0 = CGcst_allreduce_global10(5)
-            f0s0  = CGcst_allreduce_global10(6)
-            f0t0  = CGcst_allreduce_global10(7)
-            f0q0  = CGcst_allreduce_global10(8)
-            f0p0  = CGcst_allreduce_global10(9)
-            resid = CGcst_allreduce_global10(10)
+            s0t0  = CGcst_allreduce_global12(1)
+            s0s0  = CGcst_allreduce_global12(2)
+            r00t0 = CGcst_allreduce_global12(3)
+            r00s0 = CGcst_allreduce_global12(4)
+            r00r0 = CGcst_allreduce_global12(5)
+            f0s0  = CGcst_allreduce_global12(6)
+            f0t0  = CGcst_allreduce_global12(7)
+            f0qh0 = CGcst_allreduce_global12(8)
+            f0p0  = CGcst_allreduce_global12(9)
+            f0sh0 = CGcst_allreduce_global12(10)
+            f0th0 = CGcst_allreduce_global12(11)
+            resid = CGcst_allreduce_global12(12)
 
             block => domain % blocklist
             do while (associated(block))
@@ -1580,7 +1646,7 @@ module ocn_time_integration_si
                zeta0 = s0t0 / s0s0
                eta0 = 0.d0
                rr1 = r00t0 - zeta0 * r00s0
-               fu0 = zeta0 * f0q0
+               fu0 = zeta0 * f0qh0
                fr1 = f0t0 - zeta0 * f0s0
 
                do iCell = 1,nCells
@@ -1590,26 +1656,9 @@ module ocn_time_integration_si
                  CGvec_r1(iCell) = CGvec_t0(iCell) - zeta0 * CGvec_s0(iCell) 
 
                end do
-
-!           if ( rank == 3 ) then
-!           print*, minval(CGvec_u0),maxval(CGvec_u0),minval(CGvec_z0),maxval(CGvec_z0),minval(CGvec_r1),maxval(CGvec_r1)
-!           print*, minval(CGvec_r0(1:nCells)),maxval(CGvec_r0(1:nCells))
-!           print*, minval(CGvec_q0(1:nCells)),maxval(CGvec_q0(1:nCells))
-!           print*, minval(CGvec_r0(1:nCells)),maxval(CGvec_r0(1:nCells))
-!           print*, minval(CGvec_t1(1:nCells)),maxval(CGvec_t1(1:nCells))
-!           print*, minval(CGvec_s0(1:nCells)),maxval(CGvec_s0(1:nCells))
-!           print*, minval(CGvec_t0(1:nCells)),maxval(CGvec_t0(1:nCells))
-!           print*, minval(CGvec_f0(1:nCells)),maxval(CGvec_f0(1:nCells))
-!           print*, zeta0,alph0
-!           print*, s0t0,s0s0
-!           endif
                 
             block => block % next
          end do  ! block
-
-!        call mpi_barrier(dminfo%comm,mpi_ierr)
-!        stop
-
        
 
          else 
@@ -1630,6 +1679,8 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00' , CGvec_r00)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0' , CGvec_rh0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh0' , CGvec_qh0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh0' , CGvec_sh0)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_th0' , CGvec_th0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0' , CGvec_r0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0' , CGvec_s0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_y0' , CGvec_y0)
@@ -1657,8 +1708,10 @@ module ocn_time_integration_si
                f0y0 = 0.d0
                f0s0 = 0.d0
                f0h0 = 0.d0
-               f0q0 = 0.d0
+               f0qh0 = 0.d0
                f0p0 = 0.d0
+               f0sh0 = 0.d0
+               f0th0 = 0.d0
                resid = 0.d0
 
 
@@ -1679,9 +1732,10 @@ module ocn_time_integration_si
                  f0y0  = f0y0  + CGvec_f0(iCell)  * CGvec_y0(iCell)
                  f0s0  = f0s0  + CGvec_f0(iCell)  * CGvec_s0(iCell)
                  f0h0  = f0h0  + CGvec_f0(iCell)  * CGvec_h0(iCell)
-!                f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_q0(iCell)
-                 f0q0  = f0q0  + CGvec_f0(iCell)  * CGvec_qh0(iCell)
+                 f0qh0  = f0qh0  + CGvec_f0(iCell)  * CGvec_qh0(iCell)
                  f0p0  = f0p0  + CGvec_f0(iCell)  * CGvec_p0(iCell)
+                 f0sh0  = f0sh0  + CGvec_f0(iCell)  * CGvec_sh0(iCell)
+                 f0th0  = f0th0  + CGvec_f0(iCell)  * CGvec_th0(iCell)
                  resid = resid + CGvec_r0(iCell)  * CGvec_r0(iCell)
                  
                end do
@@ -1689,49 +1743,53 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
                  
-            CGcst_allreduce16(1) = s0s0
-            CGcst_allreduce16(2) = s0y0
-            CGcst_allreduce16(3) = s0t0
-            CGcst_allreduce16(4) = y0t0
-            CGcst_allreduce16(5) = y0y0
-            CGcst_allreduce16(6) = r00t0
-            CGcst_allreduce16(7) = r00y0
-            CGcst_allreduce16(8) = r00s0
-            CGcst_allreduce16(9) = r00r0
-            CGcst_allreduce16(10) = f0t0
-            CGcst_allreduce16(11) = f0y0
-            CGcst_allreduce16(12) = f0s0
-            CGcst_allreduce16(13) = f0h0
-            CGcst_allreduce16(14) = f0q0
-            CGcst_allreduce16(15) = f0p0
-            CGcst_allreduce16(16) = resid
+            CGcst_allreduce18(1) = s0s0
+            CGcst_allreduce18(2) = s0y0
+            CGcst_allreduce18(3) = s0t0
+            CGcst_allreduce18(4) = y0t0
+            CGcst_allreduce18(5) = y0y0
+            CGcst_allreduce18(6) = r00t0
+            CGcst_allreduce18(7) = r00y0
+            CGcst_allreduce18(8) = r00s0
+            CGcst_allreduce18(9) = r00r0
+            CGcst_allreduce18(10) = f0t0
+            CGcst_allreduce18(11) = f0y0
+            CGcst_allreduce18(12) = f0s0
+            CGcst_allreduce18(13) = f0h0
+            CGcst_allreduce18(14) = f0qh0
+            CGcst_allreduce18(15) = f0p0
+            CGcst_allreduce18(16) = f0sh0
+            CGcst_allreduce18(17) = f0th0
+            CGcst_allreduce18(18) = resid
 
             call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 16, CGcst_allreduce16, CGcst_allreduce_global16)
+            call mpas_dmpar_sum_real_array(dminfo, 18, CGcst_allreduce18, CGcst_allreduce_global18)
             call mpas_timer_stop("si reduction iter")
 
-            s0s0  = CGcst_allreduce_global16(1)
-            s0y0  = CGcst_allreduce_global16(2)
-            s0t0  = CGcst_allreduce_global16(3)
-            y0t0  = CGcst_allreduce_global16(4)
-            y0y0  = CGcst_allreduce_global16(5)
-            r00t0 = CGcst_allreduce_global16(6)
-            r00y0 = CGcst_allreduce_global16(7)
-            r00s0 = CGcst_allreduce_global16(8)
-            r00r0 = CGcst_allreduce_global16(9)
-            f0t0  = CGcst_allreduce_global16(10)
-            f0y0  = CGcst_allreduce_global16(11)
-            f0s0  = CGcst_allreduce_global16(12)
-            f0h0  = CGcst_allreduce_global16(13)
-            f0q0  = CGcst_allreduce_global16(14)
-            f0p0  = CGcst_allreduce_global16(15)
-            resid = CGcst_allreduce_global16(16)
+            s0s0  = CGcst_allreduce_global18(1)
+            s0y0  = CGcst_allreduce_global18(2)
+            s0t0  = CGcst_allreduce_global18(3)
+            y0t0  = CGcst_allreduce_global18(4)
+            y0y0  = CGcst_allreduce_global18(5)
+            r00t0 = CGcst_allreduce_global18(6)
+            r00y0 = CGcst_allreduce_global18(7)
+            r00s0 = CGcst_allreduce_global18(8)
+            r00r0 = CGcst_allreduce_global18(9)
+            f0t0  = CGcst_allreduce_global18(10)
+            f0y0  = CGcst_allreduce_global18(11)
+            f0s0  = CGcst_allreduce_global18(12)
+            f0h0  = CGcst_allreduce_global18(13)
+            f0qh0  = CGcst_allreduce_global18(14)
+            f0p0  = CGcst_allreduce_global18(15)
+            f0sh0  = CGcst_allreduce_global18(16)
+            f0th0  = CGcst_allreduce_global18(17)
+            resid = CGcst_allreduce_global18(18)
 
             eta0  = (s0s0*y0t0 - s0y0*s0t0) / (s0s0*y0y0 - s0y0*s0y0)
             zeta0 = (y0y0*s0t0 - y0t0*s0y0) / (s0s0*y0y0 - s0y0*s0y0)
 
             rr1 = r00t0 - eta0 * r00y0 - zeta0 * r00s0
-            fu0 = zeta0 * f0q0 + eta0 * f0h0
+            fu0 = zeta0 * f0qh0 + eta0 * f0h0
             fr1 = f0t0 - eta0 * f0y0 - zeta0 * f0s0
 
 
@@ -2025,7 +2083,7 @@ module ocn_time_integration_si
  
             call mpas_pool_get_array(statePool, 'ssh', sshCur,1)
             call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur,1)
-            call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur,2)
+            call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew,2)
  
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0', CGvec_t0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_t1', CGvec_t1)
@@ -2047,10 +2105,12 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh1', CGvec_rh1)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh0', CGvec_sh0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh1', CGvec_sh1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_th0', CGvec_th0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_th1', CGvec_th1)
 
 
             do iCell = 1,nCells
-              sshSubcycleNew(iCell) = sshSubcycleCur(iCell) 
+              sshSubcycleCur(iCell) = sshSubcycleNew(iCell) 
               CGvec_q0(iCell) = CGvec_q1(iCell)
               CGvec_p0(iCell) = CGvec_p1(iCell)
               CGvec_r0(iCell) = CGvec_r1(iCell)
@@ -2068,21 +2128,19 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-            fp1 = fr1 + beta0 * (f0p0 - fu0)
+            fp1 = f0sh0 - eta0*f0sh1 + eta0*f0sh0 + alph0*eta0*f0th1 &
+                + alph0*eta0*beta1*f0qh1 - zeta0*f0th0 + beta0*(f0p0-fu0)
 
             alph0 = rr1 / fp1
             beta1 = beta0 ! inverse 1-0 for (k-1) iter
 
-         if ( rank == 0 ) then
-           print*, iter,resid
-         endif
+            f0sh1 = f0sh0 ! inverse 1-0 for (k-1) iter
+            f0th1 = f0th0 ! inverse 1-0 for (k-1) iter
+            f0qh1 = f0qh0 ! inverse 1-0 for (k-1) iter
 
          !**************************************************************!
          end do ! do iter = 2
          !**************************************************************!
-
-         call mpi_barrier(dminfo%comm,mpi_ierr)
-         stop
 
          !   boundary update on SSHnew
          call mpas_timer_start("si halo iter")
