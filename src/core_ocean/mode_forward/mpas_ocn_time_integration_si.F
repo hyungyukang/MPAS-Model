@@ -235,8 +235,6 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:), pointer :: CGvec_j0,CGvec_p0,CGvec_p1,CGvec_k0,CGvec_x0,CGvec_x1,CGvec_e0
       real (kind=RKIND), dimension(:), pointer :: barotropicCoriolisTerm
       ! Semi-implicit variables
-      real (kind=RKIND), dimension(:),allocatable,save :: oresid
-!     real (kind=RKIND), dimension(7) :: CGcst_allreduce,CGcst_allreduce_global
       real (kind=RKIND), dimension(2) :: CGcst_allreduce2,CGcst_allreduce_global2
       real (kind=RKIND), dimension(12) :: CGcst_allreduce12,CGcst_allreduce_global12
       real (kind=RKIND), dimension(18) :: CGcst_allreduce18,CGcst_allreduce_global18
@@ -283,7 +281,9 @@ module ocn_time_integration_si
       integer :: threadNum
 
       integer :: temp_mask,rank,ncpus
-      real (kind=RKIND) :: tracer2_value, lat,Rratio,crit_new
+      real (kind=RKIND) :: tracer2_value, lat
+      real (kind=RKIND),save :: Rratio,crit_new
+      real (kind=RKIND),dimension(200),save :: aresid
 
       real(kind=RKIND) :: alpha1,alpha2
       logical :: first_step = .true.
@@ -348,11 +348,10 @@ module ocn_time_integration_si
       !--- Backward-Euler at the 1st time step only to remove spurious oscillation caused by CN method
       if ( first_step ) then
          first_step = .false.
+         Rratio = 1.d0
+ 
          alpha1 = 1.0
          alpha2 = 0.0
-
-         allocate(oresid(config_n_btr_si_outer_iter))
-
       else
          alpha1 = 0.5
          alpha2 = 0.5
@@ -779,16 +778,10 @@ module ocn_time_integration_si
                   !$omp end do
                endif
    
-!              do iCell = 1, nCells
-!                 ! sshSubcycleOld = sshOld
-!                 sshSubcycleCur(iCell) = sshCur(iCell)
-!              end do
-
                   sshSubcycleCur(:) = sshCur(:)
                   normalBarotropicVelocitySubcycleCur(:) = normalBarotropicVelocityCur(:)
 
                do iEdge = 1, nEdges
-!                 normalBarotropicVelocitySubcycleCur(iEdge) = normalBarotropicVelocityCur(iEdge)
 
                   ! Compute the barotropic Coriolis term, -f*uPerp
                   barotropicCoriolisTerm(iEdge) = 0.0_RKIND
@@ -802,16 +795,6 @@ module ocn_time_integration_si
    
                block => block % next
             end do  ! block
-   
-!           call mpas_timer_start("si halo init")
-!           call mpas_dmpar_exch_group_create(domain, iterGroupName)
-!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'barotropicCoriolisTerm', 1 )
-!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocitySubcycle', 1 )
-!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
-!           call mpas_threading_barrier()
-!           call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-!           call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-!           call mpas_timer_stop("si halo init")
    
             call mpas_timer_stop('btr vel si init')
 
@@ -856,16 +839,11 @@ module ocn_time_integration_si
                   !$omp end do
                endif
    
-!              do iCell = 1, nCells
-!                         sshCur(iCell) = sshNew(iCell)
-!                 sshSubcycleCur(iCell) = sshCur(iCell)
-!              end do
                           sshCur(:) = sshNew(:)
                   sshSubcycleCur(:) = sshCur(:)
                   normalBarotropicVelocityCur(:) = normalBarotropicVelocitySubcycleCur(:)
 
                do iEdge = 1, nEdges
-!                 normalBarotropicVelocityCur(iEdge) = normalBarotropicVelocitySubcycleCur(iEdge)
 
                   ! Compute the barotropic Coriolis term, -f*uPerp
                   barotropicCoriolisTerm(iEdge) = 0.0_RKIND
@@ -916,21 +894,9 @@ module ocn_time_integration_si
 
             endif !config_use_tidal_potential_forcing
 
-!           call mpas_timer_start("si halo init")
-!           call mpas_dmpar_exch_group_create(domain, iterGroupName)
-!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'barotropicCoriolisTerm', 1 )
-!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocity', 1 )
-!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
-!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'ssh', 1 )
-!           call mpas_threading_barrier()
-!           call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-!           call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-!           call mpas_timer_stop("si halo init")
-
             call mpas_timer_stop('btr vel si init')
 
          endif ! split_implicit_step
-
 
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1027,13 +993,13 @@ module ocn_time_integration_si
 
          ! Preconditioning ------------------------------------------------------------------------!
 
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo iter")
 
          block => domain % blocklist
          do while (associated(block))
@@ -1074,13 +1040,13 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-         call mpas_timer_start("si halo r0")
+         call mpas_timer_start("si halo iter")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_rh0', 1)
          call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-         call mpas_timer_stop("si halo r0")
+         call mpas_timer_stop("si halo iter")
 
 
          ! SpMV -----------------------------------------------------------------------------------!
@@ -1188,14 +1154,12 @@ module ocn_time_integration_si
                r0r0 = r0r0 + CGvec_r0(iCell) * CGvec_r0(iCell)
                f0p0 = f0p0 + CGvec_f0(iCell) * CGvec_p0(iCell)
 
-               CGvec_t1(iCell) = 0.d0
-               CGvec_w1(iCell) = 0.d0
+               CGvec_t1(iCell)  = 0.d0
+               CGvec_w1(iCell)  = 0.d0
                CGvec_sh1(iCell) = 0.d0
                CGvec_th1(iCell) = 0.d0
  
             end do ! iCell
- 
-            Rratio = oresid(1)/oresid(2)
  
             block => block % next
          end do  ! block
@@ -1204,13 +1168,13 @@ module ocn_time_integration_si
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo prec")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q0', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo prec")
          end if
 
 
@@ -1218,9 +1182,9 @@ module ocn_time_integration_si
             CGcst_allreduce2(1) = r0r0
             CGcst_allreduce2(2) = f0p0
              
-            call mpas_timer_start("si reduction iter")
+            call mpas_timer_start("si reduction")
             call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
-            call mpas_timer_stop("si reduction iter")
+            call mpas_timer_stop("si reduction")
 
             r0r0 = CGcst_allreduce_global2(1)
             f0p0 = CGcst_allreduce_global2(2)
@@ -1282,14 +1246,14 @@ module ocn_time_integration_si
          call mpas_timer_start("si btr iteration")
 
          iter = 0
-
-!        crit_new = crit_main * Rratio
+         !crit_main  = config_btr_si_tolerance * area_mean
+         crit_new = crit_main * Rratio
 !        resid = (crit_new+100.0)**2.0
-
          resid = (crit_main+100.0)**2.0
 
          !**************************************************************!
          do while ( dsqrt(resid) > crit_main ) 
+!        do while ( dsqrt(resid) > crit_new ) 
          !**************************************************************!
 
             iter = iter + 1
@@ -1326,13 +1290,13 @@ module ocn_time_integration_si
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo prec")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_t0', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo prec")
          end if
 
          block => domain % blocklist
@@ -1348,26 +1312,26 @@ module ocn_time_integration_si
             call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
 
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_t0', CGvec_t0)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh0', CGvec_sh0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_th0', CGvec_th0)
 
             nCells = nCellsArray( 1 )
             nEdges = nEdgesArray( 2 )
 
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
-               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_t0(1:nPrecVec), 1, 0.0_RKIND, CGvec_sh0(1:nPrecVec), 1)
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_t0(1:nPrecVec), 1, 0.0_RKIND, CGvec_th0(1:nPrecVec), 1)
 
             elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_t0(1:nPrecVec), 1, 0.0_RKIND, CGvec_sh0(1:nPrecVec), 1)
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_t0(1:nPrecVec), 1, 0.0_RKIND, CGvec_th0(1:nPrecVec), 1)
 
             elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                ! Jacobi preconditioning
-               CGvec_sh0(1:nPrecVec) = CGvec_t0(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
+               CGvec_th0(1:nPrecVec) = CGvec_t0(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
 
             elseif ( trim(config_btr_si_preconditioner) == 'none' ) then
                ! No preconditioning
-               CGvec_sh0(1:nPrecVec) = CGvec_t0(1:nPrecVec)
+               CGvec_th0(1:nPrecVec) = CGvec_t0(1:nPrecVec)
 
             end if
 
@@ -1375,13 +1339,13 @@ module ocn_time_integration_si
          end do  ! block
          
 
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_sh0', 1)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_th0', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo iter")
 
 
          ! SpMV -----------------------------------------------------------------------------------!
@@ -1412,7 +1376,7 @@ module ocn_time_integration_si
  
             call mpas_pool_get_array(statePool, 'ssh', sshNew,2)
  
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh0', CGvec_sh0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_th0', CGvec_th0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0', CGvec_s0)
  
             nCells = nCellsArray( 1 )
@@ -1435,13 +1399,13 @@ module ocn_time_integration_si
                   thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
    
                   ! nabla (ssh^0)
-                  sshDiffCur = (CGvec_sh0(cell2)- CGvec_sh0(cell1)) / dcEdge(iEdge)
+                  sshDiffCur = (CGvec_th0(cell2)- CGvec_th0(cell1)) / dcEdge(iEdge)
                       fluxAx = thicknessSumCur * sshDiffCur
                    sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
    
                end do ! i
   
-               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_sh0(iCell) * areaCell(iCell)
+               sshCurArea = (1.0_RKIND/(gravity*dt**2.0*alpha1**2.0)) * CGvec_th0(iCell) * areaCell(iCell)
                   
                CGvec_s0(iCell) = -sshCurArea - sshTendAx 
 
@@ -1456,13 +1420,13 @@ module ocn_time_integration_si
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo prec")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_s0', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo prec")
          end if
 
          block => domain % blocklist
@@ -1478,26 +1442,26 @@ module ocn_time_integration_si
             call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
 
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0', CGvec_s0)
-            call mpas_pool_get_array(diagnosticsPool, 'CGvec_th0', CGvec_th0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh0', CGvec_sh0)
 
             nCells = nCellsArray( 1 )
             nEdges = nEdgesArray( 2 )
 
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
-               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_s0(1:nPrecVec), 1, 0.0_RKIND, CGvec_th0(1:nPrecVec), 1)
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_s0(1:nPrecVec), 1, 0.0_RKIND, CGvec_sh0(1:nPrecVec), 1)
 
             elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_s0(1:nPrecVec), 1, 0.0_RKIND, CGvec_th0(1:nPrecVec), 1)
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_s0(1:nPrecVec), 1, 0.0_RKIND, CGvec_sh0(1:nPrecVec), 1)
 
             elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                ! Jacobi preconditioning
-               CGvec_th0(1:nPrecVec) = CGvec_s0(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
+               CGvec_sh0(1:nPrecVec) = CGvec_s0(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
 
             elseif ( trim(config_btr_si_preconditioner) == 'none' ) then
                ! No preconditioning
-               CGvec_th0(1:nPrecVec) = CGvec_s0(1:nPrecVec)
+               CGvec_sh0(1:nPrecVec) = CGvec_s0(1:nPrecVec)
 
             end if
 
@@ -1671,21 +1635,21 @@ module ocn_time_integration_si
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
 
-               s0s0 = 0.d0
-               s0y0 = 0.d0
-               s0t0 = 0.d0
-               y0t0 = 0.d0
-               y0y0 = 0.d0
+               s0s0  = 0.d0
+               s0y0  = 0.d0
+               s0t0  = 0.d0
+               y0t0  = 0.d0
+               y0y0  = 0.d0
                r00t0 = 0.d0
                r00y0 = 0.d0
                r00s0 = 0.d0
                r00r0 = 0.d0
-               f0t0 = 0.d0
-               f0y0 = 0.d0
-               f0s0 = 0.d0
-               f0h0 = 0.d0
+               f0t0  = 0.d0
+               f0y0  = 0.d0
+               f0s0  = 0.d0
+               f0h0  = 0.d0
                f0qh0 = 0.d0
-               f0p0 = 0.d0
+               f0p0  = 0.d0
                f0sh0 = 0.d0
                f0th0 = 0.d0
                resid = 0.d0
@@ -1693,7 +1657,7 @@ module ocn_time_integration_si
 
                do iCell = 1,nCells
 
-                 CGvec_h0(iCell) = CGvec_sh1(iCell) - CGvec_rh0(iCell) + beta1 * CGvec_u1(iCell)
+                 CGvec_h0(iCell) = CGvec_th1(iCell) - CGvec_rh0(iCell) + beta1 * CGvec_u1(iCell)
 
                  s0s0  = s0s0  + CGvec_s0(iCell)  * CGvec_s0(iCell)
                  s0y0  = s0y0  + CGvec_s0(iCell)  * CGvec_y0(iCell)
@@ -1708,10 +1672,10 @@ module ocn_time_integration_si
                  f0y0  = f0y0  + CGvec_f0(iCell)  * CGvec_y0(iCell)
                  f0s0  = f0s0  + CGvec_f0(iCell)  * CGvec_s0(iCell)
                  f0h0  = f0h0  + CGvec_f0(iCell)  * CGvec_h0(iCell)
-                 f0qh0  = f0qh0  + CGvec_f0(iCell)  * CGvec_qh0(iCell)
+                 f0qh0 = f0qh0 + CGvec_f0(iCell)  * CGvec_qh0(iCell)
                  f0p0  = f0p0  + CGvec_f0(iCell)  * CGvec_p0(iCell)
-                 f0sh0  = f0sh0  + CGvec_f0(iCell)  * CGvec_sh0(iCell)
-                 f0th0  = f0th0  + CGvec_f0(iCell)  * CGvec_th0(iCell)
+                 f0sh0 = f0sh0 + CGvec_f0(iCell)  * CGvec_sh0(iCell)
+                 f0th0 = f0th0 + CGvec_f0(iCell)  * CGvec_th0(iCell)
                  resid = resid + CGvec_r0(iCell)  * CGvec_r0(iCell)
                  
                end do
@@ -1719,15 +1683,15 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
                  
-            CGcst_allreduce18(1) = s0s0
-            CGcst_allreduce18(2) = s0y0
-            CGcst_allreduce18(3) = s0t0
-            CGcst_allreduce18(4) = y0t0
-            CGcst_allreduce18(5) = y0y0
-            CGcst_allreduce18(6) = r00t0
-            CGcst_allreduce18(7) = r00y0
-            CGcst_allreduce18(8) = r00s0
-            CGcst_allreduce18(9) = r00r0
+            CGcst_allreduce18(1)  = s0s0
+            CGcst_allreduce18(2)  = s0y0
+            CGcst_allreduce18(3)  = s0t0
+            CGcst_allreduce18(4)  = y0t0
+            CGcst_allreduce18(5)  = y0y0
+            CGcst_allreduce18(6)  = r00t0
+            CGcst_allreduce18(7)  = r00y0
+            CGcst_allreduce18(8)  = r00s0
+            CGcst_allreduce18(9)  = r00r0
             CGcst_allreduce18(10) = f0t0
             CGcst_allreduce18(11) = f0y0
             CGcst_allreduce18(12) = f0s0
@@ -1755,11 +1719,12 @@ module ocn_time_integration_si
             f0y0  = CGcst_allreduce_global18(11)
             f0s0  = CGcst_allreduce_global18(12)
             f0h0  = CGcst_allreduce_global18(13)
-            f0qh0  = CGcst_allreduce_global18(14)
+            f0qh0 = CGcst_allreduce_global18(14)
             f0p0  = CGcst_allreduce_global18(15)
-            f0sh0  = CGcst_allreduce_global18(16)
-            f0th0  = CGcst_allreduce_global18(17)
+            f0sh0 = CGcst_allreduce_global18(16)
+            f0th0 = CGcst_allreduce_global18(17)
             resid = CGcst_allreduce_global18(18)
+
 
             eta0  = (s0s0*y0t0 - s0y0*s0t0) / (s0s0*y0y0 - s0y0*s0y0)
             zeta0 = (y0y0*s0t0 - y0t0*s0y0) / (s0s0*y0y0 - s0y0*s0y0)
@@ -1812,17 +1777,21 @@ module ocn_time_integration_si
 
          end if ! mod
 
+            if ( rank == 0) then
+              print*, iter,resid
+            endif
+
 
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo prec")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo prec")
          end if
 
          block => domain % blocklist
@@ -1984,13 +1953,13 @@ module ocn_time_integration_si
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo prec")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q1', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo prec")
          end if
 
          block => domain % blocklist
@@ -2083,7 +2052,6 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_th0', CGvec_th0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_th1', CGvec_th1)
 
-
             do iCell = 1,nCells
               sshSubcycleCur(iCell) = sshSubcycleNew(iCell) 
               CGvec_q0(iCell)  = CGvec_q1(iCell)
@@ -2097,14 +2065,14 @@ module ocn_time_integration_si
               CGvec_u1(iCell)  = CGvec_u0(iCell) ! inverse 1-0 for (k-1) iter
               CGvec_t1(iCell)  = CGvec_t0(iCell) ! inverse 1-0 for (k-1) iter
               CGvec_sh1(iCell) = CGvec_sh0(iCell) ! inverse 1-0 for (k-1) iter
-
+              CGvec_th1(iCell) = CGvec_th0(iCell) ! inverse 1-0 for (k-1) iter
             end do
 
             block => block % next
          end do  ! block
 
-            fp1 = f0sh0 - eta0*f0sh1 + eta0*f0sh0 + alph0*eta0*f0th1 &
-                + alph0*eta0*beta1*f0qh1 - zeta0*f0th0 + beta0*(f0p0-fu0)
+            fp1 = f0th0 - eta0*f0th1 + eta0*f0th0 + alph0*eta0*f0sh1 &
+                + alph0*eta0*beta1*f0qh1 - zeta0*f0sh0 + beta0*(f0p0-fu0)
 
             alph0 = rr1 / fp1
             beta1 = beta0 ! inverse 1-0 for (k-1) iter
@@ -2121,9 +2089,13 @@ module ocn_time_integration_si
                call mpas_log_write('******************************************************')
             endif
 
+            aresid(iter) = resid
+
          !**************************************************************!
          end do ! do iter
          !**************************************************************!
+
+         Rratio = aresid(iter-1)/aresid(iter)
 
          ! boundary update on SSHnew
          call mpas_timer_start("si halo iter")
@@ -3445,29 +3417,5 @@ subroutine inverse (n,Ainv) !{{{
     Ainv = -Ainv ! (-) sign to restore a matrix sign
     if (info.ne.0) stop 'ERROR in inverse routine: Matrix inversion failed!'
 end subroutine inverse !}}}
-
-SUBROUTINE PIKSRT(N,ARR1,ARR2)
-  implicit none
-  real(kind=8),dimension(N) :: ARR1
-  integer,dimension(N) :: ARR2
-  real(kind=8) :: a
-  integer :: b,i,j,N
-
-  do j=2, N
-    a=ARR1(j)
-    b=ARR2(j)
-    do i=j-1,1,-1
-      if (ARR1(i)<=a) goto 10
-      ARR1(i+1)=ARR1(i)
-      ARR2(i+1)=ARR2(i)
-    end do
-	i=0
-10  ARR1(i+1)=a
-    ARR2(i+1)=b
-  end do
-  return
-
-END subroutine PIKSRT
-
 
 ! vim: foldmethod=marker
