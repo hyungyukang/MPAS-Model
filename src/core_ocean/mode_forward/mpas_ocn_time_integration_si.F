@@ -341,7 +341,6 @@ module ocn_time_integration_si
       call mpas_pool_get_config(domain % configs, 'config_n_btr_si_outer_iter'  , config_n_btr_si_outer_iter  )
 
 
-
       ! Tolerance for main iteration -- !
       crit_main  = config_btr_si_tolerance * area_mean
 
@@ -1249,14 +1248,11 @@ module ocn_time_integration_si
          call mpas_timer_start("si btr iteration")
 
          iter = 0
-         !crit_main  = config_btr_si_tolerance * area_mean
          crit_new = crit_main * Rratio
-!        resid = (crit_new+100.0)**2.0
-         resid = (crit_main+100.0)**2.0
+         resid = (crit_new+100.0)**2.0
 
          !**************************************************************!
-         do while ( dsqrt(resid) > crit_main ) 
-!        do while ( dsqrt(resid) > crit_new ) 
+         do while ( dsqrt(resid) > crit_new ) 
          !**************************************************************!
 
             iter = iter + 1
@@ -1778,63 +1774,6 @@ module ocn_time_integration_si
 
          end if ! mod
 
-
-!           if ( rank == 0) then
-!             print*, iter,resid
-!           endif
-
-         ! Preconditioning ------------------------------------------------------------------------!
-
-!        if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-!           call mpas_timer_start("si halo prec")
-!           call mpas_dmpar_exch_group_create(domain, iterGroupName)
-!           call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
-!           call mpas_threading_barrier()
-!           call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-!           call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-!           call mpas_timer_stop("si halo prec")
-!        end if
-
-!        block => domain % blocklist
-!        do while (associated(block))
-!           call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-!           call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-
-!           call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
-!           call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
-!           call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-!           call mpas_pool_get_subpool(block % structs, 'state', statePool)
-!           call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-!           call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-
-!           call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
-!           call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh1', CGvec_rh1)
-
-!           nCells = nCellsArray( 1 )
-!           nEdges = nEdgesArray( 2 )
-
-!           if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-!              ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
-!              call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r1(1:nPrecVec), 1, 0.0_RKIND, CGvec_rh1(1:nPrecVec), 1)
-
-!           elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
-!              ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-!              call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r1(1:nPrecVec), 1, 0.0_RKIND, CGvec_rh1(1:nPrecVec), 1)
-
-!           elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
-!              ! Jacobi preconditioning
-!              CGvec_rh1(1:nPrecVec) = CGvec_r1(1:nPrecVec) * prec_ivmat(1:nPrecVec,1)
-
-!           elseif ( trim(config_btr_si_preconditioner) == 'none' ) then
-!              ! No preconditioning
-!              CGvec_rh1(1:nPrecVec) = CGvec_r1(1:nPrecVec)
-
-!           end if
-
-!           block => block % next
-!        end do
-
-
             block => domain % blocklist
             do while (associated(block))
                call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
@@ -1884,7 +1823,6 @@ module ocn_time_integration_si
                 
             block => block % next
          end do  ! block
-
 
          call mpas_timer_start("si halo iter")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
@@ -2108,7 +2046,10 @@ module ocn_time_integration_si
          end do ! do iter
          !**************************************************************!
 
-         Rratio = aresid(iter-1)/aresid(iter)
+
+         if ( iter > 1 ) then
+           Rratio = aresid(iter-1)/aresid(iter)
+         endif
 
          ! boundary update on SSHnew
          call mpas_timer_start("si halo iter")
