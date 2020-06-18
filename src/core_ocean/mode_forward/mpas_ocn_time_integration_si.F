@@ -282,8 +282,6 @@ module ocn_time_integration_si
 
       integer :: temp_mask,rank,ncpus
       real (kind=RKIND) :: tracer2_value, lat
-      real (kind=RKIND),save :: Rratio,crit_new
-      real (kind=RKIND),dimension(200),save :: aresid
 
       real(kind=RKIND) :: alpha1,alpha2
       logical :: first_step = .true.
@@ -347,7 +345,6 @@ module ocn_time_integration_si
       !--- Backward-Euler at the 1st time step only to remove spurious oscillation caused by CN method
       if ( first_step ) then
          first_step = .false.
-         Rratio = 1.d0
  
          alpha1 = 1.0
          alpha2 = 0.0
@@ -1248,11 +1245,10 @@ module ocn_time_integration_si
          call mpas_timer_start("si btr iteration")
 
          iter = 0
-         crit_new = crit_main * Rratio
-         resid = (crit_new+100.0)**2.0
+         resid = (crit_main+100.0)**2.0
 
          !**************************************************************!
-         do while ( dsqrt(resid) > crit_new ) 
+         do while ( dsqrt(resid) > crit_main ) 
          !**************************************************************!
 
             iter = iter + 1
@@ -2040,16 +2036,9 @@ module ocn_time_integration_si
                call mpas_log_write('******************************************************')
             endif
 
-            aresid(iter) = resid
-
          !**************************************************************!
          end do ! do iter
          !**************************************************************!
-
-
-         if ( iter > 1 ) then
-           Rratio = aresid(iter-1)/aresid(iter)
-         endif
 
          ! boundary update on SSHnew
          call mpas_timer_start("si halo iter")
