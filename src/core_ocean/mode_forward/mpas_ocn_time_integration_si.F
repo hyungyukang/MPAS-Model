@@ -1137,9 +1137,6 @@ module ocn_time_integration_si
          CGcst_allreduce2(2) = f0p0
           
          call mpas_timer_start("si reduction")
-!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
-!        call mpi_iallreduce(CGcst_allreduce2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM, &
-!                            dminfo%comm,mpi_ireq,mpi_ierr)
          call mpi_iallreduce(CGcst_allreduce2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM,dminfo % comm,mpi_ireq,mpi_ierr)
          call mpas_timer_stop("si reduction")
 
@@ -1231,9 +1228,6 @@ module ocn_time_integration_si
  
             block => block % next
          end do  ! block
-
-
-
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
             call mpas_timer_start("si halo prec")
