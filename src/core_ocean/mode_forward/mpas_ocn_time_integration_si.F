@@ -284,8 +284,10 @@ module ocn_time_integration_si
       real (kind=RKIND) :: tracer2_value, lat
 
       real(kind=RKIND) :: alpha1,alpha2
-      logical :: first_step = .true.
-      integer :: mpi_ierr,itmp1,itmp2
+      logical :: first_step = .true.,mpi_flag
+      integer :: mpi_ierr,mpi_istat,mpi_ireq,itmp1,itmp2
+
+      include 'mpif.h'
 
 
       dminfo = domain % dminfo
@@ -1120,6 +1122,75 @@ module ocn_time_integration_si
                   
                CGvec_f0(iCell) = -sshCurArea - sshTendAx 
 
+               r0r0 = r0r0 + CGvec_r0(iCell) * CGvec_r0(iCell)
+               f0p0 = f0p0 + CGvec_f0(iCell) * CGvec_p0(iCell)
+
+            end do ! iCell
+
+            block => block % next
+         end do  ! block
+
+
+         ! Preconditioning ------------------------------------------------------------------------!
+         CGcst_allreduce2(:) = 0.d0
+         CGcst_allreduce2(1) = r0r0
+         CGcst_allreduce2(2) = f0p0
+          
+         call mpas_timer_start("si reduction")
+!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+!        call mpi_iallreduce(CGcst_allreduce2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM, &
+!                            dminfo%comm,mpi_ireq,mpi_ierr)
+         call mpi_iallreduce(CGcst_allreduce2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM,dminfo % comm,mpi_ireq,mpi_ierr)
+         call mpas_timer_stop("si reduction")
+
+
+         block => domain % blocklist
+         do while (associated(block))
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+            call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+ 
+            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+            call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+ 
+            call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
+            call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
+            call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
+            call mpas_pool_get_array(meshPool, 'dcEdge', dcEdge)
+            call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
+            call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
+            call mpas_pool_get_array(meshPool, 'refBottomDepthTopOfCell', refBottomDepthTopOfCell)
+            call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
+            call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
+            call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
+ 
+            call mpas_pool_get_array(statePool, 'ssh', sshNew,2)
+ 
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_f0', CGvec_f0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0', CGvec_p0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_t1', CGvec_t1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_w1', CGvec_w1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_q0', CGvec_q0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_fh0', CGvec_fh0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_rh0', CGvec_rh0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_sh1', CGvec_sh1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_th1', CGvec_th1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh1', CGvec_qh1)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_fh1', CGvec_fh1)
+
+            nCells = nCellsArray( 1 )
+            nEdges = nEdgesArray( 2 )
+ 
+            r0r0 = 0.d0
+            f0p0 = 0.d0
+ 
+            CGvec_p0(:) = CGvec_rh0(:)
+
+            do iCell = 1, nCells
 
                sshTendAx = 0.0_RKIND
  
@@ -1148,8 +1219,6 @@ module ocn_time_integration_si
  
                CGvec_q0(iCell) = -sshCurArea - sshTendAx
  
-               r0r0 = r0r0 + CGvec_r0(iCell) * CGvec_r0(iCell)
-               f0p0 = f0p0 + CGvec_f0(iCell) * CGvec_p0(iCell)
 
                CGvec_t1(iCell)  = 0.d0
                CGvec_w1(iCell)  = 0.d0
@@ -1164,7 +1233,7 @@ module ocn_time_integration_si
          end do  ! block
 
 
-         ! Preconditioning ------------------------------------------------------------------------!
+
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
             call mpas_timer_start("si halo prec")
@@ -1175,25 +1244,6 @@ module ocn_time_integration_si
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo prec")
          end if
-
-
-            CGcst_allreduce2(:) = 0.d0
-            CGcst_allreduce2(1) = r0r0
-            CGcst_allreduce2(2) = f0p0
-             
-            call mpas_timer_start("si reduction")
-            call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
-            call mpas_timer_stop("si reduction")
-
-            r0r0 = CGcst_allreduce_global2(1)
-            f0p0 = CGcst_allreduce_global2(2)
-
-            alph0 = r0r0 / f0p0
-
-            f0sh1 = 0.d0
-            f0th1 = 0.d0
-            f0qh1 = 0.d0
-
 
          block => domain % blocklist
          do while (associated(block))
@@ -1232,6 +1282,20 @@ module ocn_time_integration_si
 
            block => block % next
          end do  ! block
+
+         call mpas_timer_start("si btr wait")
+         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+!        call mpi_test(mpi_ireq,mpi_flag,MPI_STATUS_IGNORE,mpi_ierr)
+         call mpas_timer_stop("si btr wait")
+
+         r0r0 = CGcst_allreduce_global2(1)
+         f0p0 = CGcst_allreduce_global2(2)
+
+         alph0 = r0r0 / f0p0
+
+         f0sh1 = 0.d0
+         f0th1 = 0.d0
+         f0qh1 = 0.d0
 
          call mpas_timer_stop("si btr residual")
 
