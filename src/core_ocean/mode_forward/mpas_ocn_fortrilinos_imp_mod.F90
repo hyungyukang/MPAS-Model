@@ -550,6 +550,7 @@ module ocn_fortrilinos_imp_mod
   
      call mpas_timer_start("fort mat fillComplete")
      call Amat%fillComplete(plist_a) !; FORTRILINOS_CHECK_IERR()
+!    call Amat%fillComplete() !; FORTRILINOS_CHECK_IERR()
      call mpas_timer_stop("fort mat fillComplete")
 
   call mpas_timer_stop("fort mat setup")
