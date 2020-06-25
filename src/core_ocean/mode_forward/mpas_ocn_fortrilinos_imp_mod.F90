@@ -94,6 +94,9 @@ module ocn_fortrilinos_imp_mod
   real (kind=RKIND), dimension(:),pointer :: barotropicForcing
   real (kind=RKIND), dimension(:),pointer :: barotropicCoriolisTerm
   real (kind=RKIND), dimension(:),pointer :: CGvec_r0,CGvec_r1
+  real (kind=RKIND)  :: area_mean,local_area_sum,mean_num_cells,local_num_cells,total_num_cells
+  real (kind=RKIND)  :: total_area_sum
+  integer :: itotal_num_cells,ncpus
   integer(global_ordinal_type), dimension(:),allocatable :: acol,colent
   real (scalar_type), dimension(:),allocatable :: aval,valent
   character (len=*), parameter :: iterGroupName = 'iterFields'
@@ -108,6 +111,7 @@ module ocn_fortrilinos_imp_mod
   ! ----------------------------------------------------------------------------
 
   dminfo = domain % dminfo
+   ncpus = dminfo % nprocs
    
     comm = TeuchosComm(dminfo % comm)
     my_rank = comm%getRank()
@@ -259,6 +263,21 @@ module ocn_fortrilinos_imp_mod
 
      call graph%fillComplete() !; FORTRILINOS_CHECK_IERR()
 
+
+     !--- RMS of mean area
+     local_num_cells = nCellsArray(1)
+     call mpas_dmpar_sum_real(dminfo,local_num_cells,total_num_cells)
+
+     local_area_sum = 0.0_RKIND
+     do iCell = 1,nCellsArray(1)
+       local_area_sum = local_area_sum + areaCell(iCell)**2.0
+     end do
+     call mpas_dmpar_sum_real(dminfo,local_area_sum,total_area_sum)
+
+     area_mean = dsqrt(total_area_sum / total_num_cells)
+     mean_num_cells = total_num_cells/ncpus
+     itotal_num_cells = int(total_num_cells)
+
      block => block % next
   end do  ! block
 
@@ -290,10 +309,11 @@ module ocn_fortrilinos_imp_mod
   krylov_list_o = solver_list_o%sublist(belos_list_o%get_string('Solver Type'))
   krylov_list_m = solver_list_m%sublist(belos_list_m%get_string('Solver Type'))
 
-  call krylov_list_o%set('Convergence Tolerance', 1e-2)
-  tol_o = 1.0d-2
-  call krylov_list_m%set('Convergence Tolerance', 1e-8)
-  tol_m = 1.0d-8
+  tol_o = 1.0d-2 * area_mean
+  call krylov_list_o%set('Convergence Tolerance', tol_o)
+! tol_m = 1.0d-8 * area_mean
+  tol_m = 1.0d-8 * dsqrt(area_mean)
+  call krylov_list_m%set('Convergence Tolerance', tol_m)
 
   ! Trilinos solver handle:  'o' for outer iteration, 'm' for main iteration
   solver_handle_o = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
