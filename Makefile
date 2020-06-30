@@ -497,6 +497,7 @@ endif
 ifneq "$(LAPACK)" ""
         LIBS += -L$(LAPACK)/lib
         LIBS += -llapack
+        LIBS += -lblas
 endif
 
 ifneq "$(NETCDF)" ""
