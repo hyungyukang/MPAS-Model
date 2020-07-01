@@ -3668,7 +3668,7 @@ module ocn_time_integration_si
          block => domain % blocklist
          do while (associated(block))
             call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-   
+            call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
             call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
    
               !--- RMS of mean area
