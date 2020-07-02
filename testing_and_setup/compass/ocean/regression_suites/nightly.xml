@@ -11,6 +11,9 @@
 	<test name="Global Ocean 240km - Restart Test" core="ocean" configuration="global_ocean" resolution="QU240" test="restart_test">
 		<script name="run.py"/>
 	</test>
+	<test name="Global Ocean 240km - Decomposition Test" core="ocean" configuration="global_ocean" resolution="QU240" test="decomp_test">
+		<script name="run.py"/>
+	</test>
 	<test name="Global Ocean 240km - Thread Test" core="ocean" configuration="global_ocean" resolution="QU240" test="thread_test">
 		<script name="run.py"/>
 	</test>
