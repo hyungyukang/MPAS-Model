@@ -70,7 +70,7 @@ module ocn_time_integration_si
    integer :: nBtrSubcycles
 
    ! Global variables for the semi-implicit time stepper ---------------
-   real (kind=RKIND), allocatable,dimension(:,:) :: prec_ivmat
+   real (kind=RKIND), allocatable,dimension(:,:) :: prec_ivmat,prec_mat
    real (kind=RKIND) :: total_num_cells,mean_num_cells,area_mean
    integer :: nPrecVec
 
@@ -2535,10 +2535,6 @@ module ocn_time_integration_si
                          resid = CGcst_allreduce_global(5)
    
     
-            if ( rank == 0 ) then
-              print*, resid
-            endif
-           
             ! Preconditioning ------------------------------------------------------------------------!
    
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
@@ -3795,6 +3791,10 @@ module ocn_time_integration_si
       integer :: local_start,local_end,nCellsA2,nCellsA3
       !include 'mpif.h'
       !------------------------------------------!
+      character(100) :: iname
+      real (kind=RKIND), dimension(121,121) :: amat2d,bmat2d
+      real (kind=RKIND), dimension(121*121) :: amat,bmat
+      real (kind=RKIND), dimension(121) :: avec,bvec
 
       dminfo = domain % dminfo
         rank = dminfo % my_proc_id
@@ -3893,7 +3893,9 @@ module ocn_time_integration_si
             nPrecVec = nCells ! length of preconditioning vector
   
             allocate(prec_ivmat(1:nPrecVec,1:nPrecVec))
+            allocate(prec_mat(1:nPrecVec,1:nPrecVec))
                      prec_ivmat(:,:) = 0.0_RKIND
+                     prec_mat(:,:) = 0.0_RKIND
   
             do iCell = 1, nPrecVec
   
@@ -3910,24 +3912,111 @@ module ocn_time_integration_si
                   if ( globalCellId(cell1) > 0 .and. globalCellId(cell1) < total_num_cells+1 ) then
                      if ( cell1 <= nPrecVec) then
                         prec_ivmat(iCell,cell1) = prec_ivmat(iCell,cell1) + fluxAx
+                        prec_mat(iCell,cell1) = prec_mat(iCell,cell1) + fluxAx
                      endif
                   endif
     
                   if ( globalCellId(cell2) > 0 .and. globalCellId(cell2) < total_num_cells+1 ) then
                      if ( cell2 <= nPrecVec) then
                         prec_ivmat(iCell,cell2) = prec_ivmat(iCell,cell2) - fluxAx
+                        prec_mat(iCell,cell2) = prec_mat(iCell,cell2) - fluxAx
                      endif
                   endif
                   !-------------------------------------------------------------------------------!
                end do ! i
    
                prec_ivmat(iCell,iCell) = prec_ivmat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+               prec_mat(iCell,iCell) = prec_mat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
   
             end do ! iCell
   
             ! Preconditioning matrix inversion
             call inverse(nPrecVec,prec_ivmat)
- 
+
+            if ( nCells == 120 ) then
+              avec(:) = 0.d0
+              avec(1:120) = prec_ivmat(1,:)
+              call PIKSRT(121,avec)
+            else
+              avec(:) = 0.d0
+              avec(:) = prec_ivmat(1,:)
+              call PIKSRT(121,avec)
+            endif
+
+            if ( rank == 0 ) then
+              do iCell = 1,nCells
+                print*,avec(iCell)
+              end do
+            endif
+
+            amat(:) = 0.d0
+              do j = 1,nCells
+                 avec(:) = 0.d0
+                 if ( nCells == 120 ) then
+                   avec(1:120) = prec_ivmat(j,:)
+                 else
+                   avec(:) = prec_ivmat(j,:)
+                 endif
+                 call PIKSRT(121,avec)
+                 amat(((j-1)*121+1):j*121) = avec(:)
+              end do
+   
+            write(iname,('(A,i3.3,A)')) 'mata_',rank,'.bin'
+            open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
+                 recl=121*121*8,convert='little_endian')
+            write(rank+1,rec=1) amat
+            close(rank+1)
+
+            call mpi_barrier (dminfo%comm,mpi_ierr)
+
+            bmat2d(:,:) = 0.d0
+            if ( nCells == 120 ) then
+              do j = 1,nCells
+                 avec(:) = 0.d0
+                 avec(1:120) = prec_mat(j,:)
+                 call PIKSRT(121,avec)
+                 bmat2d(j,:) = avec(:)
+                 !bmat(((j-1)*121+1):j*121) = avec(:)
+              end do
+            else
+              do j = 1,nCells
+                 avec(:) = 0.d0
+                 avec(:) = prec_mat(j,:)
+                 call PIKSRT(121,avec)
+                 bmat2d(j,:) = avec(:)
+                 !bmat(((j-1)*121+1):j*121) = avec(:)
+              end do
+            endif
+
+            do j = 1,nCells 
+              avec(:) = bmat2d(j,:)
+              bmat2d(j,:) = 0.d0
+              isum1 = 0
+
+              do iCell = 1,nCells
+                if ( dabs(avec(iCell)) > 0.d0 ) then
+                  isum1 = isum1 + 1
+                   bmat2d(j,isum1) = avec(iCell)
+                end if
+              end do
+              bmat(((j-1)*121+1):j*121) = bmat2d(j,:)
+            end do
+          
+
+!           if ( rank == 0 ) then
+!             do iCell = 1,nCells
+!               print*, bmat2d(50,iCell)
+!             end do
+!           endif
+   
+            write(iname,('(A,i3.3,A)')) 'matb_',rank,'.bin'
+            open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
+                 recl=121*121*8,convert='little_endian')
+            write(rank+1,rec=1) bmat
+            close(rank+1)
+   
+            call mpi_barrier (dminfo%comm,mpi_ierr)
+            stop
 
          ! Jacobi preconditioner ------------------------------------------------------------------!
          else if ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
@@ -3983,6 +4072,8 @@ module ocn_time_integration_si
          block => block % next
       end do  ! block
 
+
+
    end subroutine ocn_time_integrator_si_preconditioner !}}}
 
 end module ocn_time_integration_si
@@ -4011,19 +4102,72 @@ subroutine inverse (n,Ainv) !{{{
 
     ! DPOTRF computes the Cholesky factorizaton of a symmetric positive
     ! defnitie matrix.
-    call DPOTRF('U',n,Ainv,n,info)
-!   call DGETRF(n,n,Ainv,n,ipiv,info) ! For unsymmetric matrix
+!   call DPOTRF('U',n,Ainv,n,info)
+    call DGETRF(n,n,Ainv,n,ipiv,info) ! For unsymmetric matrix
 
     if (info.lt.0) stop 'ERROR in inverse routine: Matrix is numerically singular!'
     if (info.gt.0) stop 'ERROR in inverse routine: Matrix is not positive definite!'
 
     ! DPOTRI computes the inverse of a symmetric positive definite matrix,
     ! using the Cholesky factorization computed by DPOTRF
-    call DPOTRI('U',n,Ainv,n,info)
-!   call DGETRI(n,Ainv,n,ipiv,work,n,info) ! For unsymmetric matrix
+!   call DPOTRI('U',n,Ainv,n,info)
+    call DGETRI(n,Ainv,n,ipiv,work,n,info) ! For unsymmetric matrix
 
     Ainv = -Ainv ! (-) sign to restore a matrix sign
     if (info.ne.0) stop 'ERROR in inverse routine: Matrix inversion failed!'
 end subroutine inverse !}}}
+
+!*****************************************************
+!* Sorts an array ARR of length N in ascending order *
+!* by straight insertion.                            *
+!* ------------------------------------------------- *
+!* INPUTS:                                           *
+!*	    N	  size of table ARR                  *
+!*          ARR	  table to be sorted                 *
+!* OUTPUT:                                           *
+!*	    ARR   table sorted in ascending order    *
+!*                                                   *
+!* NOTE: Straight insertion is a N² routine and      *
+!*       should only be used for relatively small    *
+!*       arrays (N<100).                             *
+!*****************************************************         
+SUBROUTINE PIKSRT(N,ARR)
+  real ARR(N)
+  do j=2, N
+    a=ARR(j)
+    do i=j-1,1,-1
+      if (ARR(i)<=a) goto 10
+      ARR(i+1)=ARR(i)
+    end do
+	i=0
+10  ARR(i+1)=a
+  end do
+  return
+END
+
+SUBROUTINE QIKSRT(N,ARR)
+  real ARR(N)
+  do j=2, N
+    a=ARR(j)
+    do i=j-1,1,-1
+      if (ARR(i)>a) goto 10
+      ARR(i+1)=ARR(i)
+    end do
+	i=0
+10  ARR(i+1)=a
+  end do
+  return
+END
+
+!write table of size N to standard output
+SUBROUTINE TWRIT(N,ARR)
+real ARR(N)
+  print *,' '
+  WRITE(*,10) (ARR(I),I=1,N)
+  return
+10 FORMAT(5(' ',F6.1))
+END
+
+!end of file sort1.f90
 
 ! vim: foldmethod=marker
