@@ -2765,19 +2765,11 @@
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
-                <var name="CGvec_ph0" type="real" dimensions="nCells Time" nits="unitless"
+                <var name="CGvec_u0" type="real" dimensions="nCells Time" nits="unitless"
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
-                <var name="CGvec_ph1" type="real" dimensions="nCells Time" nits="unitless"
-                         description="A vector used in the semi-implicit barotropic mode solver"
-                         packages="forwardMode;analysisMode"
-                />
-                <var name="CGvec_v0" type="real" dimensions="nCells Time" nits="unitless"
-                         description="A vector used in the semi-implicit barotropic mode solver"
-                         packages="forwardMode;analysisMode"
-                />
-                <var name="CGvec_v1" type="real" dimensions="nCells Time" nits="unitless"
+                <var name="CGvec_u1" type="real" dimensions="nCells Time" nits="unitless"
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
@@ -2837,14 +2829,6 @@
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
-                <var name="CGvec_zh0" type="real" dimensions="nCells Time" nits="unitless"
-                         description="A vector used in the semi-implicit barotropic mode solver"
-                         packages="forwardMode;analysisMode"
-                />
-                <var name="CGvec_zh1" type="real" dimensions="nCells Time" nits="unitless"
-                         description="A vector used in the semi-implicit barotropic mode solver"
-                         packages="forwardMode;analysisMode"
-                />
                 <var name="CGvec_t0" type="real" dimensions="nCells Time" nits="unitless"
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
@@ -2853,7 +2837,39 @@
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
+                <var name="CGvec_th0" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_th1" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
                 <var name="CGvec_y0" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_f0" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_fh0" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_fh1" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_p0" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_p1" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_h0" type="real" dimensions="nCells Time" nits="unitless"
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
