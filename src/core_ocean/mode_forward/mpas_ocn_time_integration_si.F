@@ -1645,6 +1645,7 @@ module ocn_time_integration_si
             f0th0 = CGcst_allreduce_global18(17)
             resid = CGcst_allreduce_global18(18)
 
+            if ( dsqrt(resid) <= crit_main ) exit
 
             eta0  = (s0s0*y0t0 - s0y0*s0t0) / (s0s0*y0y0 - s0y0*s0y0)
             zeta0 = (y0y0*s0t0 - y0t0*s0y0) / (s0s0*y0y0 - s0y0*s0y0)
@@ -3208,7 +3209,6 @@ module ocn_time_integration_si
             f0sh1 = f0sh0 ! inverse 1-0 for (k-1) iter
             f0th1 = f0th0 ! inverse 1-0 for (k-1) iter
             f0qh1 = f0qh0 ! inverse 1-0 for (k-1) iter
-
 
             if ( iter > int(mean_num_cells*5) ) then
                call mpas_log_write('******************************************************')
