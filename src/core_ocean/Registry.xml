@@ -176,56 +176,6 @@
 		/>
 	</nml_record>
 
-	<!--**********************************-->
-	<!-- Namelists for init run mode only -->
-	<!--**********************************-->
-	<nml_record name="init_setup" mode="init">
-		<nml_option name="config_vert_levels" type="integer" default_value="-1" units="unitless"
-					description="Number of vertical levels to create within the configuration."
-					possible_values="Any positive non-zero integer. A value of -1 causes this to be overwritten with the configurations vertical level definition."
-		/>
-		<nml_option name="config_init_configuration" type="character" default_value="none" units="unitless"
-					description="Name of configuration to create."
-					possible_values="Any configuration name"
-		/>
-		<nml_option name="config_expand_sphere" type="logical" default_value=".false." units="unitless"
-					description="Logical flag that controls if a spherical mesh is expanded to an earth sized sphere or not."
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_realistic_coriolis_parameter" type="logical" default_value=".false." units="unitless"
-					description="Logical flag that controls if a spherical mesh will get realistic coriolis parameters or not."
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_write_cull_cell_mask" type="logical" default_value=".true." units="unitless"
-					description="Logicial flag that controls if the cullCell field is written to output."
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_vertical_grid" type="character" default_value="uniform" units="unitless"
-					description="Name of vertical grid to use in configuration generation"
-					possible_values="'uniform', '60layerPHC', '42layerWOCE', '100layerE3SMv1', '1dCVTgenerator', ..."
-		/>
-	</nml_record>
-	<nml_record name="CVTgenerator" mode="init">
-		<nml_option name="config_1dCVTgenerator_stretch1" type="real" default_value="1.0770" units="unitless"
-					description="Parameter for the 1D CVT vertical grid generator."
-					possible_values="Any positive non-zero integer."
-		/>
-		<nml_option name="config_1dCVTgenerator_stretch2" type="real" default_value="1.0275" units="unitless"
-					description="Parameter for the 1D CVT vertical grid generator."
-					possible_values="Any positive non-zero integer."
-		/>
-		<nml_option name="config_1dCVTgenerator_dzSeed" type="real" default_value="1.2" units="unitless"
-					description="Seed thickness of the first layer for the 1D CVT vertical grid generator."
-					possible_values="Any positive non-zero integer."
-		/>
-	</nml_record>
-	<nml_record name="init_ssh_and_landIcePressure" mode="init">
-		<nml_option name="config_iterative_init_variable" type="character" default_value="landIcePressure" units="unitless"
-					description="Which variable, ssh or landIcePressure, is computed from the other.  If landIcePressure is to be computed, 'landIcePressure_from_top_density' indicates that the top density (rather than the mean density displaced by land ice) should be used to compute the landIcePressure."
-					possible_values="'ssh', 'landIcePressure_from_top_density' or 'landIcePressure'"
-		/>
-	</nml_record>
-
 
 	<!--*************************************-->
 	<!-- Namelists for forward run mode only -->
@@ -237,81 +187,7 @@
 		/>
 		<nml_option name="config_time_integrator" type="character" default_value="split_explicit" units="unitless"
 					description="Time integration method."
-					possible_values="'split_explicit', 'RK4', 'unsplit_explicit'"
-		/>
-	</nml_record>
-	<nml_record name="ALE_vertical_grid" mode="forward">
-		<nml_option name="config_vert_coord_movement" type="character" default_value="uniform_stretching" units="unitless"
-					description="Determines the vertical coordinate movement type. 'uniform_stretching' distributes SSH perturbations through all vertical levels (z-star vertical coordinate); 'fixed' places them all in the top level (z-level vertical coordinate); 'user_specified' allows the input file to determine the distribution using the variable vertCoordMovementWeights (weighted z-star vertical coordinate); and 'impermeable_interfaces' makes the vertical transport between layers zero, i.e. $w^t=0$ (idealized isopycnal)."
-					possible_values="'uniform_stretching', 'fixed', 'user_specified', 'impermeable_interfaces', 'tapered'"
-		/>
-		<nml_option name="config_ALE_thickness_proportionality" type="character" default_value="restingThickness_times_weights" units="unitless"
-					description="When config_vert_coord_movement='uniform_stretching' (z-star type coordinate), determines whether ALE layer thickness is proportional to the resting thickness times weights, or just the weights. The first is standard for global runs and is what is specified in Petersen et al 2015 eqns 4 and 6. The second is useful for wetting/drying test cases where resting thickness may be zero at the coastlines."
-					possible_values="'restingThickness_times_weights' or 'weights_only'"
-		/>
-		<nml_option name="config_vert_taper_weight_depth_1" type="real" default_value="250.0" units="m"
-					description="Vertical coordinate taper weight is one above this depth, linearly decreases to zero below."
-					possible_values="any positive real value, but typically 100 to 1000 m."
-		/>
-		<nml_option name="config_vert_taper_weight_depth_2" type="real" default_value="500.0" units="m"
-					description="Vertical coordinate taper weight is zero below this depth, linearly increases to one above."
-					possible_values="any positive real value, but typically 100 to 1000 m and greater than config_vert_taper_weight_depth_1."
-		/>
-		<nml_option name="config_use_min_max_thickness" type="logical" default_value=".false." units="unitless"
-					description="If true, a minimum and maximum thicknesses are enforced to prevent massless and very thick layers."
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_min_thickness" type="real" default_value="1.0" units="m"
-					description="Minimum thickness allowed."
-					possible_values="any positive real value, but typically 0.1 to 1 m."
-		/>
-		<nml_option name="config_max_thickness_factor" type="real" default_value="6.0" units="unitless"
-					description="Maximum thickness allowed. This is a factor times the resting thickness, i.e., maximum thickness = config_max_thickness_factor*$h^{rest}$."
-					possible_values="any positive real value, but typically 2-4."
-		/>
-		<nml_option name="config_dzdk_positive" type="logical" default_value=".false." units="unitless"
-					description="Determines if the positive Z axis is aligned with the positive K index direction."
-					possible_values=".true. or .false."
-		/>
-	</nml_record>
-	<nml_record name="ALE_frequency_filtered_thickness" mode="forward">
-		<nml_option name="config_use_freq_filtered_thickness" type="logical" default_value=".false." units="unitless"
-					description="If true, $h^{hf}$ is included in the desired ALE thickness, and the prognostic equations for $D^{lf}$ and $h^{hf}$ are integrated in the code."
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_thickness_filter_timescale" type="real" default_value="5.0" units="days"
-					description="Filter time scale for the low-frequency baroclinic divergence, $\tau_{Dlf}$."
-					possible_values="any positive real value, but typically 5 days."
-		/>
-		<nml_option name="config_use_highFreqThick_restore" type="logical" default_value=".false." units="unitless"
-					description="If true, the high frequency thickness prognostic equation ($h^{hf}$) includes term 2 on the RHS, the restoring term.  The high frequency thickness is restored to zero with time scale $\tau_{hhf}$."
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_highFreqThick_restore_time" type="real" default_value="30.0" units="days"
-					description="Restoring time scale for high-frequency thickness, $\tau_{hhf}$."
-					possible_values="any positive real value, but typically 5-30 days."
-		/>
-		<nml_option name="config_use_highFreqThick_del2" type="logical" default_value=".false." units="unitless"
-					description="If true, high frequency thickness prognostic equation ($h^{hf}$) includes term 3 on the RHS, the diffusion term."
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_highFreqThick_del2" type="real" default_value="100.0" units="m^2 s^{-1}"
-					description="Horizonal high frequency thickness diffusion, $\kappa_{hhf}$."
-					possible_values="any positive real"
-		/>
-	</nml_record>
-	<nml_record name="partial_bottom_cells" mode="init">
-		<nml_option name="config_alter_ICs_for_pbcs" type="logical" default_value=".false." units="unitless"
-					description="If true, initial conditions are altered according to the config_pbc_alteration_type flag. The alteration of layer thickness only occurs when config_do_restart is false, i.e. on an initial run."
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_pbc_alteration_type" type="character" default_value="full_cell" units="unitless"
-					description="Determines the method of initial condition alteration for partial bottom cells. 'partial_cell' alters layerThickness, interpolates all tracers in the bottom cell based on the bottomDepth variable, and alters bottomDepth to enforce the minimum pbc fraction. 'full_cell' alters bottomDepth to have full cells everywhere, based on the refBottomDepth variable."
-					possible_values="'full_cell' or 'partial_cell'"
-		/>
-		<nml_option name="config_min_pbc_fraction" type="real" default_value="0.10" units="unitless"
-					description="Determines the minimum fraction of a cell altering the initial conditions can create. The alteration of layer thickness only occurs when config_do_restart is false, i.e. on an initial run."
-					possible_values="Any real between 0 and 1."
+					possible_values="'split_explicit', 'RK4', 'unsplit_explicit', 'semi_implicit'"
 		/>
 	</nml_record>
 	<nml_record name="hmix" mode="forward">
@@ -323,6 +199,14 @@
 					description="Global maximum of the mesh density"
 					possible_values="Any positive real number. If set any negative real number, config_maxMeshDensity is computed during the initialization of each simulation."
 		/>
+		<nml_option name="config_hmix_use_ref_cell_width" type="logical" default_value=".false." units="unitless"
+					description="If true, hmix coefficient values are set with reference to config_hmix_ref_cell_width. If false, hmix coefficient values are referenced to smallest gridcell in the mesh. The false setting is for backwards compatilibity. When false, hmix coefficient flags must be adjusted for every new mesh with a different minimum-sized cell."
+					possible_values=".true. or .false."
+		/>
+		<nml_option name="config_hmix_ref_cell_width" type="real" default_value="30.0e3" units="m"
+					description="Reference cell width. If config_hmix_use_ref_cell_width = .true., then hmix coefficients are set to be nu_{2h} = config_mom_del2*(cellWidth / config_hmix_use_ref_cell_width) and nu_{4h} = config_mom_del4*(cellWidth / config_hmix_use_ref_cell_width)^3 where cellWidth is the effective cell width computed as 2*sqrt(areaCell/pi). See Hoch et al 2020 JAMES eq 1,2. This relation applies within a simulation, but also generally among multiple simulations, so the parameters config_mom_del2, config_mom_del4, and config_hmix_use_ref_cell_width can generally remain at their standard values, and just be adjusted for fine tuning."
+					possible_values="Any positive real number, but typically a resolution number such as 30km."
+		/>
 		<nml_option name="config_apvm_scale_factor" type="real" default_value="0.0" units="unitless"
 					description="Anticipated potential vorticity (APV) method scale factor, $c_{apv}$. When zero, APV is off."
 					possible_values="Any non-negative number, typically between zero and one."
@@ -333,16 +217,16 @@
 					description="If true, Laplacian horizontal mixing is used on the momentum equation."
 					possible_values=".true. or .false."
 		/>
+		<nml_option name="config_mom_del2" type="real" default_value="1.0e3" units="m^2 s^{-1}"
+					description="Horizontal viscosity, $\nu_{2h}$. If config_hmix_use_ref_cell_width = .true. then $\nu_h$ = config_mom_del2*(cellWidth / config_hmix_use_ref_cell_width). If config_hmix_use_ref_cell_width = .false. then it is referenced to the smallest cell."
+					possible_values="any positive real"
+		/>
 		<nml_option name="config_use_tracer_del2" type="logical" default_value=".false." units="unitless"
 					description="If true, Laplacian horizontal mixing is used on the tracer equation."
 					possible_values=".true. or .false."
 		/>
-		<nml_option name="config_mom_del2" type="real" default_value="10.0" units="m^2 s^{-1}"
-					description="Horizonal viscosity, $\nu_h$."
-					possible_values="any positive real"
-		/>
 		<nml_option name="config_tracer_del2" type="real" default_value="10.0" units="m^2 s^{-1}"
-					description="Horizonal diffusion, $\kappa_h$."
+					description="Horizontal diffusion, $\kappa_{2h}$. If config_hmix_use_ref_cell_width = .true. then $\kappa_h$ = config_tracer_del2*(cellWidth / config_hmix_use_ref_cell_width). If config_hmix_use_ref_cell_width = .false. then it is referenced to the smallest cell."
 					possible_values="any positive real"
 		/>
 	</nml_record>
@@ -351,20 +235,20 @@
 					description="If true, biharmonic horizontal mixing is used on the momentum equation."
 					possible_values=".true. or .false."
 		/>
-		<nml_option name="config_use_tracer_del4" type="logical" default_value=".false." units="unitless"
-					description="If true, biharmonic horizontal mixing is used on the tracer equation."
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_mom_del4" type="real" default_value="5.0e13" units="m^4 s^{-1}"
-					description="Coefficient for horizontal biharmonic operator on momentum."
+		<nml_option name="config_mom_del4" type="real" default_value="1.2e11" units="m^4 s^{-1}"
+					description="Coefficient for horizontal biharmonic operator on momentum.  If config_hmix_use_ref_cell_width = .true. then $\nu_{4h}$ = config_mom_del4*(cellWidth / config_hmix_use_ref_cell_width)^3. If config_hmix_use_ref_cell_width = .false. then it is referenced to the smallest cell."
 					possible_values="any positive real"
 		/>
 		<nml_option name="config_mom_del4_div_factor" type="real" default_value="1.0" units="non-dimensional"
 					description="The divergence portion of the del4 operator is scaled by this factor."
 					possible_values="any positive real"
 		/>
+		<nml_option name="config_use_tracer_del4" type="logical" default_value=".false." units="unitless"
+					description="If true, biharmonic horizontal mixing is used on the tracer equation."
+					possible_values=".true. or .false."
+		/>
 		<nml_option name="config_tracer_del4" type="real" default_value="0.0" units="m^4 s^{-1}"
-					description="Coefficient for horizontal biharmonic operator on tracers."
+					description="Coefficient for horizontal biharmonic operator on tracers.  If config_hmix_use_ref_cell_width = .true. then $\nu_{4h}$ = config_tracer_del4*(cellWidth / config_hmix_use_ref_cell_width)^3. If config_hmix_use_ref_cell_width = .false. then it is referenced to the smallest cell."
 					possible_values="any positive real"
 		/>
 	</nml_record>
@@ -395,25 +279,33 @@
 					description="The Redi diffusion coefficient"
 					possible_values="Positive real numbers"
 		/>
+		<nml_option name="config_Redi_set_RediKappa_to_GMKappa" type="logical" default_value=".true." units="unitless"
+				description="If true RediKappa is forced to be equal to gmBolusKappa"
+				possible_values=".true. or .false."
+		/>
+		<nml_option name="config_Redi_maximum_slope" type="real" default_value="0.3" units="non-dimensional"
+				description="value of maximum allowed isopycnal slope from Danabasoglu et al 2008 equation (2)"
+				possible_values="positive real numbers, but small"
+		/>
 		<nml_option name="config_Redi_closure" type="character" default_value="constant" units="unitless"
-					description="Control what type of function is used for Redi $\kappa$. Only 'constant' is currently supported."
-					possible_values="'constant', 'data', 'match_GM'"
+				description="Control what type of function is used for Redi $\kappa$. Only 'constant' is currently supported."
+				possible_values="'constant', 'data', 'match_GM'"
 		/>
-		<nml_option name="config_Redi_surface_taper_layers" type="integer" default_value="3" units="non-dimensional"
-					description="Number of layers below surface over which Redi coefficient is tapered."
-					possible_values="Integer between 1 and nVertLevels. Use 1 for no tapering, and Redi will be 0 at k=1 and full at k=2."
+		<nml_option name="config_Redi_use_slope_taper" type="logical" default_value=".true." units="unitless"
+				description="If true, Redi is tapered based on Danabasoglu and McWilliams 1995 (slope tapering)"
+				possible_values=".true. or .false."
 		/>
-		<nml_option name="config_Redi_bottom_taper_layers" type="integer" default_value="3" units="non-dimensional"
-					description="Number of layers above bottom over which Redi coefficient is tapered."
-					possible_values="Integer between 1 and nVertLevels. Use 1 for no tapering, and Redi will be 0 at bottom and full one layer up."
+		<nml_option name="config_Redi_use_surface_taper" type="logical" default_value=".true." units="unitless"
+				description="If true, Redi slope is tapered near sfc based on Large et al 1997"
+				possible_values=".true. or .false."
 		/>
-		<nml_option name="config_Redi_zero_in_boundary_layer" type="logical" default_value=".true." units="unitless"
-					description="If true, Redi kappa is set to zero above the boundary layer depth"
-					possible_values=".true. or .false."
+		<nml_option name="config_Redi_use_N2_based_taper" type="logical" default_value=".true." units="unitless"
+				description="If true apply the N2 limiting of Danabasoglu and Marshall 2007"
+				possible_values=".true. or .false."
 		/>
-		<nml_option name="config_Redi_BLD_taper_layers" type="integer" default_value="3" units="non-dimensional"
-					description="Number of layers below boundary layer depth, over which Redi coefficient is tapered." 
-					possible_values="Integer between 1 and nVertLevels. Use 1 for no tapering."
+		<nml_option name="config_Redi_N2_limit_term1" type="logical" default_value=".true." units="unitless"
+				description="If true, the N2 limiting is applied to the horizontal diffusion term"
+				possible_values=".true. or .false."
 		/>
 	</nml_record>
 	<nml_record name="GM_eddy_parameterization" mode="forward">
@@ -425,8 +317,32 @@
 					description="Coefficient of standard GM parametrization of eddy transport (Bolus component), $\kappa$. Used when config_GM_kappa_function is set to constant."
 		/>
 		<nml_option name="config_GM_closure" type="character" default_value="N2_dependent" units="unitless"
-					description="Control what method used to compute GM $\kappa$. Both 'constant' and 'N2_dependent' use the method in Ferrari et al. 2010 (https://doi.org/10.1016/j.ocemod.2010.01.004). 'constant' uses a constant kappa in eqn 16a, while 'N2_dependent' varies kappa in the vertical according to Danabasoglu and Marshall 2007 (https://doi.org/10.1016/j.ocemod.2007.03.006)."
-					possible_values="'N2_dependent', 'constant'"
+					description="Control what method used to compute GM $\kappa$. Both 'constant' and 'N2_dependent' use the method in Ferrari et al. 2010 (https://doi.org/10.1016/j.ocemod.2010.01.004). 'constant' uses a constant kappa in eqn 16a, while 'N2_dependent' varies kappa in the vertical according to Danabasoglu and Marshall 2007 (https://doi.org/10.1016/j.ocemod.2007.03.006). 'visbeck' implements a horizontally varying diffusivity of Visbeck et al 1997"
+					possible_values="'N2_dependent', 'constant', 'visbeck'"
+		/>
+		<nml_option name="config_GM_baroclinic_mode" type="real" default_value="1.0" units="NA"
+					description="baroclinic wave mode chosen for the ferrari et al 2010 calculation"
+					possible_values="small positive numbers"
+		/>
+		<nml_option name="config_GM_visbeck_alpha" type="real" default_value="0.005" units="NA"
+					description="scaling factor on the visbeck diffusivity parameterization"
+					possible_values="small positive numbers"
+		/>
+		<nml_option name="config_GM_visbeck_min_depth" type="real" default_value="50.0" units="m"
+					description="minimum depth for calculation of vertical average"
+					possible_values="values between zero and bottom depth"
+		/>
+		<nml_option name="config_GM_visbeck_max_depth" type="real" default_value="1000.0" units="m"
+					description="minimum depth for calculation of vertical average"
+					possible_values="values between zero and bottom depth"
+		/>
+		<nml_option name="config_GM_visbeck_min_kappa" type="real" default_value="300.0" units="m^2 s^{-1}"
+					description="minimum value of bolus diffusivity for visbeck scheme"
+					possible_values="values around 100s"
+		/>
+		<nml_option name="config_GM_visbeck_max_kappa" type="real" default_value="1800.0" units="m^2 s^{-1}"
+					description="minimum value of bolus diffusivity for visbeck scheme"
+					possible_values="values around 100s"
 		/>
 		<nml_option name="config_GM_min_stratification_ratio" type="real" default_value="0.1" units="NA"
 					description="When using config_GM_closure='N2_dependent', the minimum value for N2/Nmax2 ratio."
@@ -449,30 +365,6 @@
 		<nml_option name="config_eddying_resolution_ramp_max" type="real" default_value="30e3" units="m"
 					description="Maximum value in grid cell size for Redi and GM $\kappa$ ramp function.  Here cell size refers to dcEdge. Used when config_eddying_resolution_taper is set to ramp."
 					possible_values="Any positive real value."
-		/>
-		<nml_option name="config_mesoscale_eddy_isopycnal_slope_limit" type="real" default_value="0.01" units="non-dimensional"
-					description="Maximum value of isopycnal slope allowed for Redi and GM schemes. Slopes greater than this value (positive or negative) are capped at this value."
-					possible_values="Positive real numbers"
-		/>
-	</nml_record>
-	<nml_record name="hmix_del2_tensor" mode="forward">
-		<nml_option name="config_use_mom_del2_tensor" type="logical" default_value=".false." units="unitless"
-					description="If true, tensor-based Laplacian horizontal mixing is used on the momentum equation. The tensor-based mixing operations are provided to show the functionality of the tensor subroutines. Tensor-based del2 mixing is not fully vetted and not recommended for production simulations."
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_mom_del2_tensor" type="real" default_value="10.0" units="m^2 s^{-1}"
-					description="Horizonal viscosity, $\nu_h$."
-					possible_values="any positive real"
-		/>
-	</nml_record>
-	<nml_record name="hmix_del4_tensor" mode="forward">
-		<nml_option name="config_use_mom_del4_tensor" type="logical" default_value=".false." units="unitless"
-					description="If true, tensor-based biharmonic horizontal mixing is used on the momentum equation. The tensor-based mixing operations are provided to show the functionality of the tensor subroutines. Tensor-based del4 mixing is not fully vetted and not recommended for production simulations."
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_mom_del4_tensor" type="real" default_value="5.0e13" units="m^4 s^{-1}"
-					description="Coefficient for horizontal biharmonic operator on momentum."
-					possible_values="any positive real"
 		/>
 	</nml_record>
 	<nml_record name="Rayleigh_damping" mode="forward">
@@ -498,7 +390,7 @@
 		/>
 	</nml_record>
 	<nml_record name="cvmix" mode="forward">
-		<nml_option name="config_use_cvmix" type="logical" default_value=".false." units="NA"
+		<nml_option name="config_use_cvmix" type="logical" default_value=".true." units="NA"
 					description="If true, use the Community Vertical MIXing routines to compute vertical diffusivity and viscosity"
 					possible_values="True or False"
 		/>
@@ -653,90 +545,6 @@
 		<nml_option name="config_cvmix_kpp_langmuir_entrainment_opt" type="character" default_value="NONE" units="NA"
 					description="Option of Langmuir enhanced entrainment parameterization"
 					possible_values="NONE, LWF16, LF17, RWHGK16"
-		/>
-	</nml_record>
-	<nml_record name="vmix_const" mode="forward">
-		<nml_option name="config_use_const_visc" type="logical" default_value=".false." units="unitless"
-					description="If true, constant vertical viscosity is included in the momentum equation"
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_use_const_diff" type="logical" default_value=".false." units="unitless"
-					description="If true, constant vertical diffusion is included in the tracer equation"
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_vert_visc" type="real" default_value="1.0e-4" units="m^2 s^{-1}"
-					description="Vertical viscosity, applied uniformly throughout domain"
-					possible_values="Any positive real value."
-		/>
-		<nml_option name="config_vert_diff" type="real" default_value="1.0e-5" units="m^2 s^{-1}"
-					description="Vertical diffusion, applied uniformly throughout domain"
-					possible_values="Any positive real value."
-		/>
-	</nml_record>
-	<nml_record name="vmix_rich" mode="forward">
-		<nml_option name="config_use_rich_visc" type="logical" default_value=".false." units="unitless"
-					description="If true, Richardson-number based vertical viscosity is included in the momentum equation"
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_use_rich_diff" type="logical" default_value=".false." units="unitless"
-					description="If true, Richardson-number based vertical diffusion is included in the tracer equation"
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_bkrd_vert_visc" type="real" default_value="1.0e-4" units="m^2 s^{-1}"
-					description="Background vertical viscosity for Richardson-number based vertical mixing, $\nu_{bkrd}$"
-					possible_values="Any positive real value."
-		/>
-		<nml_option name="config_bkrd_vert_diff" type="real" default_value="1.0e-5" units="m^2 s^{-1}"
-					description="Background vertical diffusion for Richardson-number based vertical mixing, $\kappa_{bkrd}$"
-					possible_values="Any positive real value."
-		/>
-		<nml_option name="config_rich_mix" type="real" default_value="0.005" units="m^2 s^{-1}"
-					description="Coefficient for Richardon-number vertical mixing function, $c_{Ri}$"
-					possible_values="Any positive real value."
-		/>
-	</nml_record>
-	<nml_record name="vmix" mode="forward">
-		<nml_option name="config_convective_visc" type="real" default_value="1.0" units="m^2 s^{-1}"
-					description="Value of vertical viscosity to be used in unstable conditions (i.e. Richardson number less than zero)"
-					possible_values="Any positive real value."
-		/>
-		<nml_option name="config_convective_diff" type="real" default_value="1.0" units="m^2 s^{-1}"
-					description="Value of vertical diffusion to be used in unstable conditions (i.e. Richardson number less than zero)"
-					possible_values="Any positive real value."
-		/>
-	</nml_record>
-	<nml_record name="vmix_tanh" mode="forward">
-		<nml_option name="config_use_tanh_visc" type="logical" default_value=".false." units="unitless"
-					description="If true, tanh-based vertical viscosity is included in the momentum equation"
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_use_tanh_diff" type="logical" default_value=".false." units="unitless"
-					description="If true, tanh-based vertical diffusion is included in the tracer equation"
-					possible_values=".true. or .false."
-		/>
-		<nml_option name="config_max_visc_tanh" type="real" default_value="2.5e-1" units="m^2 s^{-1}"
-					description="maximum viscosity value for tanh-fit function"
-					possible_values="Any positive real value."
-		/>
-		<nml_option name="config_min_visc_tanh" type="real" default_value="1.0e-4" units="m^2 s^{-1}"
-					description="minimum viscosity value for tanh-fit function"
-					possible_values="Any positive real value."
-		/>
-		<nml_option name="config_max_diff_tanh" type="real" default_value="2.5e-2" units="m^2 s^{-1}"
-					description="maximum diffusion value for tanh-fit function"
-					possible_values="Any positive real value."
-		/>
-		<nml_option name="config_min_diff_tanh" type="real" default_value="1.0e-5" units="m^2 s^{-1}"
-					description="minimum diffusion value for tanh-fit function"
-					possible_values="Any positive real value."
-		/>
-		<nml_option name="config_zMid_tanh" type="real" default_value="-100" units="m"
-					description="z-coodinate location of center of tanh function"
-					possible_values="Any real value, typically negative."
-		/>
-		<nml_option name="config_zWidth_tanh" type="real" default_value="100" units="m"
-					description="vertical width parameter for tanh function"
-					possible_values="Any positive real value."
 		/>
 	</nml_record>
 	<nml_record name="forcing" mode="init;forward">
@@ -1178,23 +986,25 @@
 					possible_values="any positive real"
 		/>
 	</nml_record>
-	<nml_record name="split_explicit_ts" mode="forward">
+	<nml_record name="split_timestep_share" mode="forward">
 		<nml_option name="config_n_ts_iter" type="integer" default_value="2" units="unitless"
 					description="number of large iterations over stages 1-3"
 					possible_values="any positive integer, but typically 1, 2, or 3"
 		/>
 		<nml_option name="config_n_bcl_iter_beg" type="integer" default_value="1" units="unitless"
-					description="number of iterations of stage 1 (baroclinic solve) on the first split-explicit iteration"
+					description="number of iterations of stage 1 (baroclinic solve) on the first split timestepping iteration"
 					possible_values="any positive integer, but typically 1, 2, or 3"
 		/>
 		<nml_option name="config_n_bcl_iter_mid" type="integer" default_value="2" units="unitless"
-					description="number of iterations of stage 1 (baroclinic solve) on any split-explicit iterations between first and last"
+					description="number of iterations of stage 1 (baroclinic solve) on any split timestepping iterations between first and last"
 					possible_values="any positive integer, but typically 1, 2, or 3"
 		/>
 		<nml_option name="config_n_bcl_iter_end" type="integer" default_value="2" units="unitless"
-					description="number of iterations of stage 1 (baroclinic solve) on the last split-explicit iteration"
+					description="number of iterations of stage 1 (baroclinic solve) on the last split timestepping iteration"
 					possible_values="any positive integer, but typically 1, 2, or 3"
 		/>
+	</nml_record>
+	<nml_record name="split_explicit_ts" mode="forward">
 		<nml_option name="config_btr_dt" type="character" default_value="0000_00:00:15" units="unitless"
 					description="Timestep to use for the barotropic mode in the split explicit time integrator"
 					possible_values="Any time stamp in 'YYYY-MM-DD_hh:mm:ss' format. Items can be removed from the left if they are unused."
@@ -1242,18 +1052,64 @@
                                         possible_values="any positive integer, but typically 2"
                 />
         </nml_record>
-	<nml_record name="testing" mode="forward">
-		<nml_option name="config_conduct_tests" type="logical" default_value=".false." units="unitless"
-					description="If true, run testing suite. This is the overarching control on the test suite. Individual flags must be set to true below to conduct each test."
+	<nml_record name="ALE_vertical_grid" mode="forward">
+		<nml_option name="config_vert_coord_movement" type="character" default_value="uniform_stretching" units="unitless"
+					description="Determines the vertical coordinate movement type. 'uniform_stretching' distributes SSH perturbations through all vertical levels (z-star vertical coordinate); 'fixed' places them all in the top level (z-level vertical coordinate); 'user_specified' allows the input file to determine the distribution using the variable vertCoordMovementWeights (weighted z-star vertical coordinate); and 'impermeable_interfaces' makes the vertical transport between layers zero, i.e. $w^t=0$ (idealized isopycnal)."
+					possible_values="'uniform_stretching', 'fixed', 'user_specified', 'impermeable_interfaces', 'tapered'"
+		/>
+		<nml_option name="config_ALE_thickness_proportionality" type="character" default_value="restingThickness_times_weights" units="unitless"
+					description="When config_vert_coord_movement='uniform_stretching' (z-star type coordinate), determines whether ALE layer thickness is proportional to the resting thickness times weights, or just the weights. The first is standard for global runs and is what is specified in Petersen et al 2015 eqns 4 and 6. The second is useful for wetting/drying test cases where resting thickness may be zero at the coastlines."
+					possible_values="'restingThickness_times_weights' or 'weights_only'"
+		/>
+		<nml_option name="config_vert_taper_weight_depth_1" type="real" default_value="250.0" units="m"
+					description="Vertical coordinate taper weight is one above this depth, linearly decreases to zero below."
+					possible_values="any positive real value, but typically 100 to 1000 m."
+		/>
+		<nml_option name="config_vert_taper_weight_depth_2" type="real" default_value="500.0" units="m"
+					description="Vertical coordinate taper weight is zero below this depth, linearly increases to one above."
+					possible_values="any positive real value, but typically 100 to 1000 m and greater than config_vert_taper_weight_depth_1."
+		/>
+		<nml_option name="config_use_min_max_thickness" type="logical" default_value=".false." units="unitless"
+					description="If true, a minimum and maximum thicknesses are enforced to prevent massless and very thick layers."
 					possible_values=".true. or .false."
 		/>
-		<nml_option name="config_test_tensors" type="logical" default_value=".false." units="unitless"
-					description="If true, tensor operations are tested upon start-up."
+		<nml_option name="config_min_thickness" type="real" default_value="1.0" units="m"
+					description="Minimum thickness allowed."
+					possible_values="any positive real value, but typically 0.1 to 1 m."
+		/>
+		<nml_option name="config_max_thickness_factor" type="real" default_value="6.0" units="unitless"
+					description="Maximum thickness allowed. This is a factor times the resting thickness, i.e., maximum thickness = config_max_thickness_factor*$h^{rest}$."
+					possible_values="any positive real value, but typically 2-4."
+		/>
+		<nml_option name="config_dzdk_positive" type="logical" default_value=".false." units="unitless"
+					description="Determines if the positive Z axis is aligned with the positive K index direction."
 					possible_values=".true. or .false."
 		/>
-		<nml_option name="config_tensor_test_function" type="character" default_value="sph_uCosCos" units="unitless"
-					description="Character string to choose tensor test fuction"
-					possible_values="'linear_x', 'linear_y', 'linear_arb_rot', 'power_x', 'power_y', 'power_arb_rot', 'sin_arb_rot', 'sph_solid_body', 'sph_Williamson', 'sph_uCosCos', 'sph_vCosCos', 'sph_ELonLon_CosCos', 'sph_ELatLat_CosCos', 'sph_ELonLat_CosCos'"
+	</nml_record>
+	<nml_record name="ALE_frequency_filtered_thickness" mode="forward">
+		<nml_option name="config_use_freq_filtered_thickness" type="logical" default_value=".false." units="unitless"
+					description="If true, $h^{hf}$ is included in the desired ALE thickness, and the prognostic equations for $D^{lf}$ and $h^{hf}$ are integrated in the code."
+					possible_values=".true. or .false."
+		/>
+		<nml_option name="config_thickness_filter_timescale" type="real" default_value="5.0" units="days"
+					description="Filter time scale for the low-frequency baroclinic divergence, $\tau_{Dlf}$."
+					possible_values="any positive real value, but typically 5 days."
+		/>
+		<nml_option name="config_use_highFreqThick_restore" type="logical" default_value=".false." units="unitless"
+					description="If true, the high frequency thickness prognostic equation ($h^{hf}$) includes term 2 on the RHS, the restoring term.  The high frequency thickness is restored to zero with time scale $\tau_{hhf}$."
+					possible_values=".true. or .false."
+		/>
+		<nml_option name="config_highFreqThick_restore_time" type="real" default_value="30.0" units="days"
+					description="Restoring time scale for high-frequency thickness, $\tau_{hhf}$."
+					possible_values="any positive real value, but typically 5-30 days."
+		/>
+		<nml_option name="config_use_highFreqThick_del2" type="logical" default_value=".false." units="unitless"
+					description="If true, high frequency thickness prognostic equation ($h^{hf}$) includes term 3 on the RHS, the diffusion term."
+					possible_values=".true. or .false."
+		/>
+		<nml_option name="config_highFreqThick_del2" type="real" default_value="100.0" units="m^2 s^{-1}"
+					description="Horizontal high frequency thickness diffusion, $\kappa_{hhf}$."
+					possible_values="any positive real"
 		/>
 	</nml_record>
 	<nml_record name="debug" mode="forward;init">
@@ -1370,54 +1226,18 @@
 					possible_values=".true. or .false."
 		/>
 	</nml_record>
-	<nml_record name="constrain_Haney_number" mode="init">
-		<nml_option name="config_use_rx1_constraint" type="logical" default_value=".false." units="unitless"
-					description="Initialize using Haney number constraint under ice shelves"
+	<nml_record name="testing" mode="forward">
+		<nml_option name="config_conduct_tests" type="logical" default_value=".false." units="unitless"
+					description="If true, run testing suite. This is the overarching control on the test suite. Individual flags must be set to true below to conduct each test."
 					possible_values=".true. or .false."
 		/>
-		<nml_option name="config_rx1_outer_iter_count" type="integer" default_value="20" units="unitless"
-					description="The number of outer iterations (first smoothing then rx1 constraint) during initialization of the vertical grid."
-					possible_values="any positive integer"
+		<nml_option name="config_test_tensors" type="logical" default_value=".false." units="unitless"
+					description="If true, tensor operations are tested upon start-up."
+					possible_values=".true. or .false."
 		/>
-		<nml_option name="config_rx1_inner_iter_count" type="integer" default_value="10" units="unitless"
-					description="The number of iterations used to constrain rx1 in each layer."
-					possible_values="any positive integer"
-		/>
-		<nml_option name="config_rx1_init_inner_weight" type="real" default_value="0.1" units="unitless"
-					description="The weight by which layer thicknesses are altered at the beginning of inner iteration. This weight linearly increases to 1.0 by the final iteration."
-					possible_values="a positive value less than or equal to 1"
-		/>
-		<nml_option name="config_rx1_max" type="real" default_value="5.0" units="unitless"
-					description="The maximum value rx1Max of the Haney number (rx1) after modification of the vertical grid"
-					possible_values="any positive value, typically greater than or equal to 1"
-		/>
-		<nml_option name="config_rx1_horiz_smooth_weight" type="real" default_value="1.0" units="unitless"
-					description="Relative weight of horizontal neighbors compared to this cell when smoothing vertical stretching"
-					possible_values="A non-negative number"
-		/>
-		<nml_option name="config_rx1_vert_smooth_weight" type="real" default_value="1.0" units="unitless"
-					description="Relative weight of vertical neighbors compared to this cell when smoothing vertical stretching"
-					possible_values="A non-negative number"
-		/>
-		<nml_option name="config_rx1_slope_weight" type="real" default_value="1e-1" units="unitless"
-					description="Weight used to nudge level interfaces toward being flat (thus decreasing the Haney number)"
-					possible_values="A non-negative number"
-		/>
-		<nml_option name="config_rx1_zstar_weight" type="real" default_value="1.0" units="unitless"
-					description="Weight used to nudge vertical stretching toward z-star during each outer iteration"
-					possible_values="A non-negative number"
-		/>
-		<nml_option name="config_rx1_horiz_smooth_open_ocean_cells" type="integer" default_value="20" units="unitless"
-					description="The size (in cells) of a buffer region around land ice for smoothing.  Smoothing is performed under land ice and in the buffer region of open ocean."
-					possible_values="any non-negative integer, 0 indiates no buffer region."
-		/>
-		<nml_option name="config_rx1_min_levels" type="integer" default_value="3" units="unitless"
-					description="The minimum number of layers in the ocean column in the smoothed region."
-					possible_values="a positive integer"
-		/>
-		<nml_option name="config_rx1_min_layer_thickness" type="real" default_value="1.0" units="m"
-					description="The minimum layer thickness in the smoothed region."
-					possible_values="an positive value"
+		<nml_option name="config_tensor_test_function" type="character" default_value="sph_uCosCos" units="unitless"
+					description="Character string to choose tensor test fuction"
+					possible_values="'linear_x', 'linear_y', 'linear_arb_rot', 'power_x', 'power_y', 'power_arb_rot', 'sin_arb_rot', 'sph_solid_body', 'sph_Williamson', 'sph_uCosCos', 'sph_vCosCos', 'sph_ELonLon_CosCos', 'sph_ELatLat_CosCos', 'sph_ELonLat_CosCos'"
 		/>
 	</nml_record>
 	<packages>
@@ -1695,6 +1515,7 @@
 
 			<stream name="mesh"/>
 			<var_struct name="tracers"/>
+			<var name="indMLD"/>
 			<var name="normalVelocity"/>
 			<var name="layerThickness"/>
 			<var name="highFreqThickness"/>
@@ -1703,8 +1524,6 @@
 			<var name="vertCoordMovementWeights"/>
 			<var name="xtime"/>
 			<var name="simulationStartTime"/>
-			<var name="boundaryLayerDepth"/>
-			<var name="indexBoundaryLayerDepth"/>
 			<var name="landIcePressure"/>
 			<var name="landIceDraft"/>
 			<var name="landIceFraction"/>
@@ -2019,7 +1838,7 @@
 
 	<var_struct name="state" time_levs="2">
 		<var name="normalVelocity" type="real" dimensions="nVertLevels nEdges Time" units="m s^{-1}"
-			 description="horizonal velocity, normal component to an edge"
+			 description="horizontal velocity, normal component to an edge"
 		/>
 		<var name="layerThickness" type="real" dimensions="nVertLevels nCells Time" units="m"
 			 description="layer thickness"
@@ -2151,9 +1970,6 @@
 		<var name="meshScalingDel4" type="real" dimensions="nEdges" units="unitless"
 			 description="Coefficient to biharmonic mixing terms in momentum and tracer equations, so that biharmonic viscosity and diffusion coefficients scale with mesh."
 		/>
-		<var name="meshScaling" type="real" dimensions="nEdges" units="unitless"
-			 description="Coefficient used for mesh scaling, such as the Leith parameter."
-		/>
 		<var name="cellsOnEdge" type="integer" dimensions="TWO nEdges" units="unitless"
 			 description="List of cells that straddle each edge."
 		/>
@@ -2170,7 +1986,7 @@
 			 description="List of edges that border each of the cells that straddle each edge."
 		/>
 		<var name="weightsOnEdge" type="real" dimensions="maxEdges2 nEdges" units="unitless"
-			 description="Reconstruction weights associated with each of the edgesOnEdge."
+			 description="Reconstruction weights associated with each of the edgesOnEdge, used to reconstruct the tangentialVelocity from normalVelocities on neighboring edges."
 		/>
 		<var name="dvEdge" type="real" dimensions="nEdges" units="m"
 			 description="Length of each edge, computed as the distance between verticesOnEdge."
@@ -2367,6 +2183,9 @@
 		<var name="daysSinceStartOfSim" type="real" dimensions="Time" units="days"
 			 description="Time since simulationStartTime, for plotting"
 	 	/>
+		<var name="edgeAreaFractionOfCell" type="real" dimensions="maxEdges nCells" units="unitless"
+			 description="edgeAreaFractionOfCell(iEdge, iCell) is the fractional area of cell iCell encompassed by the triangle with edge iEdge connected to the cell center of cell iCell. On a perfect planar hex mesh this is always 1/6. This weighting is used to interpolate scalars from edges to cell centers. Use 2*edgeAreaFractionOfCell to interpolate normal vectors at edges to vector norms at cell centers."
+		/>
 		<var name="salinitySurfaceRestoringTendency" type="real" dimensions="nCells Time" units="m PSU/s" packages="activeTracersSurfaceRestoringPKG"
 			 description="salinity tendency due to surface restoring"
 		/>
@@ -2382,13 +2201,21 @@
 		<var name="temperatureShortWaveTendency" dimensions="nVertLevels nCells Time" units="degrees Celsius per second" packages="tracerBudget" name_in_code="temperatureShortWaveTendency" type="real"
 				 description="potential temperature tendency due to penetrating shortwave"
 		/>
+		<var_array name="activeTracerHorMixTendency" type="real" dimensions="nVertLevels nCells Time" packages="tracerBudget">
+			<var name="temperatureHorMixTendency" array_group="activeTracerHmixTendGroup" units="degrees Celsius per second" name_in_code="temperatureHorMixTendency"
+				description="potential temperature tendency due to horizontal mixing (including Redi)"
+			/>
+			<var name="salinityHorMixTendency" array_group="activeTracerHmixTendGroup" units="PSU per second" name_in_code="salinityHorMixTendency"
+				description="salinity tendency due to horizontal mixing (including Redi)"
+			/>
+		</var_array>
 		<var_array name="activeTracerNonLocalTendency" type="real" dimensions="nVertLevels nCells Time" packages="tracerBudget">
-			  <var name="temperatureNonLocalTendency" array_group="activeTracerNLTendGroup" units="degrees Celsius per second" name_in_code="temperatureNonLocalTendency"
+			<var name="temperatureNonLocalTendency" array_group="activeTracerNLTendGroup" units="degrees Celsius per second" name_in_code="temperatureNonLocalTendency"
 				 description="potential temperature tendency due to kpp non-local flux"
-			  />
-			  <var name="salinityNonLocalTendency" array_group="activeTracerNLTendGroup" units="PSU per second" name_in_code="salinityNonLocalTendency"
+			/>
+			<var name="salinityNonLocalTendency" array_group="activeTracerNLTendGroup" units="PSU per second" name_in_code="salinityNonLocalTendency"
 				 description="salinity tendency due to kpp non-local flux"
-			  />
+			/>
 		</var_array>
 		<var_array name="activeTracerVerticalAdvectionTopFlux" type="real" dimensions="nVertLevels nCells Time" packages="tracerBudget">
 			<var name="temperatureVerticalAdvectionTopFlux" array_group="activeTracerVertTopFluxGroup" units="C m s^{-1}" name_in_code="temperatureVerticalAdvectionTopFlux"
@@ -2423,12 +2250,12 @@
 			/>
 		</var_array>
 		<var_array name="activeTracerVertMixTendency" type="real" dimensions="nVertLevels nCells Time" packages="tracerBudget">
-			  <var name="temperatureVertMixTendency" array_group="activeTracerVertMixTendGroup" units="degrees Celsius per second" name_in_code="temperatureVertMixTendency"
+			<var name="temperatureVertMixTendency" array_group="activeTracerVertMixTendGroup" units="degrees Celsius per second" name_in_code="temperatureVertMixTendency"
 				 description="potential temperature tendency due to vertical mixing"
-			  />
-			  <var name="salinityVertMixTendency" array_group="activeTracerVertMixTendGroup" units="PSU per second" name_in_code="salinityVertMixTendency"
+			/>
+			<var name="salinityVertMixTendency" array_group="activeTracerVertMixTendGroup" units="PSU per second" name_in_code="salinityVertMixTendency"
 				 description="salinity tendency due to vertical mixing"
-			  />
+			/>
 		</var_array>
 		<var_array name="tracersSurfaceValue" type="real" dimensions="nCells Time">
 			<var name="temperatureSurfaceValue" array_group="surfaceValues" units="degrees Celsius" name_in_code="temperatureSurfaceValue"
@@ -2549,7 +2376,7 @@
 		/>
 
 		<var name="kineticEnergyCell" type="real" dimensions="nVertLevels nCells Time" units="m^2 s^{-2}"
-			 description="kinetic energy of horizonal velocity on cells"
+			 description="kinetic energy of horizontal velocity on cells"
 			 packages="forwardMode;analysisMode"
 		/>
 		<var name="viscosity" type="real" dimensions="nVertLevels nEdges Time" units="m^2 s^{-1}"
@@ -2557,7 +2384,7 @@
 			 packages="forwardMode;analysisMode"
 		/>
 		<var name="divergence" type="real" dimensions="nVertLevels nCells Time" units="s^{-1}"
-			 description="divergence of horizonal velocity"
+			 description="divergence of horizontal velocity"
 			 packages="forwardMode;analysisMode"
 		/>
 		<var name="circulation" type="real" dimensions="nVertLevels nVertices Time" units="m^2 s^{-1}"
@@ -2664,10 +2491,34 @@
 		<var name="cGMphaseSpeed" type="real" dimensions="nEdges Time" units="m s^{-1}"
 			description="phase speed for the bolus velocity calculation"
 			packages="forwardMode;analysisMode"
-			/>
-		<var name="kappaGM3D" type="real" dimensions="nVertLevels nEdges Time" units="m s^{-1}"
+		/>
+		<var name="betaEdge" type="real" dimensions="nEdges Time" units="m^{-1} s^{-1}"
+			description="meridional gradient of the coriolis parameter"
+		/>
+		<var name="c_visbeck" type="real" dimensions="nEdges Time" units="m s^{-1}"
+			description="baroclinic wave speed from visbeck parameterization"
+		/>
+		<var name="eddyLength" type="real" dimensions="nEdges Time" units="m"
+			description="eddy length scale in visbeck 1997 closure"
+		/>
+		<var name="eddyTime" type="real" dimensions="nEdges Time" units="s^{-1}"
+			description="inverse eddy time scale in visbeck 1997 closure"
+		/>
+		<var name="kappaGMCell" type="real" dimensions="nVertLevelsP1 nCells Time" units="NA"
 			description="spatially and depth varying GM kappa"
-			packages="forwardMode;analysisMode"
+			packages="gm"
+		/>
+		<var name="kappaRediCell" type="real" dimensions="nVertLevelsP1 nCells Time" units="NA"
+			description="spatially and depth varying GM kappa"
+			packages="gm"
+		/>
+		<var name="kappaRediSfcTaper" type="real" dimensions="nVertLevelsP1 nCells Time" units="NA"
+			description="spatially and depth varying Redi kappa"
+			packages="gm"
+		/>
+		<var name="rediLimiterCount" type="integer" dimensions="nVertLevels nCells Time" units="NA"
+			description="count of times redi limiter is invoked on a timestep"
+			packages="gm"
 		/>
 		<var name="GMBolusVelocityX" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1}"
 			 description="Bolus velocity in Gent-McWilliams eddy parameterization, x-direction"
@@ -2759,6 +2610,9 @@
 			 description="CVMix/KPP: diagnosed surface buoyancy flux due to heat, salt and freshwater fluxes. Positive flux increases buoyancy."
 			 packages="forwardMode;analysisMode"
 		/>
+		<var name="indMLD" type="integer" dimensions="nCells Time" units="unitless"
+			description="index of model where mixed layer depth occurs (always one past)"
+		/>
 		<var name="slopeTriadUp" type="real" dimensions="nVertLevels TWO nEdges Time" units="non-dimensional"
 			 description="Magnitude of slope of isopycnal surface, using triad through this cell and edge, angled up. Uses expansion of equation of state."
 			 packages="forwardMode;analysisMode"
@@ -2799,12 +2653,16 @@
 			 description="GM stream function"
 			 packages="forwardMode;analysisMode"
 		/>
-		<var name="gmBolusKappa" type="real" dimensions="nEdges" units="m^2 s^{-1}"
+		<var name="gmBolusKappa" type="real" dimensions="nEdges Time" units="m^2 s^{-1}"
 			 description="GM Bolus Kappa value.  This is constant in time, and set at init based on the constant or ramp fuction."
 			 packages="gm"
 		/>
-		<var name="RediKappa" type="real" dimensions="nCells" units="m^2 s^{-1}"
-			 description="Redi isopycnal mixing Kappa value.  This is constant in time, and set at init."
+		<var name="RediKappa" type="real" dimensions="nEdges Time" units="m^2 s^{-1}"
+			 description="Redi Kappa value.  This is constant in time, and set at init based on the constant or ramp fuction."
+			 packages="gm"
+		/>
+		<var name="gmResolutionTaper" type="real" dimensions="nEdges Time" units="m^2 s^{-1}"
+			 description="resolution tapering for GM and Redi"
 			 packages="gm"
 		/>
 		<var name="surfaceFluxAttenuationCoefficient" type="real" dimensions="nCells Time" units="m"
@@ -2891,14 +2749,6 @@
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
-                <var name="CGvec_p0" type="real" dimensions="nCells Time" nits="unitless"
-                         description="A vector used in the semi-implicit barotropic mode solver"
-                         packages="forwardMode;analysisMode"
-                />
-                <var name="CGvec_p1" type="real" dimensions="nCells Time" nits="unitless"
-                         description="A vector used in the semi-implicit barotropic mode solver"
-                         packages="forwardMode;analysisMode"
-                />
                 <var name="CGvec_r1" type="real" dimensions="nCells Time" nits="unitless"
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
@@ -2915,19 +2765,11 @@
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
-                <var name="CGvec_ph0" type="real" dimensions="nCells Time" nits="unitless"
+                <var name="CGvec_u0" type="real" dimensions="nCells Time" nits="unitless"
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
-                <var name="CGvec_ph1" type="real" dimensions="nCells Time" nits="unitless"
-                         description="A vector used in the semi-implicit barotropic mode solver"
-                         packages="forwardMode;analysisMode"
-                />
-                <var name="CGvec_v0" type="real" dimensions="nCells Time" nits="unitless"
-                         description="A vector used in the semi-implicit barotropic mode solver"
-                         packages="forwardMode;analysisMode"
-                />
-                <var name="CGvec_v1" type="real" dimensions="nCells Time" nits="unitless"
+                <var name="CGvec_u1" type="real" dimensions="nCells Time" nits="unitless"
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
@@ -2987,14 +2829,6 @@
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
-                <var name="CGvec_zh0" type="real" dimensions="nCells Time" nits="unitless"
-                         description="A vector used in the semi-implicit barotropic mode solver"
-                         packages="forwardMode;analysisMode"
-                />
-                <var name="CGvec_zh1" type="real" dimensions="nCells Time" nits="unitless"
-                         description="A vector used in the semi-implicit barotropic mode solver"
-                         packages="forwardMode;analysisMode"
-                />
                 <var name="CGvec_t0" type="real" dimensions="nCells Time" nits="unitless"
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
@@ -3003,7 +2837,39 @@
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
+                <var name="CGvec_th0" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_th1" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
                 <var name="CGvec_y0" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_f0" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_fh0" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_fh1" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_p0" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_p1" type="real" dimensions="nCells Time" nits="unitless"
+                         description="A vector used in the semi-implicit barotropic mode solver"
+                         packages="forwardMode;analysisMode"
+                />
+                <var name="CGvec_h0" type="real" dimensions="nCells Time" nits="unitless"
                          description="A vector used in the semi-implicit barotropic mode solver"
                          packages="forwardMode;analysisMode"
                 />
@@ -3179,7 +3045,7 @@
 		<var name="iceFraction" type="real" dimensions="nCells Time" units="fractional"
 			 description="Fraction of sea ice coverage at cell centers from coupler. Positive into the ocean."
 		/>
-        <var name="windSpeed10m" type="real" dimensions="nCells Time" units="m s^{-1}"
+		<var name="windSpeed10m" type="real" dimensions="nCells Time" units="m s^{-1}"
 			 description="Wind speed at 10 meter."
 		/>
 
@@ -3449,12 +3315,12 @@
 		<var name="kineticEnergyVertex"
 			persistence="scratch"
 			type="real" dimensions="nVertLevels nVertices Time" units="m^2 s^{-2}"
-			description="kinetic energy of horizonal velocity defined at vertices"
+			description="kinetic energy of horizontal velocity defined at vertices"
 		/>
 		<var name="kineticEnergyVertexOnCells"
 			persistence="scratch"
 			type="real" dimensions="nVertLevels nCells Time" units="m^2 s^{-2}"
-			description="kinetic energy of horizonal velocity defined at vertices"
+			description="kinetic energy of horizontal velocity defined at vertices"
 		/>
 		<var name="densitySurfaceDisplaced"
 			persistence="scratch"
@@ -3476,12 +3342,12 @@
 		<var name="normalVelocityTest"
 			 persistence="scratch"
 			 type="real" dimensions="nVertLevels nEdges" units="m s^{-1}"
-			 description="horizonal velocity, normal component to an edge, for testing"
+			 description="horizontal velocity, normal component to an edge, for testing"
 		/>
 		<var name="tangentialVelocityTest"
 			 persistence="scratch"
 			 type="real" dimensions="nVertLevels nEdges" units="m s^{-1}"
-			 description="horizonal velocity, tangential component to an edge, for testing"
+			 description="horizontal velocity, tangential component to an edge, for testing"
 		/>
 		<var name="strainRateR3Cell"
 			 persistence="scratch"
@@ -3760,6 +3626,12 @@
 			persistence="scratch"
 			type="integer" dimensions="nCells" units="unitless"
 			description="reference maxLevelCell for vertical interpolation of tracers"
+		/>
+		<!-- FIELDS FOR HORIZONTAL SMOOTHING DURING INITIALIZATION -->
+		<var name="smoothedField"
+			persistence="scratch"
+			type="real" dimensions="nCells" units="various"
+			description="the smoothed version of a field on cells during iterative smoothing"
 		/>
 		<!-- FIELDS FOR RX1 INITIALIZATION -->
 		<var name="zInterfaceScratch"

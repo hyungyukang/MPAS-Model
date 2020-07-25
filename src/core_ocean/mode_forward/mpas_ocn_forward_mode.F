@@ -40,6 +40,7 @@ module ocn_forward_mode
    use ocn_tendency
    use ocn_diagnostics
    use ocn_test
+   use ocn_mesh
 
    use ocn_thick_hadv
    use ocn_thick_vadv
@@ -330,6 +331,10 @@ module ocn_forward_mode
       !
       ! Initialize core
       !
+
+      ! fill the ocean mesh structure
+      call ocn_meshCreate(domain)
+
       timeStep = mpas_get_clock_timestep(domain % clock, ierr=err_tmp)
       call mpas_get_timeInterval(timeStep, dt=dt)
 
@@ -351,6 +356,15 @@ module ocn_forward_mode
             simulationStartTime = startTimeStamp
          end if
 
+         block => block % next
+      end do
+
+      !$omp master
+      block => domain % blocklist
+      do while (associated(block))
+         call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+         call mpas_pool_get_array(diagnosticsPool, 'xtime', xtime)
+
          ! compute time since start of simulation, in days
          call mpas_pool_get_array(diagnosticsPool, 'daysSinceStartOfSim',daysSinceStartOfSim)
          call mpas_set_time(xtime_timeType, dateTimeString=xtime)
@@ -360,6 +374,11 @@ module ocn_forward_mode
 
          block => block % next
       end do
+      !$omp end master
+      !$omp barrier
+
+      ! Update any mesh fields that may have been modified during init
+      call ocn_meshUpdateFields(domain)
 
       if (config_conduct_tests) then
          call mpas_timer_start("test suite")
@@ -508,7 +527,6 @@ module ocn_forward_mode
       type (mpas_pool_type), pointer :: diagnosticsPool
       type (mpas_pool_type), pointer :: scratchPool
 
-
       type (MPAS_timeInterval_type) :: timeStep
       character(len=StrKIND), pointer :: config_restart_timestamp_name, config_sw_absorption_type
 
@@ -543,7 +561,6 @@ module ocn_forward_mode
 #ifdef MPAS_DEBUG
       call mpas_log_write('Initial time ' // trim(timeStamp))
 #endif
-
       call ocn_analysis_compute_startup(domain, err)
 
       if (config_write_output_on_startup) then
@@ -617,8 +634,12 @@ module ocn_forward_mode
            call mpas_timer_stop("land_ice_build_arrays")
 
            call ocn_frazil_forcing_build_arrays(domain, meshPool, forcingPool, diagnosticsPool, statePool, err)
-           
            call ocn_tidal_forcing_build_array(domain, meshPool, forcingPool, diagnosticsPool, statePool, err)
+
+           ! Compute normalGMBolusVelocity, relativeSlope and RediDiffVertCoef if respective flags are turned on
+           if (config_use_Redi.or.config_use_GM) then
+               call ocn_gm_compute_Bolus_velocity(statePool, diagnosticsPool, meshPool, scratchPool, timeLevelIn=1)
+           end if
 
            block_ptr => block_ptr % next
          end do
@@ -747,6 +768,9 @@ module ocn_forward_mode
       type (domain_type), intent(inout) :: domain
 
       integer :: ierr
+
+      ! destroy the ocean mesh structure
+      call ocn_meshDestroy(ierr)
 
       call mpas_dmpar_exch_group_destroy_reusable_buffers(domain, 'subcycleFields')
 
