@@ -228,13 +228,10 @@ module ocn_time_integration_si
 
 
       ! Semi-implicit Array Pointers
-      real (kind=RKIND), dimension(:), pointer :: CGvec_r0,CGvec_r00,CGvec_r1,CGvec_rh0,CGvec_rh1
-      real (kind=RKIND), dimension(:), pointer :: CGvec_s0,CGvec_s1,CGvec_sh0,CGvec_sh1
-      real (kind=RKIND), dimension(:), pointer :: CGvec_w0,CGvec_w1,CGvec_wh0,CGvec_wh1
-      real (kind=RKIND), dimension(:), pointer :: CGvec_t0,CGvec_t1,CGvec_q0,CGvec_q1,CGvec_qh0,CGvec_qh1
-      real (kind=RKIND), dimension(:), pointer :: CGvec_z0,CGvec_z1,CGvec_fh0,CGvec_fh1
-      real (kind=RKIND), dimension(:), pointer :: CGvec_y0,CGvec_h0
-      real (kind=RKIND), dimension(:), pointer :: CGvec_u0,CGvec_u1,CGvec_f0,CGvec_th0,CGvec_th1
+      real (kind=RKIND), dimension(:), pointer :: CGvec_r0,CGvec_r00,CGvec_r1
+      real (kind=RKIND), dimension(:), pointer :: CGvec_s0,CGvec_s1
+      real (kind=RKIND), dimension(:), pointer :: CGvec_w0,CGvec_w1
+      real (kind=RKIND), dimension(:), pointer :: CGvec_u0,CGvec_u1
       real (kind=RKIND), dimension(:), pointer :: CGvec_p0,CGvec_p1
       real (kind=RKIND), dimension(:), pointer :: barotropicCoriolisTerm
       ! Semi-implicit variables
@@ -816,6 +813,7 @@ module ocn_time_integration_si
 
          call mpas_timer_stop('btr vel si init')
 
+
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
          ! Stage 2.2 : Compute initial residual
@@ -899,6 +897,7 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
+
          ! Preconditioning ------------------------------------------------------------------------!
 
          call mpas_timer_start("si halo r0")
@@ -924,10 +923,22 @@ module ocn_time_integration_si
 
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0', CGvec_u0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00', CGvec_r00)
 
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
-               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_u0(1:nPrecVec), 1)
+!              CGvec_r0(nCellsArray(2)+1:nPrecVec) = 0.0_RKIND
+!              call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_u0(1:nPrecVec), 1)
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat(1:nPrecVec,1:nPrecVec), nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_u0(1:nPrecVec), 1)
+
+!              CGvec_u0(nCellsArray(1)+1:nPrecVec) = 0.0_RKIND
+!              CGvec_r00(:) = CGvec_u0(:)
+
+!              if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+!                 do iCell = nCellsArray(2)+1,nPrecVec 
+!                   CGvec_u0(iCell) = CGvec_u0(iCell) + CGvec_r00(iCell)
+!                 end do
+!              end if
 
             elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
@@ -941,6 +952,7 @@ module ocn_time_integration_si
                ! No preconditioning 
                CGvec_u0(1:nPrecVec) = CGvec_r0(1:nPrecVec)
             end if
+
 
             block => block % next
          end do  ! block
@@ -985,15 +997,18 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_w0', CGvec_w0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0', CGvec_u0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0', CGvec_s0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0', CGvec_p0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00', CGvec_r00)
  
-            nCells = nCellsArray( 1 )
+            nCells = nCellsArray(1)
  
             r0r0 = 0.d0
             w0r0 = 0.d0
 
+
             do iCell = 1, nCells
  
-               CGvec_p0(iCell) = CGvec_u0(iCell)
+               CGvec_p0(iCell) = CGvec_r0(iCell)
                CGvec_s0(iCell) = 0.0_RKIND
 
                sshTendAx = 0.0_RKIND
@@ -1017,7 +1032,7 @@ module ocn_time_integration_si
    
                end do ! i
   
-               sshCurArea = R1_alpha1s_g_dts(split_implicit_step) * CGvec_r0(iCell) * areaCell(iCell)
+               sshCurArea = R1_alpha1s_g_dts(split_implicit_step) * CGvec_u0(iCell) * areaCell(iCell)
                   
                CGvec_w0(iCell) = -sshCurArea - sshTendAx
 
@@ -1028,6 +1043,7 @@ module ocn_time_integration_si
  
             block => block % next
          end do  ! block
+
 
          CGcst_allreduce2(1) = r0r0
          CGcst_allreduce2(2) = w0r0
@@ -1103,6 +1119,14 @@ module ocn_time_integration_si
    
                block => block % next
             end do  ! block
+
+            call mpas_timer_start("si halo r0")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo r0")
    
             ! Preconditioning ------------------------------------------------------------------------!
             block => domain % blocklist
@@ -1119,14 +1143,26 @@ module ocn_time_integration_si
    
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_u1' , CGvec_u1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00' , CGvec_r00)
+
    
                if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                   ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
-                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_u1(1:nPrecVec), 1, 0.0_RKIND, CGvec_r1(1:nPrecVec), 1)
-   
+!                 CGvec_r1(nCellsArray(2)+1:nPrecVec) = 0.0_RKIND
+!                 call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r1(1:nPrecVec), 1, 0.0_RKIND, CGvec_u1(1:nPrecVec), 1)
+                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat(1:nPrecVec,1:nPrecVec), nPrecVec, CGvec_r1(1:nPrecVec), 1, 0.0_RKIND, CGvec_u1(1:nPrecVec), 1)
+!                 CGvec_u1(nCellsArray(1)+1:nPrecVec) = 0.0_RKIND
+!                 CGvec_r00(:) = CGvec_u1(:)
+!  
+!                 if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+!                    do iCell = nCellsArray(2)+1,nPrecVec 
+!                      CGvec_u1(iCell) = CGvec_u1(iCell) + CGvec_r00(iCell)
+!                    end do
+!                 end if
+
                elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                   ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_u1(1:nPrecVec), 1, 0.0_RKIND, CGvec_r1(1:nPrecVec), 1)
+                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r1(1:nPrecVec), 1, 0.0_RKIND, CGvec_u1(1:nPrecVec), 1)
    
                elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                   ! Jacobi preconditioning
@@ -1136,6 +1172,7 @@ module ocn_time_integration_si
                   ! No preconditioning
                   CGvec_u1(1:nPrecVec) = CGvec_r1(1:nPrecVec)
                end if
+
      
                block => block % next
             end do  ! block
@@ -1180,6 +1217,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_w1', CGvec_w1)
    
                nCells = nCellsArray(1)
+
     
                r1r1 = 0.0_RKIND
                w1r1 = 0.0_RKIND
@@ -1219,7 +1257,7 @@ module ocn_time_integration_si
    
                block => block % next
             end do  ! block
-   
+
             CGcst_allreduce2(1) = r1r1
             CGcst_allreduce2(2) = w1r1
    
@@ -1232,7 +1270,7 @@ module ocn_time_integration_si
             resid = r1r1
     
             beta1 = r1r1 / r0r0
-            alph1 = 1.0_RKIND / (w1r1 / r1r1 - beta0 / alpha0)
+            alph1 = 1.0_RKIND / (w1r1 / r1r1 - beta1 / alph0)
    
    
             block => domain % blocklist
@@ -1291,6 +1329,8 @@ module ocn_time_integration_si
    
             alph0 = alph1
             beta0 = beta1
+             r0r0 = r1r1
+             w0r0 = w1r1
 
          !**************************************************************!
          end do ! do iter = 2
@@ -1385,7 +1425,6 @@ module ocn_time_integration_si
          call mpas_timer_stop("si halo iter")
 
          call mpas_timer_stop("si btr vel update")
-
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
@@ -1500,11 +1539,21 @@ module ocn_time_integration_si
 
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0', CGvec_u0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00', CGvec_r00)
 
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
-               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_u0(1:nPrecVec), 1)
+!              CGvec_r0(nCellsArray(2)+1:nPrecVec) = 0.0_RKIND
+               !call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_u0(1:nPrecVec), 1)
+               call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat(1:nPrecVec,1:nPrecVec), nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_u0(1:nPrecVec), 1)
+!              CGvec_u0(nCellsArray(1)+1:nPrecVec) = 0.0_RKIND
+!              CGvec_r00(:) = CGvec_u0(:)
 
+!              if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+!                 do iCell = nCellsArray(2)+1,nPrecVec 
+!                   CGvec_u0(iCell) = CGvec_u0(iCell) + CGvec_r00(iCell)
+!                 end do
+!              end if
             elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
                call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_u0(1:nPrecVec), 1)
@@ -1518,6 +1567,7 @@ module ocn_time_integration_si
                CGvec_u0(1:nPrecVec) = CGvec_r0(1:nPrecVec)
 
             end if
+
 
             block => block % next
          end do  ! block
@@ -1560,15 +1610,18 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_w0', CGvec_w0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_u0', CGvec_u0)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0', CGvec_s0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_p0', CGvec_p0)
+            call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00', CGvec_r00)
 
             nCells = nCellsArray( 1 )
+
 
             r0r0 = 0.d0
             w0r0 = 0.d0
 
             do iCell = 1, nCells
  
-               CGvec_p0(iCell) = CGvec_u0(iCell)
+               CGvec_p0(iCell) = CGvec_r0(iCell)
                CGvec_s0(iCell) = 0.0_RKIND
 
                sshTendAx = 0.0_RKIND
@@ -1592,9 +1645,9 @@ module ocn_time_integration_si
    
                end do ! i
   
-               sshLagArea = R1_alpha1s_g_dts(split_implicit_step) * CGvec_r0(iCell) * areaCell(iCell)
+               sshCurArea = R1_alpha1s_g_dts(split_implicit_step) * CGvec_u0(iCell) * areaCell(iCell)
                   
-               CGvec_w0(iCell) = -sshLagArea - sshTendAx
+               CGvec_w0(iCell) = -sshCurArea - sshTendAx
 
                r0r0 = r0r0 + CGvec_r0(iCell) * CGvec_r0(iCell)
                w0r0 = w0r0 + CGvec_w0(iCell) * CGvec_r0(iCell)
@@ -1684,6 +1737,14 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
    
+            call mpas_timer_start("si halo r0")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo r0")
+
             ! Preconditioning ------------------------------------------------------------------------!
             block => domain % blocklist
             do while (associated(block))
@@ -1699,14 +1760,24 @@ module ocn_time_integration_si
    
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1' , CGvec_r1)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_u1' , CGvec_u1)
+               call mpas_pool_get_array(diagnosticsPool, 'CGvec_r00' , CGvec_r00)
    
                if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                   ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
-                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_u1(1:nPrecVec), 1, 0.0_RKIND, CGvec_r1(1:nPrecVec), 1)
-   
+!                 CGvec_r1(nCellsArray(2)+1:nPrecVec) = 0.0_RKIND
+                  !call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r1(1:nPrecVec), 1, 0.0_RKIND, CGvec_u1(1:nPrecVec), 1)
+                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat(1:nPrecVec,1:nPrecVec), nPrecVec, CGvec_r1(1:nPrecVec), 1, 0.0_RKIND, CGvec_u1(1:nPrecVec), 1)
+!                 CGvec_u1(nCellsArray(1)+1:nPrecVec) = 0.0_RKIND
+!                 CGvec_r00(:) = CGvec_u1(:)
+!  
+!                 if ( trim(config_btr_si_preconditioner) == 'ras' ) then
+!                    do iCell = nCellsArray(2)+1,nPrecVec 
+!                      CGvec_u1(iCell) = CGvec_u1(iCell) + CGvec_r00(iCell)
+!                    end do
+!                 end if
                elseif ( trim(config_btr_si_preconditioner) == 'block_jacobi' ) then
                   ! Block-Jacobi preconditioning: Use BLAS for symmetric matrix-vector multiplication
-                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_u1(1:nPrecVec), 1, 0.0_RKIND, CGvec_r1(1:nPrecVec), 1)
+                  call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r1(1:nPrecVec), 1, 0.0_RKIND, CGvec_u1(1:nPrecVec), 1)
    
                elseif ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
                   ! Jacobi preconditioning
@@ -1760,6 +1831,7 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_w1', CGvec_w1)
    
                nCells = nCellsArray(1)
+
     
                r1r1 = 0.0_RKIND
                w1r1 = 0.0_RKIND
@@ -1810,9 +1882,9 @@ module ocn_time_integration_si
             r1r1  = CGcst_allreduce_global2(1)
             w1r1  = CGcst_allreduce_global2(2)
             resid = r1r1
-    
+     
             beta1 = r1r1 / r0r0
-            alph1 = 1.0_RKIND / (w1r1 / r1r1 - beta0 / alpha0)
+            alph1 = 1.0_RKIND / (w1r1 / r1r1 - beta1 / alph0)
    
    
             block => domain % blocklist
@@ -1869,6 +1941,8 @@ module ocn_time_integration_si
    
             alph0 = alph1
             beta0 = beta1
+             r0r0 = r1r1
+             w0r0 = w1r1
 
             if ( iter > 300 ) then
                call mpas_log_write('******************************************************')
@@ -3041,11 +3115,11 @@ module ocn_time_integration_si
          ! Restricted Additive Schwarz preconditioner ---------------------------------------------!
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
  
-            if ( config_num_halos <= 3 ) then
-               nPrecVec = nCellsArray(2)
-            elseif ( config_num_halos > 3 ) then
+!           if ( config_num_halos <= 3 ) then
+!              nPrecVec = nCellsArray(2)
+!           elseif ( config_num_halos > 3 ) then
                nPrecVec = nCellsArray(3)
-            endif
+!           endif
   
             allocate(prec_ivmat(1:nPrecVec,1:nPrecVec))
                      prec_ivmat(:,:) = 0.0_RKIND
@@ -3083,6 +3157,8 @@ module ocn_time_integration_si
   
            ! Preconditioning matrix inversion
             call inverse(nPrecVec,prec_ivmat)
+
+!           nPrecVec = nCellsArray(2)
   
 
          ! Block-Jacobi preconditioner ------------------------------------------------------------!
