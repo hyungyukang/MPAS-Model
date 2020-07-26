@@ -1088,7 +1088,8 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh1', CGvec_qh1)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_fh1', CGvec_fh1)
 
-            nCells = nCellsArray( cellHaloComputeCounter )
+            !nCells = nCellsArray( cellHaloComputeCounter )
+            nCells = nCellsArray(1)
 
             do iCell = 1, nCells
 
@@ -1130,6 +1131,14 @@ module ocn_time_integration_si
 
             block => block % next
          end do  ! block
+
+               call mpas_timer_start("si halo iter")
+               call mpas_dmpar_exch_group_create(domain, iterGroupName)
+               call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q0', 1)
+               call mpas_threading_barrier()
+               call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+               call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+               call mpas_timer_stop("si halo iter")
 
          ! Preconditioning ------------------------------------------------------------------------!
          block => domain % blocklist
@@ -1301,7 +1310,8 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_th0', CGvec_th0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0', CGvec_s0)
    
-               nCells = nCellsArray( cellHaloComputeCounter )
+               !nCells = nCellsArray( cellHaloComputeCounter )
+               nCells = nCellsArray( 1 )
    
                do iCell = 1, nCells
    
@@ -1334,6 +1344,14 @@ module ocn_time_integration_si
    
                block => block % next
             end do  ! block
+
+            call mpas_timer_start("si halo iter")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_s0', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo iter")
    
    
             ! Preconditioning ------------------------------------------------------------------------!
@@ -1752,7 +1770,8 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_q1', CGvec_q1)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_p1', CGvec_p1)
    
-               nCells = nCellsArray( cellHaloComputeCounter )
+               !nCells = nCellsArray( cellHaloComputeCounter )
+               nCells = nCellsArray(1)
    
                do iCell = 1, nCells
    
@@ -1785,6 +1804,14 @@ module ocn_time_integration_si
    
                block => block % next
             end do  ! block
+
+            call mpas_timer_start("si halo iter")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q1', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo iter")
    
 
             ! Preconditioning ------------------------------------------------------------------------!
@@ -2280,7 +2307,8 @@ module ocn_time_integration_si
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_qh1', CGvec_qh1)
             call mpas_pool_get_array(diagnosticsPool, 'CGvec_fh1', CGvec_fh1)
 
-            nCells = nCellsArray( cellHaloComputeCounter )
+            !nCells = nCellsArray( cellHaloComputeCounter )
+            nCells = nCellsArray(1)
 
             do iCell = 1, nCells
 
@@ -2322,6 +2350,13 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
+            call mpas_timer_start("si halo iter")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q0', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo iter")
 
          ! Preconditioning ------------------------------------------------------------------------!
          block => domain % blocklist
@@ -2498,7 +2533,8 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_th0', CGvec_th0)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_s0', CGvec_s0)
    
-               nCells = nCellsArray( cellHaloComputeCounter )
+               !nCells = nCellsArray( cellHaloComputeCounter )
+               nCells = nCellsArray(1)
    
                do iCell = 1, nCells
    
@@ -2532,6 +2568,13 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
    
+            call mpas_timer_start("si halo iter")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_s0', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo iter")
    
             ! Preconditioning ------------------------------------------------------------------------!
             block => domain % blocklist
@@ -2959,7 +3002,8 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_q1', CGvec_q1)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_p1', CGvec_p1)
    
-               nCells = nCellsArray( cellHaloComputeCounter )
+               !nCells = nCellsArray( cellHaloComputeCounter )
+               nCells = nCellsArray(1)
    
                do iCell = 1, nCells
    
@@ -2990,6 +3034,13 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
    
+            call mpas_timer_start("si halo iter")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q1', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo iter")
 
             ! Preconditioning ------------------------------------------------------------------------!
             block => domain % blocklist
