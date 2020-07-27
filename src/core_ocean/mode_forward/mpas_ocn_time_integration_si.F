@@ -1040,14 +1040,6 @@ module ocn_time_integration_si
          end do  ! block
 
 
-         call mpas_timer_start("si halo r0")
-         call mpas_dmpar_exch_group_create(domain, iterGroupName)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_rh0', 1)
-         call mpas_threading_barrier()
-         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-         call mpas_timer_stop("si halo r0")
-
          CGcst_allreduce2(:) = 0.d0
          CGcst_allreduce2(1) = r0r0
          CGcst_allreduce2(2) = f0p0
@@ -1058,15 +1050,29 @@ module ocn_time_integration_si
          call mpas_timer_start("si reduction r0")
 !        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
 
+         call mpas_timer_start("si reduction local reduce")
          call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,0,mpi_local_comm,mpi_ierr)
+         call mpas_timer_stop("si reduction local reduce")
+
+         call mpas_timer_start("si reduction cross reduce")
          call mpi_allreduce(CGcst_allreduce_work2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-         call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,0,mpi_local_comm,mpi_ierr)
+         call mpas_timer_stop("si reduction cross reduce")
+
+         call mpas_timer_start("si reduction local bcast")
+         call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,0,mpi_local_comm,mpi_ireq,mpi_ierr)
+         call mpas_timer_stop("si reduction local bcast")
 
          call mpas_timer_stop("si reduction r0")
 
-         r0r0 = CGcst_allreduce_global2(1)
-         f0p0 = CGcst_allreduce_global2(2)
-         alph0 = r0r0 / f0p0
+
+         call mpas_timer_start("si halo r0")
+         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_rh0', 1)
+         call mpas_threading_barrier()
+         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+         call mpas_timer_stop("si halo r0")
+
 
          block => domain % blocklist
          do while (associated(block))
@@ -1197,6 +1203,14 @@ module ocn_time_integration_si
          f0sh1 = 0.d0
          f0th1 = 0.d0
          f0qh1 = 0.d0
+
+         call mpas_timer_start("si wait local")
+         call mpi_wait(mpi_ireq,mpi_local_comm)
+         call mpas_timer_stop("si wait local")
+
+         r0r0 = CGcst_allreduce_global2(1)
+         f0p0 = CGcst_allreduce_global2(2)
+         alph0 = r0r0 / f0p0
 
          call mpas_timer_stop("si btr residual")
 
@@ -3312,9 +3326,9 @@ module ocn_time_integration_si
             end do ! iEdge
 
             ! #Iteration  check
-            if ( split_implicit_step == 2 ) then
-               call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
-            endif
+!           if ( split_implicit_step == 2 ) then
+!              call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
+!           endif
 
             block => block % next
          end do  ! block
@@ -4577,7 +4591,6 @@ module ocn_time_integration_si
 !            print*,i,trim(globalMpiNodeName(i)),globalMpiNodeId(i)
 !          end do
 
-
            !--- Send node id
            do i = 1,ncpus-1
              call MPI_SEND(globalMpiNodeId(i),1,MPI_INTEGER,i,ncpus,dminfo % comm,mpi_ierr)
@@ -4600,6 +4613,7 @@ module ocn_time_integration_si
          call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
          call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
 
+
          !--- Define cross communicator
          if ( rank == 0 ) then
 
@@ -4616,11 +4630,6 @@ module ocn_time_integration_si
            endif
          end do
              globalNodeRepRank(0) = ncpus
-
-!        isum1 = 0
-!        do i = 0,ncpus-1,16
-!            globalNodeRepRank(i) = ncpus
-!        end do
 
 !        do i = 0,ncpus-1
 !          print*,i,globalNodeRepRank(i),globalMpiNodeId(i)
