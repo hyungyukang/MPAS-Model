@@ -4554,103 +4554,20 @@ module ocn_time_integration_si
 !
 !-------------------------------------------!
 
-         !--- Rank coloring
-
-         allocate(globalMpiNodeName(0:ncpus-1))
-         allocate(globalMpiNodeId(0:ncpus-1))
-
-         call mpi_get_processor_name(mpiNodeName,itmp1,mpi_ierr)
-
-!        print*, rank,trim(mpiNodeName)
-!        call mpi_barrier(dminfo % comm, mpi_ierr)
-!        stop
-
-
-         if ( rank > 0 ) then
-             call MPI_SEND(mpiNodeName,MPI_MAX_PROCESSOR_NAME,MPI_CHARACTER,0,rank,dminfo % comm,mpi_ierr)
-         else
-           do i = 1,ncpus-1
-             call MPI_RECV(globalMpiNodeName(i),MPI_MAX_PROCESSOR_NAME,MPI_CHARACTER,i,i,dminfo % comm,MPI_STATUS_IGNORE,mpi_ierr)
-           end do
-             globalMpiNodeName(0) = mpiNodeName
-
-           !--- Character sorting
-           call sort_char(ncpus,MPI_MAX_PROCESSOR_NAME,globalMpiNodeName)
-
-           !--- Node name to Node Id
-           isum1 = 0
-           do i = 1,ncpus-1
-             globalMpiNodeId(i-1) = isum1
-             if ( globalMpiNodeName(i) .ne. globalMpiNodeName(i-1)) then
-                isum1 = isum1 + 1
-             endif
-           end do
-             globalMpiNodeId(ncpus-1) = isum1
-
-!          do i = 0,ncpus-1
-!            print*,i,trim(globalMpiNodeName(i)),globalMpiNodeId(i)
-!          end do
-
-           !--- Send node id
-           do i = 1,ncpus-1
-             call MPI_SEND(globalMpiNodeId(i),1,MPI_INTEGER,i,ncpus,dminfo % comm,mpi_ierr)
-           end do
-                           rankMpiNodeId = globalMpiNodeId(0)
-
-!          deallocate(globalMpiNodeId  )
-
-         endif ! rank
-
-         !--- Recv node id
-         if ( rank > 0 ) then
-             call MPI_RECV(rankMpiNodeId,1,MPI_INTEGER,0,ncpus,dminfo % comm,MPI_STATUS_IGNORE,mpi_ierr)
-         end if ! rank
-
-
          !--- Define local communicator
-!        call MPI_COMM_SPLIT(dminfo % comm, rankMpiNodeId, rank, mpi_local_comm, mpi_ierr)
          call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
          call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
          call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
 
 
          !--- Define cross communicator
-         if ( rank == 0 ) then
+         if ( local_rank == 0 ) then
+            rankRepId = 0
+         else
+            rankRepId = rank
+         endif
 
-         allocate(globalNodeRepRank(0:(ncpus-1)))
-         do i = 0,ncpus-1
-           globalNodeRepRank(i) = ncpus+i+2
-         end do
-
-         isum1 = 0
-         do i = 1,ncpus-1
-           if ( globalMpiNodeName(i) .ne. globalMpiNodeName(i-1)) then
-             globalNodeRepRank(i) = ncpus
-             isum1 = isum1 + 1
-           endif
-         end do
-             globalNodeRepRank(0) = ncpus
-
-!        do i = 0,ncpus-1
-!          print*,i,globalNodeRepRank(i),globalMpiNodeId(i)
-!        end do
-
-         deallocate(globalMpiNodeName)
-
-         !--- Send cross id
-         do i = 1,ncpus-1
-           call MPI_SEND(globalNodeRepRank(i),1,MPI_INTEGER,i,ncpus+1,dminfo % comm,mpi_ierr)
-         end do
-           rankRepId = globalNodeRepRank(0)
-           deallocate(globalNodeRepRank)
-         endif ! rank
-
-         !--- Recv node id
-         if ( rank > 0 ) then
-             call MPI_RECV(rankRepId,1,MPI_INTEGER,0,ncpus+1,dminfo % comm,MPI_STATUS_IGNORE,mpi_ierr)
-         end if ! rank
-
-!        print*, rank,rankRepId
+!        print*, local_rank,rank,rankRepId
 
          !--- Representative rank coloring and  communicator localizing
          call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_cross_comm, mpi_ierr)
@@ -4658,18 +4575,6 @@ module ocn_time_integration_si
          call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
 
 !        print*,rank,cross_size,cross_rank 
-
-         deallocate(globalMpiNodeId)
-
-
-!        allocate(globalNodeRepRank(2))
-!        allocate(globalMpiNodeId(2))
-!        globalNodeRepRank(:) = 1
-!        globalMpiNodeId(:) = 0
-!        call mpi_allreduce(globalNodeRepRank,globalMpiNodeId,2,MPI_DOUBLE,MPI_SUM,mpi_local_comm,mpi_ierr)
-!        print*, rank,globalMpiNodeId(:)
-!        call mpi_barrier(dminfo % comm, mpi_ierr)
-!        stop
 
    end subroutine ocn_time_integrator_si_preconditioner !}}}
 
