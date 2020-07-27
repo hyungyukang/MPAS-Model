@@ -1052,11 +1052,16 @@ module ocn_time_integration_si
          CGcst_allreduce2(1) = r0r0
          CGcst_allreduce2(2) = f0p0
 
+         CGcst_allreduce_work2(:) = 0.d0
+         CGcst_allreduce_global2(:) = 0.d0
+
          call mpas_timer_start("si reduction r0")
 !        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
-         call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,0,mpi_local_comm,mpi_ierr) 
+
+         call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,0,mpi_local_comm,mpi_ierr)
          call mpi_allreduce(CGcst_allreduce_work2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM,dminfo % comm,mpi_ierr)
          call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,0,mpi_local_comm,mpi_ierr)
+
          call mpas_timer_stop("si reduction r0")
 
          r0r0 = CGcst_allreduce_global2(1)
@@ -1472,9 +1477,15 @@ module ocn_time_integration_si
                CGcst_allreduce12(10) = f0sh0
                CGcst_allreduce12(11) = f0th0
                CGcst_allreduce12(12) = resid
+
+               CGcst_allreduce_work12(:) = 0.0_RKIND
+               CGcst_allreduce_global12(:) = 0.0_RKIND
    
                call mpas_timer_start("si reduction iter")
-               call mpas_dmpar_sum_real_array(dminfo, 12, CGcst_allreduce12, CGcst_allreduce_global12)
+!              call mpas_dmpar_sum_real_array(dminfo, 12, CGcst_allreduce12, CGcst_allreduce_global12)
+         call mpi_reduce(CGcst_allreduce12,CGcst_allreduce_work12,12,mpi_double,mpi_sum,0,mpi_local_comm,mpi_ierr)
+         call mpi_allreduce(CGcst_allreduce_work12,CGcst_allreduce_global12,12,MPI_DOUBLE,MPI_SUM,dminfo % comm,mpi_ierr)
+         call mpi_bcast(CGcst_allreduce_global12,12,mpi_double,0,mpi_local_comm,mpi_ierr)
                call mpas_timer_stop("si reduction iter")
    
                s0t0  = CGcst_allreduce_global12(1)
@@ -1626,8 +1637,14 @@ module ocn_time_integration_si
                CGcst_allreduce18(17) = f0th0
                CGcst_allreduce18(18) = resid
    
+               CGcst_allreduce_work18(:) = 0.0_RKIND
+               CGcst_allreduce_global18(:) = 0.0_RKIND
+   
                call mpas_timer_start("si reduction iter")
-               call mpas_dmpar_sum_real_array(dminfo, 18, CGcst_allreduce18, CGcst_allreduce_global18)
+!              call mpas_dmpar_sum_real_array(dminfo, 18, CGcst_allreduce18, CGcst_allreduce_global18)
+         call mpi_reduce(CGcst_allreduce18,CGcst_allreduce_work18,18,mpi_double,mpi_sum,0,mpi_local_comm,mpi_ierr)
+         call mpi_allreduce(CGcst_allreduce_work18,CGcst_allreduce_global18,18,MPI_DOUBLE,MPI_SUM,dminfo % comm,mpi_ierr)
+         call mpi_bcast(CGcst_allreduce_global18,18,mpi_double,0,mpi_local_comm,mpi_ierr)
                call mpas_timer_stop("si reduction iter")
    
                s0s0  = CGcst_allreduce_global18(1)
@@ -2703,8 +2720,14 @@ module ocn_time_integration_si
                CGcst_allreduce12(11) = f0th0
                CGcst_allreduce12(12) = resid
    
+               CGcst_allreduce_work12(:) = 0.0_RKIND
+               CGcst_allreduce_global12(:) = 0.0_RKIND
+   
                call mpas_timer_start("si reduction iter")
-               call mpas_dmpar_sum_real_array(dminfo, 12, CGcst_allreduce12, CGcst_allreduce_global12)
+!              call mpas_dmpar_sum_real_array(dminfo, 12, CGcst_allreduce12, CGcst_allreduce_global12)
+         call mpi_reduce(CGcst_allreduce12,CGcst_allreduce_work12,12,mpi_double,mpi_sum,0,mpi_local_comm,mpi_ierr)
+         call mpi_allreduce(CGcst_allreduce_work12,CGcst_allreduce_global12,12,MPI_DOUBLE,MPI_SUM,dminfo % comm,mpi_ierr)
+         call mpi_bcast(CGcst_allreduce_global12,12,mpi_double,0,mpi_local_comm,mpi_ierr)
                call mpas_timer_stop("si reduction iter")
    
                s0t0  = CGcst_allreduce_global12(1)
@@ -2860,8 +2883,14 @@ module ocn_time_integration_si
                CGcst_allreduce18(17) = f0th0
                CGcst_allreduce18(18) = resid
    
+               CGcst_allreduce_work18(:) = 0.0_RKIND
+               CGcst_allreduce_global18(:) = 0.0_RKIND
+   
                call mpas_timer_start("si reduction iter")
-               call mpas_dmpar_sum_real_array(dminfo, 18, CGcst_allreduce18, CGcst_allreduce_global18)
+!              call mpas_dmpar_sum_real_array(dminfo, 18, CGcst_allreduce18, CGcst_allreduce_global18)
+         call mpi_reduce(CGcst_allreduce18,CGcst_allreduce_work18,18,mpi_double,mpi_sum,0,mpi_local_comm,mpi_ierr)
+         call mpi_allreduce(CGcst_allreduce_work18,CGcst_allreduce_global18,18,MPI_DOUBLE,MPI_SUM,dminfo % comm,mpi_ierr)
+         call mpi_bcast(CGcst_allreduce_global18,18,mpi_double,0,mpi_local_comm,mpi_ierr)
                call mpas_timer_stop("si reduction iter")
    
                s0s0  = CGcst_allreduce_global18(1)
@@ -4367,11 +4396,11 @@ module ocn_time_integration_si
          ! Restricted Additive Schwarz preconditioner ---------------------------------------------!
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
  
-            if ( config_num_halos <= 3 ) then
-               nPrecVec = nCellsArray(2)
-            elseif ( config_num_halos > 3 ) then
+!           if ( config_num_halos <= 3 ) then
+!              nPrecVec = nCellsArray(2)
+!           elseif ( config_num_halos > 3 ) then
                nPrecVec = nCellsArray(3)
-            endif
+!           endif
   
             allocate(prec_ivmat(1:nPrecVec,1:nPrecVec))
                      prec_ivmat(:,:) = 0.0_RKIND
@@ -4529,7 +4558,7 @@ module ocn_time_integration_si
            do i = 1,ncpus-1
              call MPI_RECV(globalMpiNodeName(i),MPI_MAX_PROCESSOR_NAME,MPI_CHARACTER,i,i,dminfo % comm,MPI_STATUS_IGNORE,mpi_ierr)
            end do
-                           globalMpiNodeName(0) = mpiNodeName
+             globalMpiNodeName(0) = mpiNodeName
 
            !--- Character sorting
            call sort_char(ncpus,MPI_MAX_PROCESSOR_NAME,globalMpiNodeName)
@@ -4547,6 +4576,7 @@ module ocn_time_integration_si
 !          do i = 0,ncpus-1
 !            print*,i,trim(globalMpiNodeName(i)),globalMpiNodeId(i)
 !          end do
+
 
            !--- Send node id
            do i = 1,ncpus-1
@@ -4618,13 +4648,19 @@ module ocn_time_integration_si
          call MPI_COMM_SIZE( mpi_cross_comm, cross_size, mpi_ierr)
          call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
 
-!        print*,cross_size,cross_rank 
-
-         call mpi_barrier(dminfo % comm, mpi_ierr)
+!        print*,rank,cross_size,cross_rank 
 
          deallocate(globalMpiNodeId)
 
 
+!        allocate(globalNodeRepRank(2))
+!        allocate(globalMpiNodeId(2))
+!        globalNodeRepRank(:) = 1
+!        globalMpiNodeId(:) = 0
+!        call mpi_allreduce(globalNodeRepRank,globalMpiNodeId,2,MPI_DOUBLE,MPI_SUM,mpi_local_comm,mpi_ierr)
+!        print*, rank,globalMpiNodeId(:)
+!        call mpi_barrier(dminfo % comm, mpi_ierr)
+!        stop
 
    end subroutine ocn_time_integrator_si_preconditioner !}}}
 
