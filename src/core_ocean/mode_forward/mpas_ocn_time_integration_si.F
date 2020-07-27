@@ -77,6 +77,11 @@ module ocn_time_integration_si
    real (kind=RKIND) :: total_num_cells,mean_num_cells,area_mean
    real (kind=RKIND) :: R1_alpha1_g,alpha1,alpha2,crit_main
    integer :: nPrecVec
+   !-------------------
+   integer :: rank,ncpus
+   integer :: mpi_local_comm,local_size,local_rank
+   integer :: mpi_cross_comm,cross_size,cross_rank
+   !-------------------
 
    contains
 
@@ -238,9 +243,10 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:), pointer :: CGvec_p0,CGvec_p1
       real (kind=RKIND), dimension(:), pointer :: barotropicCoriolisTerm
       ! Semi-implicit variables
-      real (kind=RKIND), dimension(2)  :: CGcst_allreduce2,CGcst_allreduce_global2
-      real (kind=RKIND), dimension(12) :: CGcst_allreduce12,CGcst_allreduce_global12
-      real (kind=RKIND), dimension(18) :: CGcst_allreduce18,CGcst_allreduce_global18
+      real (kind=RKIND), dimension(2)  :: CGcst_allreduce2,CGcst_allreduce_global2,CGcst_allreduce_work2
+      real (kind=RKIND), dimension(12) :: CGcst_allreduce12,CGcst_allreduce_global12,CGcst_allreduce_work12
+      real (kind=RKIND), dimension(18) :: CGcst_allreduce18,CGcst_allreduce_global18,CGcst_allreduce_work18
+
       real (kind=RKIND) :: CGcst_r00r0,CGcst_r00w0,CGcst_r00r1,CGcst_r00w1
       real (kind=RKIND) :: CGcst_r00r0_global,CGcst_r00w0_global,CGcst_r00r1_global,CGcst_r00w1_global
 
@@ -286,6 +292,10 @@ module ocn_time_integration_si
 
       integer :: temp_mask
       real (kind=RKIND) :: tracer2_value, lat
+!---------------------------------------------------!
+      integer :: mpi_ierr,mpi_ireq,mpi_jreq
+      include 'mpif.h'
+!---------------------------------------------------!
 
       dminfo = domain % dminfo
 
@@ -1043,7 +1053,10 @@ module ocn_time_integration_si
          CGcst_allreduce2(2) = f0p0
 
          call mpas_timer_start("si reduction r0")
-         call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+         call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,0,mpi_local_comm,mpi_ierr) 
+         call mpi_allreduce(CGcst_allreduce_work2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM,dminfo % comm,mpi_ierr)
+         call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,0,mpi_local_comm,mpi_ierr)
          call mpas_timer_stop("si reduction r0")
 
          r0r0 = CGcst_allreduce_global2(1)
@@ -2253,7 +2266,10 @@ module ocn_time_integration_si
          CGcst_allreduce2(2) = f0p0
 
          call mpas_timer_start("si reduction r0")
-         call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+         call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,0,mpi_local_comm,mpi_ierr) 
+         call mpi_allreduce(CGcst_allreduce_work2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM,dminfo % comm,mpi_ierr)
+         call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,0,mpi_local_comm,mpi_ierr)
          call mpas_timer_stop("si reduction r0")
 
          r0r0 = CGcst_allreduce_global2(1)
@@ -4291,8 +4307,25 @@ module ocn_time_integration_si
 
       real (kind=RKIND) :: temp1,temp2
       integer :: local_num_cells,total_num_cells
+!--------------------------------------------------------------------------------------------------!
+      include 'mpif.h'
+      character*(MPI_MAX_PROCESSOR_NAME) :: mpiNodeName
+      character*(MPI_MAX_PROCESSOR_NAME),dimension(:),allocatable :: globalMpiNodeName
+      integer,dimension(:),allocatable :: globalMpiNodeId,globalNodeRepRank
+      integer :: rankMPiNodeId,mpiNodeNum,rankRepId
+      real(kind=RKIND) :: tmp1,tmp2
+      real(kind=RKIND),dimension(1) :: local_data,global_data
+!     type(c_ptr) :: baseptr,baseptr1,baseptr2,baseptr3
+      integer,allocatable :: arrayshape(:),arrayshape1(:),arrayshape2(:),arrayshape3(:)
+!     real(kind=RKIND),pointer :: CGcst_shared_rank_reduce(:)
+      integer(KIND=MPI_ADDRESS_KIND) :: windowsize,windowsize1,windowsize2,windowsize3
+!     integer :: win,win2,disp_unit,ierr,total
+      integer :: disp_unit,ierr,total,isum1,itmp1,mpi_ierr
+!--------------------------------------------------------------------------------------------------!
 
       dminfo = domain % dminfo
+       rank = dminfo % my_proc_id
+      ncpus = dminfo % nprocs
 
       call mpas_pool_get_config(domain % configs, 'config_btr_si_preconditioner', config_btr_si_preconditioner)
       call mpas_pool_get_config(domain % configs, 'config_num_halos', config_num_halos)
@@ -4471,6 +4504,128 @@ module ocn_time_integration_si
          block => block % next
       end do  ! block
 
+
+!************************************************************************
+!
+!        MPI communicator for local and cross allreduce
+!
+!-------------------------------------------!
+
+         !--- Rank coloring
+
+         allocate(globalMpiNodeName(0:ncpus-1))
+         allocate(globalMpiNodeId(0:ncpus-1))
+
+         call mpi_get_processor_name(mpiNodeName,itmp1,mpi_ierr)
+
+!        print*, rank,trim(mpiNodeName)
+!        call mpi_barrier(dminfo % comm, mpi_ierr)
+!        stop
+
+
+         if ( rank > 0 ) then
+             call MPI_SEND(mpiNodeName,MPI_MAX_PROCESSOR_NAME,MPI_CHARACTER,0,rank,dminfo % comm,mpi_ierr)
+         else
+           do i = 1,ncpus-1
+             call MPI_RECV(globalMpiNodeName(i),MPI_MAX_PROCESSOR_NAME,MPI_CHARACTER,i,i,dminfo % comm,MPI_STATUS_IGNORE,mpi_ierr)
+           end do
+                           globalMpiNodeName(0) = mpiNodeName
+
+           !--- Character sorting
+           call sort_char(ncpus,MPI_MAX_PROCESSOR_NAME,globalMpiNodeName)
+
+           !--- Node name to Node Id
+           isum1 = 0
+           do i = 1,ncpus-1
+             globalMpiNodeId(i-1) = isum1
+             if ( globalMpiNodeName(i) .ne. globalMpiNodeName(i-1)) then
+                isum1 = isum1 + 1
+             endif
+           end do
+             globalMpiNodeId(ncpus-1) = isum1
+
+!          do i = 0,ncpus-1
+!            print*,i,trim(globalMpiNodeName(i)),globalMpiNodeId(i)
+!          end do
+
+           !--- Send node id
+           do i = 1,ncpus-1
+             call MPI_SEND(globalMpiNodeId(i),1,MPI_INTEGER,i,ncpus,dminfo % comm,mpi_ierr)
+           end do
+                           rankMpiNodeId = globalMpiNodeId(0)
+
+!          deallocate(globalMpiNodeId  )
+
+         endif ! rank
+
+         !--- Recv node id
+         if ( rank > 0 ) then
+             call MPI_RECV(rankMpiNodeId,1,MPI_INTEGER,0,ncpus,dminfo % comm,MPI_STATUS_IGNORE,mpi_ierr)
+         end if ! rank
+
+
+         !--- Define local communicator
+!        call MPI_COMM_SPLIT(dminfo % comm, rankMpiNodeId, rank, mpi_local_comm, mpi_ierr)
+         call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
+         call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
+         call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
+
+         !--- Define cross communicator
+         if ( rank == 0 ) then
+
+         allocate(globalNodeRepRank(0:(ncpus-1)))
+         do i = 0,ncpus-1
+           globalNodeRepRank(i) = ncpus+i+2
+         end do
+
+         isum1 = 0
+         do i = 1,ncpus-1
+           if ( globalMpiNodeName(i) .ne. globalMpiNodeName(i-1)) then
+             globalNodeRepRank(i) = ncpus
+             isum1 = isum1 + 1
+           endif
+         end do
+             globalNodeRepRank(0) = ncpus
+
+!        isum1 = 0
+!        do i = 0,ncpus-1,16
+!            globalNodeRepRank(i) = ncpus
+!        end do
+
+!        do i = 0,ncpus-1
+!          print*,i,globalNodeRepRank(i),globalMpiNodeId(i)
+!        end do
+
+         deallocate(globalMpiNodeName)
+
+         !--- Send cross id
+         do i = 1,ncpus-1
+           call MPI_SEND(globalNodeRepRank(i),1,MPI_INTEGER,i,ncpus+1,dminfo % comm,mpi_ierr)
+         end do
+           rankRepId = globalNodeRepRank(0)
+           deallocate(globalNodeRepRank)
+         endif ! rank
+
+         !--- Recv node id
+         if ( rank > 0 ) then
+             call MPI_RECV(rankRepId,1,MPI_INTEGER,0,ncpus+1,dminfo % comm,MPI_STATUS_IGNORE,mpi_ierr)
+         end if ! rank
+
+!        print*, rank,rankRepId
+
+         !--- Representative rank coloring and  communicator localizing
+         call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_cross_comm, mpi_ierr)
+         call MPI_COMM_SIZE( mpi_cross_comm, cross_size, mpi_ierr)
+         call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
+
+!        print*,cross_size,cross_rank 
+
+         call mpi_barrier(dminfo % comm, mpi_ierr)
+
+         deallocate(globalMpiNodeId)
+
+
+
    end subroutine ocn_time_integrator_si_preconditioner !}}}
 
 end module ocn_time_integration_si
@@ -4513,5 +4668,39 @@ subroutine inverse (n,Ainv) !{{{
     Ainv = -Ainv ! (-) sign to restore a matrix sign
     if (info.ne.0) stop 'ERROR in inverse routine: Matrix inversion failed!'
 end subroutine inverse !}}}
+
+!--------------------------------------------------------
+! Character array sorting
+!--------------------------------------------------------
+   subroutine sort_char (n,MPI_MAX_PROCESSOR_NAME,carray) !{{{
+    implicit none
+
+    INTEGER, INTENT(IN) :: n,MPI_MAX_PROCESSOR_NAME
+    CHARACTER(len=MPI_MAX_PROCESSOR_NAME), DIMENSION(N), INTENT(INOUT) :: carray
+
+    INTEGER :: i
+    INTEGER :: iptr
+    INTEGER :: j
+    CHARACTER(len=MPI_MAX_PROCESSOR_NAME) :: temp
+
+    ! Sort the array
+    DO i = 1, n-1
+
+        iptr = i
+        DO j = i+1, n
+           IF ( carray(j) < carray(iptr) ) THEN
+                iptr = j
+           END IF
+        END DO
+
+        IF ( i /= iptr ) THEN
+            temp        = carray(i)
+            carray(i)    = carray(iptr)
+            carray(iptr) = temp
+        END IF
+
+    END DO
+   end subroutine sort_char !}}}
+
 
 ! vim: foldmethod=marker
