@@ -1205,7 +1205,7 @@ module ocn_time_integration_si
          f0qh1 = 0.d0
 
          call mpas_timer_start("si wait local")
-         call mpi_wait(mpi_ireq,mpi_local_comm)
+         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
          call mpas_timer_stop("si wait local")
 
          r0r0 = CGcst_allreduce_global2(1)
