@@ -294,12 +294,13 @@ module ocn_time_integration_si
       integer :: temp_mask
       real (kind=RKIND) :: tracer2_value, lat
 !---------------------------------------------------!
-      integer :: mpi_ierr,mpi_ireq,mpi_jreq
+      integer :: mpi_ierr,mpi_ireq,mpi_jreq,rank
       integer,dimension(2) :: ireq
       include 'mpif.h'
 !---------------------------------------------------!
 
       dminfo = domain % dminfo
+        rank = dminfo % my_proc_id
 
       call mpas_timer_start("si timestep")
 
@@ -1047,12 +1048,16 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si reduction r0")
 !        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+!        print*, 'all',rank,CGcst_allreduce_global2(:)
 
+!        CGcst_allreduce_global2(:) = 0.0_RKIND
 !        call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,mpi_ierr)
 !        call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ierr)
 
-         call mpi_ireduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,ireq(1),mpi_ierr)
-         call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,ireq(2),mpi_ierr)
+!        call mpi_ireduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,ireq(1),mpi_ierr)
+!        call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,ireq(2),mpi_ierr)
+
+         call mpi_ireduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,mpi_ireq,mpi_ierr)
 
 !        CGcst_allreduce_work2(:) = 0.0_RKIND
 !        CGcst_allreduce_global2(:) = 0.0_RKIND
@@ -1162,6 +1167,13 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
+         call mpas_timer_start("si wait")
+         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+         call mpas_timer_stop("si wait")
+
+         call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_jreq,mpi_ierr)
+
+
                call mpas_timer_start("si halo iter")
                call mpas_dmpar_exch_group_create(domain, iterGroupName)
                call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q0', 1)
@@ -1211,8 +1223,8 @@ module ocn_time_integration_si
          f0qh1 = 0.d0
 
          call mpas_timer_start("si wait")
-         call mpi_waitall(2,ireq,MPI_STATUS_IGNORE,mpi_ierr)
-         !call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+         !call mpi_waitall(2,ireq,MPI_STATUS_IGNORE,mpi_ierr)
+         call mpi_wait(mpi_jreq,MPI_STATUS_IGNORE,mpi_ierr)
          call mpas_timer_stop("si wait")
 
          r0r0 = CGcst_allreduce_global2(1)
@@ -1221,6 +1233,8 @@ module ocn_time_integration_si
 
          call mpas_timer_stop("si btr residual")
 
+
+!        print*,'imy', rank,CGcst_allreduce_global2(:)
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
@@ -2311,8 +2325,11 @@ module ocn_time_integration_si
          call mpas_timer_start("si reduction r0")
 !        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
 
-         call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,mpi_ierr)
-         call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ierr)
+         call mpi_ireduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,ireq(1),mpi_ierr)
+!        call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,ireq(2),mpi_ierr)
+
+!        call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,mpi_ierr)
+!        call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ierr)
 !        call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ireq,mpi_ierr)
 
 !        call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,mrank,mpi_local_comm,mpi_ierr)
@@ -2322,10 +2339,6 @@ module ocn_time_integration_si
 !        call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,0,mpi_local_comm,mpi_ireq,mpi_ierr)
 
          call mpas_timer_stop("si reduction r0")
-
-         r0r0 = CGcst_allreduce_global2(1)
-         f0p0 = CGcst_allreduce_global2(2)
-         alph0 = r0r0 / f0p0
 
          call mpas_timer_start("si halo iter")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
@@ -2417,6 +2430,12 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
+         call mpas_timer_start("si wait")
+         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+         call mpas_timer_stop("si wait")
+
+         call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_jreq,mpi_ierr)
+
             call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q0', 1)
@@ -2465,9 +2484,10 @@ module ocn_time_integration_si
          f0th1 = 0.d0
          f0qh1 = 0.d0
 
-!        call mpas_timer_start("si wait")
-!        call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
-!        call mpas_timer_stop("si wait")
+         call mpas_timer_start("si wait")
+!        call mpi_waitall(2,ireq,MPI_STATUS_IGNORE,mpi_ierr)
+         call mpi_wait(mpi_jreq,MPI_STATUS_IGNORE,mpi_ierr)
+         call mpas_timer_stop("si wait")
 
          r0r0 = CGcst_allreduce_global2(1)
          f0p0 = CGcst_allreduce_global2(2)
