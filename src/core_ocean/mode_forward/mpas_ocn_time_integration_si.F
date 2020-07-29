@@ -295,6 +295,7 @@ module ocn_time_integration_si
       real (kind=RKIND) :: tracer2_value, lat
 !---------------------------------------------------!
       integer :: mpi_ierr,mpi_ireq,mpi_jreq
+      integer,dimension(2) :: ireq
       include 'mpif.h'
 !---------------------------------------------------!
 
@@ -1047,9 +1048,11 @@ module ocn_time_integration_si
          call mpas_timer_start("si reduction r0")
 !        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
 
-         call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,mpi_ierr)
+!        call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,mpi_ierr)
 !        call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ierr)
-         call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ireq,mpi_ierr)
+
+         call mpi_ireduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,ireq(1),mpi_ierr)
+         call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,ireq(2),mpi_ierr)
 
 !        CGcst_allreduce_work2(:) = 0.0_RKIND
 !        CGcst_allreduce_global2(:) = 0.0_RKIND
@@ -1208,7 +1211,8 @@ module ocn_time_integration_si
          f0qh1 = 0.d0
 
          call mpas_timer_start("si wait")
-         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+         call mpi_waitall(2,ireq,MPI_STATUS_IGNORE,mpi_ierr)
+         !call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
          call mpas_timer_stop("si wait")
 
          r0r0 = CGcst_allreduce_global2(1)
