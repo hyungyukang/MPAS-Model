@@ -4132,7 +4132,7 @@ module ocn_time_integration_si
       integer, dimension(:), pointer :: nCellsArray, nEdgesArray
       real (kind=RKIND) :: local_num_cells,sum1,total_area_sum,local_area_sum,tmp1
       real (kind=RKIND), dimension(:), pointer :: areaCell
-      integer :: ncpus,ihh,imm,iss,isum1,isum2,rank,mpi_ierr
+      integer :: ncpus,ihh,imm,iss,isum1,isum2,rank,mpi_ierr,rankRepId
       include 'mpif.h'
 
       dminfo = domain % dminfo
@@ -4320,6 +4320,76 @@ module ocn_time_integration_si
             tavg(2,2)=0.50_RKIND
 
             R1_alpha1_g = 1.0_RKIND/(gravity*alpha1)
+
+
+!************************************************************************
+!
+!        MPI communicator for local and cross allreduce
+!
+!-------------------------------------------!
+
+         !--- Define local communicator
+         call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
+         call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
+         call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
+
+!        print*, rank,local_rank
+
+         !--- Define peer communicator
+!        if ( local_rank == 0 ) then
+!           rankRepId = 0
+!        else
+!           rankRepId = 1
+!        endif
+!        !--- Representative rank coloring and  communicator localizing
+!        call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_peer_comm, mpi_ierr)
+!        call MPI_COMM_SIZE( mpi_peer_comm, peer_size, mpi_ierr)
+!        call MPI_COMM_RANK( mpi_peer_comm, peer_rank, mpi_ierr)
+
+!        print*, peer_size,peer_rank
+!      
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+!        stop
+
+         !--- Define cross communicator
+!        call MPI_INTERCOMM_CREATE(mpi_local_comm,0,
+
+         !--- Define cross communicator
+!        if ( local_rank == 1 ) then
+         if ( local_rank == mrank ) then
+            rankRepId = 0
+         else
+            rankRepId = ncpus + rank + 1
+         endif
+
+!        print*,'aaa', local_rank,rank,rankRepId
+
+         !--- Representative rank coloring and  communicator localizing
+         call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_cross_comm, mpi_ierr)
+         call MPI_COMM_SIZE( mpi_cross_comm, cross_size, mpi_ierr)
+         call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
+
+!        print*,'bbb',rank,cross_size,cross_rank 
+
+!-------------------
+!        adata(:) = 1.0_RKIND
+!        bdata(:) = 1.0_RKIND
+
+!        call mpi_reduce(adata,adatag,2,mpi_double,mpi_sum,0,mpi_local_comm,mpi_ierr)
+!        call mpi_reduce(adatag,bdata,2,mpi_double,mpi_sum,0,mpi_cross_comm,mpi_ierr)
+!        call mpi_bcast(bdata,2,mpi_double,0,mpi_cross_comm,mpi_ierr)
+!        call mpi_bcast(bdata,2,mpi_double,0,mpi_local_comm,mpi_ierr)
+
+!        if ( local_rank == 0 ) then
+!          print*, adatag(1)
+!          print*, bdata(1)
+!        endif
+
+!        call mpi_allreduce(bdata,bdatag,2,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+
+!        if ( local_rank == 0 ) then
+!          print*, bdatag(1)
+!        endif
 
 
 !--- Calcaulate #3D grids for each core
@@ -4597,74 +4667,6 @@ module ocn_time_integration_si
       end do  ! block
 
 
-!************************************************************************
-!
-!        MPI communicator for local and cross allreduce
-!
-!-------------------------------------------!
-
-         !--- Define local communicator
-         call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
-         call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
-         call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
-
-!        print*, rank,local_rank
-
-         !--- Define peer communicator
-!        if ( local_rank == 0 ) then
-!           rankRepId = 0
-!        else
-!           rankRepId = 1
-!        endif
-!        !--- Representative rank coloring and  communicator localizing
-!        call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_peer_comm, mpi_ierr)
-!        call MPI_COMM_SIZE( mpi_peer_comm, peer_size, mpi_ierr)
-!        call MPI_COMM_RANK( mpi_peer_comm, peer_rank, mpi_ierr)
-
-!        print*, peer_size,peer_rank
-!      
-!        call mpi_barrier(dminfo%comm,mpi_ierr)
-!        stop
-
-         !--- Define cross communicator
-!        call MPI_INTERCOMM_CREATE(mpi_local_comm,0,
-
-         !--- Define cross communicator
-!        if ( local_rank == 1 ) then
-         if ( local_rank == mrank ) then
-            rankRepId = 0
-         else
-            rankRepId = ncpus + rank + 1
-         endif
-
-!        print*,'aaa', local_rank,rank,rankRepId
-
-         !--- Representative rank coloring and  communicator localizing
-         call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_cross_comm, mpi_ierr)
-         call MPI_COMM_SIZE( mpi_cross_comm, cross_size, mpi_ierr)
-         call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
-
-!        print*,'bbb',rank,cross_size,cross_rank 
-
-!-------------------
-!        adata(:) = 1.0_RKIND
-!        bdata(:) = 1.0_RKIND
-
-!        call mpi_reduce(adata,adatag,2,mpi_double,mpi_sum,0,mpi_local_comm,mpi_ierr)
-!        call mpi_reduce(adatag,bdata,2,mpi_double,mpi_sum,0,mpi_cross_comm,mpi_ierr)
-!        call mpi_bcast(bdata,2,mpi_double,0,mpi_cross_comm,mpi_ierr)
-!        call mpi_bcast(bdata,2,mpi_double,0,mpi_local_comm,mpi_ierr)
-
-!        if ( local_rank == 0 ) then
-!          print*, adatag(1)
-!          print*, bdata(1)
-!        endif
-
-!        call mpi_allreduce(bdata,bdatag,2,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-
-!        if ( local_rank == 0 ) then
-!          print*, bdatag(1)
-!        endif
 
    end subroutine ocn_time_integrator_si_preconditioner !}}}
 
