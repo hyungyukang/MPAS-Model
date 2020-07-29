@@ -1048,7 +1048,8 @@ module ocn_time_integration_si
 !        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
 
          call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,mpi_ierr)
-         call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ierr)
+!        call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ierr)
+         call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ireq,mpi_ierr)
 
 !        CGcst_allreduce_work2(:) = 0.0_RKIND
 !        CGcst_allreduce_global2(:) = 0.0_RKIND
@@ -1206,14 +1207,9 @@ module ocn_time_integration_si
          f0th1 = 0.d0
          f0qh1 = 0.d0
 
-!        call mpas_timer_start("si wait local")
-!        call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
-!        call mpas_timer_stop("si wait local")
-
-!        call mpas_timer_start("si bcast")
-!        call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ierr)
-!        call mpas_timer_stop("si bcast")
-!        call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,0,mpi_local_comm,mpi_ierr)
+         call mpas_timer_start("si wait")
+         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+         call mpas_timer_stop("si wait")
 
          r0r0 = CGcst_allreduce_global2(1)
          f0p0 = CGcst_allreduce_global2(2)
@@ -2313,6 +2309,7 @@ module ocn_time_integration_si
 
          call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mrank,dminfo%comm,mpi_ierr)
          call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ierr)
+!        call mpi_ibcast(CGcst_allreduce_global2,2,mpi_double,mrank,dminfo%comm,mpi_ireq,mpi_ierr)
 
 !        call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,mrank,mpi_local_comm,mpi_ierr)
 !        call mpi_reduce(CGcst_allreduce_work2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,0,mpi_cross_comm,mpi_ierr)
@@ -2464,9 +2461,9 @@ module ocn_time_integration_si
          f0th1 = 0.d0
          f0qh1 = 0.d0
 
-!        call mpas_timer_start("si wait local")
+!        call mpas_timer_start("si wait")
 !        call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
-!        call mpas_timer_stop("si wait local")
+!        call mpas_timer_stop("si wait")
 
          r0r0 = CGcst_allreduce_global2(1)
          f0p0 = CGcst_allreduce_global2(2)
@@ -3353,9 +3350,9 @@ module ocn_time_integration_si
             end do ! iEdge
 
             ! #Iteration  check
-!           if ( split_implicit_step == 2 ) then
-!              call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
-!           endif
+            if ( split_implicit_step == 2 ) then
+               call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
+            endif
 
             block => block % next
          end do  ! block
