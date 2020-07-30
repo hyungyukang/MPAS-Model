@@ -4382,12 +4382,12 @@ module ocn_time_integration_si
             call mpi_reduce(isum1,isum2,1,MPI_INT,MPI_SUM,0,mpi_local_comm,mpi_ierr)
 
             if ( local_rank == 0 ) then
-            call mpi_reduce(isum2,isum1,1,MPI_INT,MPI_SUM,0,mpi_cross_comm,mpi_ierr)
+            call mpi_allreduce(isum2,isum1,1,MPI_INT,MPI_SUM,mpi_cross_comm,mpi_ierr)
             endif 
 
             call mpi_bcast(isum1,1,MPI_INT,0,mpi_local_comm,mpi_ierr)
 
-         print*, isum1
+         print*,'aaa',rank,isum1
 
 !        if ( local_rank == 0 ) then
 !        print*,'bbb',rank,cross_size,cross_rank 
