@@ -4343,12 +4343,12 @@ module ocn_time_integration_si
 
             mrank = 0
             if ( isum1 == isum2 ) then
-               mrank = rank
+               mrank = local_rank
             endif
             isum2 = mrank
 
             call mpi_allreduce(isum2,mrank,1,MPI_INT,MPI_SUM,mpi_local_comm,mpi_ierr)
-            print*, mrank
+            print*,rank, mrank
 
 !           call mpas_dmpar_sum_int(dminfo,isum2,mrank)
 
