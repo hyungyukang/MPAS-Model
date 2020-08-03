@@ -1226,8 +1226,11 @@ module ocn_time_integration_si
          f0th1 = 0.d0
          f0qh1 = 0.d0
 
-         r0r0 = CGcst_allreduce_global2(1)
-         f0p0 = CGcst_allreduce_global2(2)
+!        r0r0 = CGcst_allreduce_global2(1)
+!        f0p0 = CGcst_allreduce_global2(2)
+
+         r0r0 = CGcst_allreduce_global18(1)
+         f0p0 = CGcst_allreduce_global18(2)
          alph0 = r0r0 / f0p0
 
          call mpas_timer_stop("si btr residual")
