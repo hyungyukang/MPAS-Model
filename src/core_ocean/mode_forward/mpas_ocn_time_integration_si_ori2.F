@@ -2454,12 +2454,12 @@ module ocn_time_integration_si
             ! Preconditioning ------------------------------------------------------------------------!
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                call mpas_timer_start("si halo iter")
-               call mpas_dmpar_exch_group_create(domain, iterGroupName)
-               call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_t0', 1)
-               call mpas_threading_barrier()
-               call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-               call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-!              call mpas_dmpar_field_halo_exch(domain,'CGvec_t0',1,cellHaloComputeCounter)
+!              call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!              call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_t0', 1)
+!              call mpas_threading_barrier()
+!              call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!              call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+               call mpas_dmpar_field_halo_exch(domain,'CGvec_t0',1,cellHaloComputeCounter)
                call mpas_timer_stop("si halo iter")
             end if
    
