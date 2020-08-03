@@ -63,7 +63,7 @@ module ocn_time_integration_si
    !--------------------------------------------------------------------
 
    public :: ocn_time_integrator_si, ocn_time_integration_si_init
-   public :: ocn_time_integrator_si_preconditioner
+   public :: ocn_time_integrator_si_preconditioner,my_allreduction
 
    character (len=*), parameter :: iterGroupName = 'iterFields'
    character (len=*), parameter :: finalBtrGroupName = 'finalBtrFields'
@@ -82,6 +82,10 @@ module ocn_time_integration_si
    integer :: mpi_local_comm,local_size,local_rank
    integer :: mpi_cross_comm,cross_size,cross_rank
    integer :: mpi_peer_comm,peer_size,peer_rank
+   real(kind=RKIND),pointer :: CGcst_shared_rank_reduce(:,:),CGcst_shared_local_reduce(:)
+   real(kind=RKIND),pointer ::                       CGcst_shared_global_reduce(:)
+   real(kind=RKIND),pointer ::                       CGcst_shared_reduce(:)
+   integer :: win,win2,win3,win1
    !-------------------
 
    contains
@@ -1045,16 +1049,22 @@ module ocn_time_integration_si
          CGcst_allreduce2(1) = r0r0
          CGcst_allreduce2(2) = f0p0
 
+          
+         CGcst_allreduce18(:) = 0.0_RKIND
+         CGcst_allreduce18(1) = r0r0
+         CGcst_allreduce18(2) = f0p0
+         
          call mpas_timer_start("si reduction r0")
-!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+         !call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+         call my_allreduction (dminfo, CGcst_allreduce18, CGcst_allreduce_global18, 18)
 !        print*, 'AAA',CGcst_allreduce_global2(:)
 !        CGcst_allreduce_global2(:) = 0.0_RKIND
 
-         call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,mrank,mpi_local_comm,mpi_ierr)
-         if ( local_rank == mrank ) then
-            call mpi_allreduce(CGcst_allreduce_work2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mpi_cross_comm,mpi_ierr)
-         endif
-         call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,mpi_local_comm,mpi_ierr)
+!        call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,mrank,mpi_local_comm,mpi_ierr)
+!        if ( local_rank == mrank ) then
+!           call mpi_allreduce(CGcst_allreduce_work2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mpi_cross_comm,mpi_ierr)
+!        endif
+!        call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,mpi_local_comm,mpi_ierr)
 
 
 !        call mpi_ireduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,mrank,mpi_local_comm,mpi_ireq,mpi_ierr)
@@ -4096,6 +4106,7 @@ module ocn_time_integration_si
 !-----------------------------------------------------------------------
    subroutine ocn_time_integration_si_init(domain)!{{{
    ! Initialize splitting variables
+      use iso_c_binding
 
       type (domain_type), intent(inout) :: domain
 
@@ -4129,7 +4140,17 @@ module ocn_time_integration_si
       real (kind=RKIND) :: local_num_cells,sum1,total_area_sum,local_area_sum,tmp1
       real (kind=RKIND), dimension(:), pointer :: areaCell
       integer :: ncpus,ihh,imm,iss,isum1,isum2,rank,mpi_ierr,rankRepId
+      real (kind=RKIND),dimension(18) :: CGcst_allreduce_work
+      real (kind=RKIND),dimension(18) :: CGcst_allreduce_global
+!------------------
       include 'mpif.h'
+      type(c_ptr) :: baseptr,baseptr1,baseptr2,baseptr3
+      integer,allocatable :: arrayshape(:),arrayshape1(:),arrayshape2(:),arrayshape3(:)
+!     real(kind=RKIND),pointer :: CGcst_shared_rank_reduce(:)
+      integer(KIND=MPI_ADDRESS_KIND) :: windowsize,windowsize1,windowsize2,windowsize3
+!     integer :: win,win2,disp_unit,ierr,total
+      integer :: disp_unit,total
+!------------------
 
       dminfo = domain % dminfo
       ncpus = dminfo % nprocs
@@ -4348,7 +4369,6 @@ module ocn_time_integration_si
             isum2 = mrank
 
             call mpi_allreduce(isum2,mrank,1,MPI_INT,MPI_SUM,mpi_local_comm,mpi_ierr)
-            print*,rank, mrank
 
 !           call mpas_dmpar_sum_int(dminfo,isum2,mrank)
 
@@ -4367,6 +4387,51 @@ module ocn_time_integration_si
          call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
 !        print*, cross_size,cross_rank
          endif
+
+
+
+!------------------------------------------------------------------------------------------------------------
+         allocate(arrayshape1(2))
+         allocate(arrayshape2(1))
+         allocate(arrayshape3(1))
+         arrayshape1 = (/local_size,18/)
+         arrayshape2 = (/18/)
+         arrayshape3 = (/18/)
+
+         if ( local_rank == mrank ) then
+           windowsize1 = int(local_size*18,MPI_ADDRESS_KIND) * 8_MPI_ADDRESS_KIND ! actual data size
+           windowsize2 = int(18,MPI_ADDRESS_KIND) * 8_MPI_ADDRESS_KIND ! actual data size
+           windowsize3 = int(18,MPI_ADDRESS_KIND) * 8_MPI_ADDRESS_KIND ! actual data size
+         else
+           windowsize1 = 0_MPI_ADDRESS_KIND
+           windowsize2 = 0_MPI_ADDRESS_KIND
+           windowsize3 = 0_MPI_ADDRESS_KIND
+         endif
+         disp_unit = 1
+!        if ( local_rank == mrank ) then
+         call MPI_WIN_ALLOCATE_SHARED(windowsize1,disp_unit,MPI_INFO_NULL,mpi_local_comm,baseptr1,win1,mpi_ierr)
+         call MPI_WIN_ALLOCATE_SHARED(windowsize2,disp_unit,MPI_INFO_NULL,mpi_local_comm,baseptr2,win2,mpi_ierr)
+         call MPI_WIN_ALLOCATE_SHARED(windowsize3,disp_unit,MPI_INFO_NULL,mpi_local_comm,baseptr3,win3,mpi_ierr)
+!        endif
+!        ! Obtain the location of the memory segment
+         if ( local_rank /= mrank ) then
+         call MPI_WIN_SHARED_QUERY(win1,0,windowsize1,disp_unit,baseptr1,mpi_ierr)
+         call MPI_WIN_SHARED_QUERY(win2,0,windowsize2,disp_unit,baseptr2,mpi_ierr)
+         call MPI_WIN_SHARED_QUERY(win3,0,windowsize3,disp_unit,baseptr3,mpi_ierr)
+         endif
+
+         call C_F_POINTER(baseptr1, CGcst_shared_rank_reduce  , arrayshape1)
+         call C_F_POINTER(baseptr2, CGcst_shared_local_reduce , arrayshape2)
+         call C_F_POINTER(baseptr3, CGcst_shared_global_reduce, arrayshape3)
+!------------------------------------------------------------------------------------------------------------
+!        call MPI_WIN_LOCK_ALL(win1)
+!        call MPI_WIN_SYNC(win1)
+!        call MPI_WIN_UNLOCK_ALL(win1)
+!------------------------------------------------------------------------------------------------------------
+!        CGcst_allreduce_work(:) = 0.0_RKIND
+!        CGcst_shared_rank_reduce(:,:) = 0.0_RKIND
+!        CGcst_shared_rank_reduce(local_rank+1,1) = 1.0
+!        call MPI_WIN_FENCE(0,win1,mpi_ierr)
 
 
 !           isum1 = 1
@@ -4411,6 +4476,34 @@ module ocn_time_integration_si
       end if ! config_time_integrator
 
    end subroutine ocn_time_integration_si_init!}}}
+
+   subroutine my_allreduction(dminfo,data_in,data_out,narray)
+      type (dm_info) :: dminfo
+      real (kind=RKIND),dimension(narray) :: data_in,data_work
+      real (kind=RKIND),dimension(narray) :: data_out
+      integer :: narray,mpi_ierr,i,j
+      include 'mpif.h'
+
+         CGcst_shared_rank_reduce(local_rank+1,:) = data_in(:)
+         call MPI_WIN_FENCE(0,win1,mpi_ierr)
+
+         if ( local_rank == mrank ) then
+            CGcst_shared_local_reduce(:) = 0.0_RKIND
+            do j = 1,narray
+               do i = 1,local_size 
+                  CGcst_shared_local_reduce(j) = CGcst_shared_local_reduce(j) + CGcst_shared_rank_reduce(i,j)
+               end do
+            end do
+
+            data_work(:) = CGcst_shared_local_reduce(:) 
+            call mpi_allreduce(data_work,data_out,narray,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+            CGcst_shared_global_reduce(:) = data_out(:)
+         endif
+         call MPI_WIN_FENCE(3,win1,mpi_ierr)
+
+         data_out(:) = CGcst_shared_global_reduce(:)
+
+   end subroutine my_allreduction
 
 !***********************************************************************
 !
