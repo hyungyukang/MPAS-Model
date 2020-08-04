@@ -4460,8 +4460,6 @@ module ocn_time_integration_si
 !        print*, cross_size,cross_rank
          endif
 
-
-
 !------------------------------------------------------------------------------------------------------------
          allocate(arrayshape1(2))
          allocate(arrayshape2(1))
@@ -4556,22 +4554,33 @@ module ocn_time_integration_si
       integer :: narray,mpi_ierr,i,j
       include 'mpif.h'
 
-         CGcst_shared_rank_reduce(local_rank+1,:) = data_in(:)
-         call MPI_WIN_FENCE(0,win1,mpi_ierr)
+!        CGcst_shared_rank_reduce(local_rank+1,:) = data_in(:)
+!        call MPI_WIN_FENCE(0,win1,mpi_ierr)
+!        do j = 1,narray
+!           do i = 1,local_size 
+!              CGcst_shared_local_reduce(j) = CGcst_shared_local_reduce(j) + CGcst_shared_rank_reduce(i,j)
+!           end do
+!        end do
+
+         call mpi_reduce(data_in,data_work,narray,MPI_DOUBLE,MPI_SUM,mrank,mpi_local_comm,mpi_ierr)
+!        call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,mrank,mpi_local_comm,mpi_ierr)
 
          if ( local_rank == mrank ) then
-            CGcst_shared_local_reduce(:) = 0.0_RKIND
-            do j = 1,narray
-               do i = 1,local_size 
-                  CGcst_shared_local_reduce(j) = CGcst_shared_local_reduce(j) + CGcst_shared_rank_reduce(i,j)
-               end do
-            end do
+!           CGcst_shared_local_reduce(:) = 0.0_RKIND
+!           do j = 1,narray
+!              do i = 1,local_size 
+!                 CGcst_shared_local_reduce(j) = CGcst_shared_local_reduce(j) + CGcst_shared_rank_reduce(i,j)
+!              end do
+!           end do
+!           data_work(:) = CGcst_shared_local_reduce(:) 
 
-            data_work(:) = CGcst_shared_local_reduce(:) 
-            call mpi_allreduce(data_work,data_out,narray,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-            CGcst_shared_global_reduce(:) = data_out(:)
+!           call mpi_allreduce(data_work,data_out,narray,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+            !call mpi_allreduce(CGcst_shared_local_reduce,CGcst_shared_global_reduce,narray,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+            call mpi_allreduce(data_work,CGcst_shared_global_reduce,narray,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+ 
+!           CGcst_shared_global_reduce(:) = data_out(:)
          endif
-         call MPI_WIN_FENCE(3,win1,mpi_ierr)
+         call MPI_WIN_FENCE(0,win3,mpi_ierr)
 
          data_out(:) = CGcst_shared_global_reduce(:)
 
