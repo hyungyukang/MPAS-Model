@@ -1502,35 +1502,64 @@ module ocn_time_integration_si
                   block => block % next
                end do  ! block
    
-               CGcst_allreduce12(1)  = s0t0
-               CGcst_allreduce12(2)  = s0s0
-               CGcst_allreduce12(3)  = r00t0
-               CGcst_allreduce12(4)  = r00s0
-               CGcst_allreduce12(5)  = r00r0
-               CGcst_allreduce12(6)  = f0s0
-               CGcst_allreduce12(7)  = f0t0
-               CGcst_allreduce12(8)  = f0qh0
-               CGcst_allreduce12(9)  = f0p0
-               CGcst_allreduce12(10) = f0sh0
-               CGcst_allreduce12(11) = f0th0
-               CGcst_allreduce12(12) = resid
+!              CGcst_allreduce12(1)  = s0t0
+!              CGcst_allreduce12(2)  = s0s0
+!              CGcst_allreduce12(3)  = r00t0
+!              CGcst_allreduce12(4)  = r00s0
+!              CGcst_allreduce12(5)  = r00r0
+!              CGcst_allreduce12(6)  = f0s0
+!              CGcst_allreduce12(7)  = f0t0
+!              CGcst_allreduce12(8)  = f0qh0
+!              CGcst_allreduce12(9)  = f0p0
+!              CGcst_allreduce12(10) = f0sh0
+!              CGcst_allreduce12(11) = f0th0
+!              CGcst_allreduce12(12) = resid
+
+             
+               CGcst_allreduce18(:)  = 0.0_RKIND
+               CGcst_allreduce18(1)  = s0t0
+               CGcst_allreduce18(2)  = s0s0
+               CGcst_allreduce18(3)  = r00t0
+               CGcst_allreduce18(4)  = r00s0
+               CGcst_allreduce18(5)  = r00r0
+               CGcst_allreduce18(6)  = f0s0
+               CGcst_allreduce18(7)  = f0t0
+               CGcst_allreduce18(8)  = f0qh0
+               CGcst_allreduce18(9)  = f0p0
+               CGcst_allreduce18(10) = f0sh0
+               CGcst_allreduce18(11) = f0th0
+               CGcst_allreduce18(12) = resid
 
                call mpas_timer_start("si reduction iter")
-               call mpas_dmpar_sum_real_array(dminfo, 12, CGcst_allreduce12, CGcst_allreduce_global12)
+               !call mpas_dmpar_sum_real_array(dminfo, 12, CGcst_allreduce12, CGcst_allreduce_global12)
+               call my_allreduction (dminfo, CGcst_allreduce18, CGcst_allreduce_global18, 18)
                call mpas_timer_stop("si reduction iter")
    
-               s0t0  = CGcst_allreduce_global12(1)
-               s0s0  = CGcst_allreduce_global12(2)
-               r00t0 = CGcst_allreduce_global12(3)
-               r00s0 = CGcst_allreduce_global12(4)
-               r00r0 = CGcst_allreduce_global12(5)
-               f0s0  = CGcst_allreduce_global12(6)
-               f0t0  = CGcst_allreduce_global12(7)
-               f0qh0 = CGcst_allreduce_global12(8)
-               f0p0  = CGcst_allreduce_global12(9)
-               f0sh0 = CGcst_allreduce_global12(10)
-               f0th0 = CGcst_allreduce_global12(11)
-               resid = CGcst_allreduce_global12(12)
+!              s0t0  = CGcst_allreduce_global12(1)
+!              s0s0  = CGcst_allreduce_global12(2)
+!              r00t0 = CGcst_allreduce_global12(3)
+!              r00s0 = CGcst_allreduce_global12(4)
+!              r00r0 = CGcst_allreduce_global12(5)
+!              f0s0  = CGcst_allreduce_global12(6)
+!              f0t0  = CGcst_allreduce_global12(7)
+!              f0qh0 = CGcst_allreduce_global12(8)
+!              f0p0  = CGcst_allreduce_global12(9)
+!              f0sh0 = CGcst_allreduce_global12(10)
+!              f0th0 = CGcst_allreduce_global12(11)
+!              resid = CGcst_allreduce_global12(12)
+
+               s0t0  = CGcst_allreduce_global18(1)
+               s0s0  = CGcst_allreduce_global18(2)
+               r00t0 = CGcst_allreduce_global18(3)
+               r00s0 = CGcst_allreduce_global18(4)
+               r00r0 = CGcst_allreduce_global18(5)
+               f0s0  = CGcst_allreduce_global18(6)
+               f0t0  = CGcst_allreduce_global18(7)
+               f0qh0 = CGcst_allreduce_global18(8)
+               f0p0  = CGcst_allreduce_global18(9)
+               f0sh0 = CGcst_allreduce_global18(10)
+               f0th0 = CGcst_allreduce_global18(11)
+               resid = CGcst_allreduce_global18(12)
    
                block => domain % blocklist
                do while (associated(block))
@@ -1669,7 +1698,8 @@ module ocn_time_integration_si
                CGcst_allreduce18(18) = resid
    
                call mpas_timer_start("si reduction iter")
-               call mpas_dmpar_sum_real_array(dminfo, 18, CGcst_allreduce18, CGcst_allreduce_global18)
+               !call mpas_dmpar_sum_real_array(dminfo, 18, CGcst_allreduce18, CGcst_allreduce_global18)
+               call my_allreduction (dminfo, CGcst_allreduce18, CGcst_allreduce_global18, 18)
                call mpas_timer_stop("si reduction iter")
    
                s0s0  = CGcst_allreduce_global18(1)
@@ -2306,14 +2336,19 @@ module ocn_time_integration_si
          CGcst_allreduce2(1) = r0r0
          CGcst_allreduce2(2) = f0p0
 
+         CGcst_allreduce18(:) = 0.0_RKIND
+         CGcst_allreduce18(1) = r0r0
+         CGcst_allreduce18(2) = f0p0
+
          call mpas_timer_start("si reduction r0")
 !        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+         call my_allreduction (dminfo, CGcst_allreduce18, CGcst_allreduce_global18, 18)
 
-         call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,mrank,mpi_local_comm,mpi_ierr)
-         if ( local_rank == mrank ) then
-            call mpi_allreduce(CGcst_allreduce_work2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mpi_cross_comm,mpi_ierr)
-         endif
-         call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,mpi_local_comm,mpi_ierr)
+!        call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,mrank,mpi_local_comm,mpi_ierr)
+!        if ( local_rank == mrank ) then
+!           call mpi_allreduce(CGcst_allreduce_work2,CGcst_allreduce_global2,2,mpi_double,mpi_sum,mpi_cross_comm,mpi_ierr)
+!        endif
+!        call mpi_bcast(CGcst_allreduce_global2,2,mpi_double,mrank,mpi_local_comm,mpi_ierr)
 
 
 !        call mpi_ireduce(CGcst_allreduce2,CGcst_allreduce_work2,2,mpi_double,mpi_sum,mrank,mpi_local_comm,mpi_ireq,mpi_ierr)
@@ -2471,8 +2506,12 @@ module ocn_time_integration_si
          f0qh1 = 0.d0
 
 
-         r0r0 = CGcst_allreduce_global2(1)
-         f0p0 = CGcst_allreduce_global2(2)
+!        r0r0 = CGcst_allreduce_global2(1)
+!        f0p0 = CGcst_allreduce_global2(2)
+
+         r0r0 = CGcst_allreduce_global18(1)
+         f0p0 = CGcst_allreduce_global18(2)
+
          alph0 = r0r0 / f0p0
 
          call mpas_timer_stop("si btr residual")
@@ -2751,21 +2790,37 @@ module ocn_time_integration_si
                   block => block % next
                end do  ! block
    
-               CGcst_allreduce12(1)  = s0t0
-               CGcst_allreduce12(2)  = s0s0
-               CGcst_allreduce12(3)  = r00t0
-               CGcst_allreduce12(4)  = r00s0
-               CGcst_allreduce12(5)  = r00r0
-               CGcst_allreduce12(6)  = f0s0
-               CGcst_allreduce12(7)  = f0t0
-               CGcst_allreduce12(8)  = f0qh0
-               CGcst_allreduce12(9)  = f0p0
-               CGcst_allreduce12(10) = f0sh0
-               CGcst_allreduce12(11) = f0th0
-               CGcst_allreduce12(12) = resid
+!              CGcst_allreduce12(1)  = s0t0
+!              CGcst_allreduce12(2)  = s0s0
+!              CGcst_allreduce12(3)  = r00t0
+!              CGcst_allreduce12(4)  = r00s0
+!              CGcst_allreduce12(5)  = r00r0
+!              CGcst_allreduce12(6)  = f0s0
+!              CGcst_allreduce12(7)  = f0t0
+!              CGcst_allreduce12(8)  = f0qh0
+!              CGcst_allreduce12(9)  = f0p0
+!              CGcst_allreduce12(10) = f0sh0
+!              CGcst_allreduce12(11) = f0th0
+!              CGcst_allreduce12(12) = resid
+
+
+               CGcst_allreduce18(:)  = 0.0_RKIND
+               CGcst_allreduce18(1)  = s0t0
+               CGcst_allreduce18(2)  = s0s0
+               CGcst_allreduce18(3)  = r00t0
+               CGcst_allreduce18(4)  = r00s0
+               CGcst_allreduce18(5)  = r00r0
+               CGcst_allreduce18(6)  = f0s0
+               CGcst_allreduce18(7)  = f0t0
+               CGcst_allreduce18(8)  = f0qh0
+               CGcst_allreduce18(9)  = f0p0
+               CGcst_allreduce18(10) = f0sh0
+               CGcst_allreduce18(11) = f0th0
+               CGcst_allreduce18(12) = resid
    
                call mpas_timer_start("si reduction iter")
-               call mpas_dmpar_sum_real_array(dminfo, 12, CGcst_allreduce12, CGcst_allreduce_global12)
+               !call mpas_dmpar_sum_real_array(dminfo, 12, CGcst_allreduce12, CGcst_allreduce_global12)
+               call my_allreduction (dminfo, CGcst_allreduce18, CGcst_allreduce_global18, 18)
 
 !        call mpi_reduce(CGcst_allreduce12,CGcst_allreduce_work12,12,mpi_double,mpi_sum,mrank,mpi_local_comm,mpi_ierr)
 !        call mpi_reduce(CGcst_allreduce_work12,CGcst_allreduce_global12,12,mpi_double,mpi_sum,0,mpi_cross_comm,mpi_ierr)
@@ -2774,18 +2829,31 @@ module ocn_time_integration_si
 
                call mpas_timer_stop("si reduction iter")
    
-               s0t0  = CGcst_allreduce_global12(1)
-               s0s0  = CGcst_allreduce_global12(2)
-               r00t0 = CGcst_allreduce_global12(3)
-               r00s0 = CGcst_allreduce_global12(4)
-               r00r0 = CGcst_allreduce_global12(5)
-               f0s0  = CGcst_allreduce_global12(6)
-               f0t0  = CGcst_allreduce_global12(7)
-               f0qh0 = CGcst_allreduce_global12(8)
-               f0p0  = CGcst_allreduce_global12(9)
-               f0sh0 = CGcst_allreduce_global12(10)
-               f0th0 = CGcst_allreduce_global12(11)
-               resid = CGcst_allreduce_global12(12)
+!              s0t0  = CGcst_allreduce_global12(1)
+!              s0s0  = CGcst_allreduce_global12(2)
+!              r00t0 = CGcst_allreduce_global12(3)
+!              r00s0 = CGcst_allreduce_global12(4)
+!              r00r0 = CGcst_allreduce_global12(5)
+!              f0s0  = CGcst_allreduce_global12(6)
+!              f0t0  = CGcst_allreduce_global12(7)
+!              f0qh0 = CGcst_allreduce_global12(8)
+!              f0p0  = CGcst_allreduce_global12(9)
+!              f0sh0 = CGcst_allreduce_global12(10)
+!              f0th0 = CGcst_allreduce_global12(11)
+!              resid = CGcst_allreduce_global12(12)
+
+               s0t0  = CGcst_allreduce_global18(1)
+               s0s0  = CGcst_allreduce_global18(2)
+               r00t0 = CGcst_allreduce_global18(3)
+               r00s0 = CGcst_allreduce_global18(4)
+               r00r0 = CGcst_allreduce_global18(5)
+               f0s0  = CGcst_allreduce_global18(6)
+               f0t0  = CGcst_allreduce_global18(7)
+               f0qh0 = CGcst_allreduce_global18(8)
+               f0p0  = CGcst_allreduce_global18(9)
+               f0sh0 = CGcst_allreduce_global18(10)
+               f0th0 = CGcst_allreduce_global18(11)
+               resid = CGcst_allreduce_global18(12)
 
                if ( dsqrt(resid) <= crit_main ) exit
                iter = iter + 1
@@ -2928,7 +2996,8 @@ module ocn_time_integration_si
                CGcst_allreduce18(18) = resid
    
                call mpas_timer_start("si reduction iter")
-               call mpas_dmpar_sum_real_array(dminfo, 18, CGcst_allreduce18, CGcst_allreduce_global18)
+               !call mpas_dmpar_sum_real_array(dminfo, 18, CGcst_allreduce18, CGcst_allreduce_global18)
+               call my_allreduction (dminfo, CGcst_allreduce18, CGcst_allreduce_global18, 18)
 
 !        call mpi_reduce(CGcst_allreduce18,CGcst_allreduce_work18,18,mpi_double,mpi_sum,mrank,mpi_local_comm,mpi_ierr)
 !        call mpi_reduce(CGcst_allreduce_work18,CGcst_allreduce_global18,18,mpi_double,mpi_sum,0,mpi_cross_comm,mpi_ierr)
