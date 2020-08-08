@@ -1758,7 +1758,7 @@ module ocn_time_integration_si
                do i = 1, nEdgesOnEdge(iEdge)
                   eoe = edgesOnEdge(i,iEdge)
                   CoriolisTerm =  CoriolisTerm + weightsOnEdge(i,iEdge)  &
-                                 * 0.5_RKIND * (  normalBarotropicVelocitySubcycleNew(eoe)  &
+                                 * 0.5_RKIND * (  normalBarotropicVelocityCur(eoe)  &
                                                 + normalBarotropicVelocitySubcycleNew(eoe)) &
                                  * fEdge(eoe)
                end do
