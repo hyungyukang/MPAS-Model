@@ -1758,7 +1758,9 @@ module ocn_time_integration_si
                do i = 1, nEdgesOnEdge(iEdge)
                   eoe = edgesOnEdge(i,iEdge)
                   CoriolisTerm =  CoriolisTerm + weightsOnEdge(i,iEdge)  &
-                                 * normalBarotropicVelocitySubcycleNew(eoe) * fEdge(eoe)
+                                 * 0.5_RKIND * (  normalBarotropicVelocitySubcycleNew(eoe)  &
+                                                + normalBarotropicVelocitySubcycleNew(eoe)) &
+                                 * fEdge(eoe)
                end do
                barotropicCoriolisTerm(iEdge) = CoriolisTerm
             end do
@@ -3685,7 +3687,6 @@ module ocn_time_integration_si
 
          R1_alpha1_g = 1.0_RKIND/(gravity*alpha1)
 
-         print*, 'End of si_init'
 !************************************************************************
 !
 !        MPI communicator for local and cross allreduce
