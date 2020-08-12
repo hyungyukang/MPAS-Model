@@ -1,7 +1,7 @@
 
 # build_options.mk stuff handled here
 list(APPEND CPPDEFS "-DCORE_OCEAN")
-list(APPEND INCLUDES "${CMAKE_BINARY_DIR}/core_ocean/BGC" "${CMAKE_BINARY_DIR}/core_ocean/shared" "${CMAKE_BINARY_DIR}/core_ocean/analysis_members" "${CMAKE_BINARY_DIR}/core_ocean/cvmix" "${CMAKE_BINARY_DIR}/core_ocean/mode_forward" "${CMAKE_BINARY_DIR}/core_ocean/mode_analysis" "${CMAKE_BINARY_DIR}/core_ocean/mode_init")
+list(APPEND INCLUDES "${CMAKE_BINARY_DIR}/core_ocean/shared") # Only need this for '#include "../inc/core_variables.inc"' to work
 
 # driver (files live in E3SM)
 list(APPEND RAW_SOURCES
@@ -43,11 +43,13 @@ list(APPEND RAW_SOURCES
   core_ocean/mode_init/mpas_ocn_init_hurricane.F
   core_ocean/mode_init/mpas_ocn_init_isomip_plus.F
   core_ocean/mode_init/mpas_ocn_init_tidal_boundary.F
+  core_ocean/mode_init/mpas_ocn_init_smoothing.F
 
   core_ocean/shared/mpas_ocn_init_routines.F
   core_ocean/shared/mpas_ocn_gm.F
   core_ocean/shared/mpas_ocn_diagnostics.F
   core_ocean/shared/mpas_ocn_diagnostics_routines.F
+  core_ocean/shared/mpas_ocn_mesh.F
   core_ocean/shared/mpas_ocn_thick_ale.F
   core_ocean/shared/mpas_ocn_equation_of_state.F
   core_ocean/shared/mpas_ocn_equation_of_state_jm.F
@@ -66,9 +68,6 @@ list(APPEND RAW_SOURCES
   core_ocean/shared/mpas_ocn_vel_forcing_explicit_bottom_drag.F
   core_ocean/shared/mpas_ocn_vel_pressure_grad.F
   core_ocean/shared/mpas_ocn_vmix.F
-  core_ocean/shared/mpas_ocn_vmix_coefs_const.F
-  core_ocean/shared/mpas_ocn_vmix_coefs_rich.F
-  core_ocean/shared/mpas_ocn_vmix_coefs_tanh.F
   core_ocean/shared/mpas_ocn_vmix_coefs_redi.F
   core_ocean/shared/mpas_ocn_vmix_cvmix.F
   core_ocean/shared/mpas_ocn_tendency.F
@@ -117,37 +116,35 @@ set(OCEAN_DRIVER
 list(APPEND RAW_SOURCES ${OCEAN_DRIVER})
 list(APPEND DISABLE_QSMP ${OCEAN_DRIVER})
 
-# Get CVMix
-execute_process(COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/core_ocean/get_cvmix.sh
-  WORKING_DIRECTORY ${CORE_BLDDIR})
-
-# Get BGC
-execute_process(COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/core_ocean/get_BGC.sh
-  WORKING_DIRECTORY ${CORE_BLDDIR})
-
 # Add CVMix
+if (NOT EXISTS core_ocean/cvmix/.git)
+  message(FATAL "Missing core_ocean/cvmix/.git, did you forget to 'git submodule update --init --recursive' ?")
+endif()
 set(CVMIX_FILES
-  ${CORE_BLDDIR}/cvmix/cvmix_kinds_and_types.F90
-  ${CORE_BLDDIR}/cvmix/cvmix_background.F90
-  ${CORE_BLDDIR}/cvmix/cvmix_convection.F90
-  ${CORE_BLDDIR}/cvmix/cvmix_ddiff.F90
-  ${CORE_BLDDIR}/cvmix/cvmix_kpp.F90
-  ${CORE_BLDDIR}/cvmix/cvmix_math.F90
-  ${CORE_BLDDIR}/cvmix/cvmix_put_get.F90
-  ${CORE_BLDDIR}/cvmix/cvmix_shear.F90
-  ${CORE_BLDDIR}/cvmix/cvmix_tidal.F90
-  ${CORE_BLDDIR}/cvmix/cvmix_utils.F90
+  core_ocean/cvmix/src/shared/cvmix_kinds_and_types.F90
+  core_ocean/cvmix/src/shared/cvmix_background.F90
+  core_ocean/cvmix/src/shared/cvmix_convection.F90
+  core_ocean/cvmix/src/shared/cvmix_ddiff.F90
+  core_ocean/cvmix/src/shared/cvmix_kpp.F90
+  core_ocean/cvmix/src/shared/cvmix_math.F90
+  core_ocean/cvmix/src/shared/cvmix_put_get.F90
+  core_ocean/cvmix/src/shared/cvmix_shear.F90
+  core_ocean/cvmix/src/shared/cvmix_tidal.F90
+  core_ocean/cvmix/src/shared/cvmix_utils.F90
 )
 
 # Add BGC
+if (NOT EXISTS core_ocean/BGC/.git)
+  message(FATAL "Missing core_ocean/BGC/.git, did you forget to 'git submodule update --init --recursive' ?")
+endif()
 set(BGC_FILES
-  ${CORE_BLDDIR}/BGC/BGC_mod.F90
-  ${CORE_BLDDIR}/BGC/BGC_parms.F90
-  ${CORE_BLDDIR}/BGC/DMS_mod.F90
-  ${CORE_BLDDIR}/BGC/DMS_parms.F90
-  ${CORE_BLDDIR}/BGC/MACROS_mod.F90
-  ${CORE_BLDDIR}/BGC/MACROS_parms.F90
-  ${CORE_BLDDIR}/BGC/co2calc.F90
+  core_ocean/BGC/BGC_mod.F90
+  core_ocean/BGC/BGC_parms.F90
+  core_ocean/BGC/DMS_mod.F90
+  core_ocean/BGC/DMS_parms.F90
+  core_ocean/BGC/MACROS_mod.F90
+  core_ocean/BGC/MACROS_parms.F90
+  core_ocean/BGC/co2calc.F90
 )
 
 list(APPEND RAW_SOURCES ${CVMIX_FILES} ${BGC_FILES})
@@ -180,6 +177,8 @@ list(APPEND RAW_SOURCES
   core_ocean/analysis_members/mpas_ocn_transect_transport.F
   core_ocean/analysis_members/mpas_ocn_eddy_product_variables.F
   core_ocean/analysis_members/mpas_ocn_moc_streamfunction.F
+  core_ocean/analysis_members/mpas_ocn_ocean_heat_content.F
+  core_ocean/analysis_members/mpas_ocn_mixed_layer_heat_budget.F
   core_ocean/analysis_members/mpas_ocn_analysis_driver.F
 )
 

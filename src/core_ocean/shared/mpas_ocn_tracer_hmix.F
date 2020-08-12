@@ -79,8 +79,9 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_tracer_hmix_tend(meshPool, scratchPool, layerThicknessEdge, zMid, tracers, &
-                                   RediKappa, slopeTriadUp, slopeTriadDown, tend, err)!{{{
+   subroutine ocn_tracer_hmix_tend(meshPool, scratchPool, layerThicknessEdge, layerThickness, zMid, tracers, &
+                                   RediKappa, slopeTriadUp, slopeTriadDown, dt, isActiveTracer,          &
+                                   kappaRediSfcTaper, kappaRediCell, rediLimiterCount, tend, err)!{{{
 
 
       !-----------------------------------------------------------------
@@ -91,16 +92,25 @@ contains
       type (mpas_pool_type), intent(in) :: meshPool !< Input: Mesh information
       type (mpas_pool_type), intent(in) :: scratchPool !< Input: Scratch information
 
-      real (kind=RKIND), dimension(:), intent(in) :: &
+      real (kind=RKIND), dimension(:), intent(in), optional :: &
          RediKappa
 
       real (kind=RKIND), dimension(:,:), intent(in) :: &
          layerThicknessEdge, &!< Input: thickness at edge
+         layerThickness,     &!< Input: thickness at centers
          zMid                 !< Input: Z coordinate at the center of a cell
+      real (kind=RKIND), dimension(:,:), intent(in), optional :: &
+         kappaRediSfcTaper, kappaRediCell        !< Input: vertical structure of GM/Redi limiter
 
       real (kind=RKIND), dimension(:,:,:), intent(in) :: &
         slopeTriadUp, slopeTriadDown, &
         tracers !< Input: tracer quantities
+
+      real (kind=RKIND), intent(in) :: dt
+
+      integer, dimension(:,:), intent(inout), optional :: rediLimiterCount
+
+      logical,intent(in) :: isActiveTracer
 
       !-----------------------------------------------------------------
       !
@@ -109,7 +119,7 @@ contains
       !-----------------------------------------------------------------
 
       real (kind=RKIND), dimension(:,:,:), intent(inout) :: &
-         tend          !< Input/Output: velocity tendency
+         tend
 
       !-----------------------------------------------------------------
       !
@@ -141,9 +151,12 @@ contains
 
       call ocn_tracer_hmix_del2_tend(meshPool, layerThicknessEdge, tracers, tend, err1)
       call ocn_tracer_hmix_del4_tend(meshPool, scratchPool, layerThicknessEdge, tracers, tend, err2)
-      call ocn_tracer_hmix_Redi_tend(meshPool, scratchPool, layerThicknessEdge, zMid, tracers, &
-                                     RediKappa, slopeTriadUp, slopeTriadDown, tend, err1)
-
+      if (config_use_Redi) then
+        call ocn_tracer_hmix_Redi_tend(meshPool, scratchPool, layerThickness, layerThicknessEdge, zMid, tracers, &
+                                     RediKappa, dt, isActiveTracer,        &
+                                     slopeTriadUp, slopeTriadDown, kappaRediSfcTaper, &
+                                     kappaRediCell, rediLimiterCount, tend, err1)
+      endif
       err = ior(err1, err2)
       call mpas_timer_stop("tracer hmix")
 

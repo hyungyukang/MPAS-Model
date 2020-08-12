@@ -1,4 +1,7 @@
 <regression_suite name="nightly_ocean_test_suite">
+	<test name="Baroclinic Channel 10km - Default Test" core="ocean" configuration="baroclinic_channel" resolution="10km" test="default">
+		<script name="run_test.py"/>
+	</test>
 	<test name="Global Ocean 240km - Init Test" core="ocean" configuration="global_ocean" resolution="QU240" test="init">
 		<script name="run.py"/>
 	</test>
@@ -8,13 +11,16 @@
 	<test name="Global Ocean 240km - Restart Test" core="ocean" configuration="global_ocean" resolution="QU240" test="restart_test">
 		<script name="run.py"/>
 	</test>
-	<test name="Global Ocean 240km - SE Blocks Test" core="ocean" configuration="global_ocean" resolution="QU240" test="se_blocks_test">
+	<test name="Global Ocean 240km - Decomposition Test" core="ocean" configuration="global_ocean" resolution="QU240" test="decomp_test">
 		<script name="run.py"/>
 	</test>
-	<test name="Global Ocean 240km - RK4 Blocks Test" core="ocean" configuration="global_ocean" resolution="QU240" test="rk4_blocks_test">
+	<test name="Global Ocean 240km - Thread Test" core="ocean" configuration="global_ocean" resolution="QU240" test="thread_test">
 		<script name="run.py"/>
 	</test>
 	<test name="Global Ocean 240km - Analysis Test" core="ocean" configuration="global_ocean" resolution="QU240" test="analysis_test">
+		<script name="run.py"/>
+	</test>
+	<test name="Global Ocean 240km - BGC Ecosys Test" core="ocean" configuration="global_ocean" resolution="QU240" test="bgc_ecosys_test">
 		<script name="run.py"/>
 	</test>
 	<test name="ZISO 20km - Smoke Test" core="ocean" configuration="ziso" resolution="20km" test="default">

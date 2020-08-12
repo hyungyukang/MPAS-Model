@@ -12,14 +12,17 @@ Step 5. Create vtk file for visualization
 from __future__ import absolute_import, division, print_function, \
     unicode_literals
 
-import subprocess
-import os
 import xarray
 import argparse
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy
 
 from mpas_tools.conversion import convert
 from mpas_tools.io import write_netcdf
+from mpas_tools.viz.paraview_extractor import extract_vtk
 
 from jigsaw_to_MPAS.jigsaw_driver import jigsaw_driver
 from jigsaw_to_MPAS.triangle_jigsaw_to_netcdf import jigsaw_to_netcdf
@@ -27,9 +30,9 @@ from jigsaw_to_MPAS.inject_bathymetry import inject_bathymetry
 from jigsaw_to_MPAS.inject_meshDensity import inject_meshDensity
 from jigsaw_to_MPAS.inject_preserve_floodplain import \
     inject_preserve_floodplain
+from jigsaw_to_MPAS.mesh_definition_tools import register_sci_viz_colormaps
 
-from define_base_mesh import define_base_mesh
-
+import define_base_mesh
 
 def build_mesh(
         preserve_floodplain=False,
@@ -52,32 +55,34 @@ def build_mesh(
                               name='cellWidth')
         cw_filename = 'cellWidthVsLatLon.nc'
         da.to_netcdf(cw_filename)
-        plot_cellWidth=True
+        plot_cellWidth = True
         if plot_cellWidth:
-            import matplotlib
-            from cartopy import config
-            import cartopy.crs as ccrs
-            matplotlib.use('Agg')
-            fig = plt.figure()
-            fig.set_size_inches(16.0, 8.0)
-            plt.clf()
+            register_sci_viz_colormaps()
+            fig = plt.figure(figsize=[16.0, 8.0])
             ax = plt.axes(projection=ccrs.PlateCarree())
             ax.set_global()
-            im = ax.imshow(cellWidth, origin='lower', transform=ccrs.PlateCarree(
-            ), extent=[-180, 180, -90, 90], cmap='jet')
-            ax.coastlines()
+            im = ax.imshow(cellWidth, origin='lower',
+                           transform=ccrs.PlateCarree(),
+                           extent=[-180, 180, -90, 90], cmap='3Wbgy5',
+                           zorder=0)
+            ax.add_feature(cartopy.feature.LAND, edgecolor='black', zorder=1)
             gl = ax.gridlines(
                 crs=ccrs.PlateCarree(),
                 draw_labels=True,
                 linewidth=1,
                 color='gray',
                 alpha=0.5,
-                linestyle='-')
+                linestyle='-', zorder=2)
             gl.xlabels_top = False
             gl.ylabels_right = False
-            plt.title('Grid cell size, km')
+            plt.title(
+                'Grid cell size, km, min: {:.1f} max: {:.1f}'.format(
+                cellWidth.min(),cellWidth.max()))
             plt.colorbar(im, shrink=.60)
-            plt.savefig('cellWidthGlobal.png')
+            fig.canvas.draw()
+            plt.tight_layout()
+            plt.savefig('cellWidthGlobal.png', bbox_inches='tight', dpi=300)
+            plt.close()
 
     else:
         cellWidth, x, y, geom_points, geom_edges = define_base_mesh.cellWidthVsXY()
@@ -122,15 +127,9 @@ def build_mesh(
                                    floodplain_elevation=floodplain_elevation)
 
     print('Step 8. Create vtk file for visualization')
-    args = ['paraview_vtk_field_extractor.py',
-            '--ignore_time',
-            '-l',
-            '-d', 'maxEdges=0',
-            '-v', 'allOnCells',
-            '-f', 'base_mesh.nc',
-            '-o', 'base_mesh_vtk']
-    print("running", ' '.join(args))
-    subprocess.check_call(args, env=os.environ.copy())
+    extract_vtk(ignore_time=True, lonlat=True, dimension_list=['maxEdges='],
+                variable_list=['allOnCells'], filename_pattern='base_mesh.nc',
+                out_dir='base_mesh_vtk')
 
     print("***********************************************")
     print("**    The global mesh file is base_mesh.nc   **")
