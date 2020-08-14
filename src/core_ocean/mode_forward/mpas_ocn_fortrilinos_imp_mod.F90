@@ -309,11 +309,13 @@ module ocn_fortrilinos_imp_mod
   krylov_list_o = solver_list_o%sublist(belos_list_o%get_string('Solver Type'))
   krylov_list_m = solver_list_m%sublist(belos_list_m%get_string('Solver Type'))
 
-  tol_o = 1.0d-2 * area_mean
+  tol_o = 1.0d-8 * dsqrt(area_mean)
   call krylov_list_o%set('Convergence Tolerance', tol_o)
-! tol_m = 1.0d-8 * area_mean
+  call krylov_list_o%set('Maximum Iterations', 2)
+
   tol_m = 1.0d-8 * dsqrt(area_mean)
   call krylov_list_m%set('Convergence Tolerance', tol_m)
+  call krylov_list_m%set('Maximum Iterations', 500)
 
   ! Trilinos solver handle:  'o' for outer iteration, 'm' for main iteration
   solver_handle_o = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
@@ -615,7 +617,7 @@ module ocn_fortrilinos_imp_mod
 
          sshTendb1  = (2.0_RKIND/(gravity*dt*0.5)) * sshTendb1
          sshTendb2  = (2.0_RKIND/(gravity       )) * sshTendb2
-         sshCurArea = (1.0_RKIND/(gravity*dt**2.0*0.5**2.0)) * sshCur(iCell) * areaCell(iCell)
+         sshCurArea = (1.0_RKIND/(gravity*dt**2.0*0.5**2.0)) * sshSubcycleCur(iCell) * areaCell(iCell)
 
          CGvec_r0(iCell) = -(-sshCurArea - sshTendb1 + sshTendb2) 
      end do ! iCell
@@ -659,6 +661,10 @@ module ocn_fortrilinos_imp_mod
   sshSubcycleCur(1:nCellsArray(1)) = solvec(1:nCellsArray(1))
   nullify(solvec)
 
+     block => block % next
+  end do  ! block
+
+
   call mpas_timer_start("si halo ssh")
   call mpas_dmpar_exch_group_create(domain, iterGroupName)
   call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', 1 )
@@ -668,8 +674,6 @@ module ocn_fortrilinos_imp_mod
   call mpas_timer_stop("si halo ssh")
 
 
-     block => block % next
-  end do  ! block
 
 ! call mpas_timer_start("fort final")
 ! ! Step 5: clean up
