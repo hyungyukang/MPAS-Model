@@ -76,13 +76,7 @@ module ocn_time_integration_si
    real (kind=RKIND), allocatable,dimension(:)   :: R1_alpha1s_g_dt
    real (kind=RKIND) :: total_num_cells,mean_num_cells,area_mean
    real (kind=RKIND) :: R1_alpha1_g,alpha1,alpha2,crit_main
-   integer :: nPrecVec,si_opt
-   !-------------------
-   integer :: rank,ncpus,mrank
-   integer :: mpi_local_comm,local_size,local_rank
-   integer :: mpi_cross_comm,cross_size,cross_rank
-   integer :: mpi_peer_comm,peer_size,peer_rank
-   !-------------------
+   integer :: nPrecVec
 
    contains
 
@@ -243,9 +237,6 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:), pointer :: barotropicCoriolisTerm
       ! Semi-implicit variables
       real (kind=RKIND), dimension(5) :: CGcst_allreduce,CGcst_allreduce_global
-      real (kind=RKIND), dimension(2) :: CGcst_allreduce2,CGcst_allreduce_global2
-      real (kind=RKIND), dimension(3) :: CGcst_allreduce3,CGcst_allreduce_global3
-      real (kind=RKIND), dimension(5) :: CGcst_allreduce5,CGcst_allreduce_global5
       real (kind=RKIND) :: CGcst_r00r0,CGcst_r00w0,CGcst_r00r1,CGcst_r00w1
       real (kind=RKIND) :: CGcst_r00r0_global,CGcst_r00w0_global,CGcst_r00r1_global,CGcst_r00w1_global
 
@@ -287,12 +278,8 @@ module ocn_time_integration_si
 
       integer :: temp_mask
       real (kind=RKIND) :: tracer2_value, lat
-      integer :: mpi_ierr,mpi_ireq
-
-      include 'mpif.h'
 
       dminfo = domain % dminfo
-      rank = dminfo % my_proc_id
 
       call mpas_timer_start("si timestep")
 
@@ -765,15 +752,9 @@ module ocn_time_integration_si
                sshSubcycleCur(:) = sshCur(:)
                normalBarotropicVelocitySubcycleCur(:) = normalBarotropicVelocityCur(:)
             else 
-               if ( si_opt == 1 ) then
-                       sshNew(:) = sshCur(:)
-               sshSubcycleCur(:) = sshCur(:)
-               normalBarotropicVelocitySubcycleCur(:) = normalBarotropicVelocityCur(:)
-               else 
                        sshCur(:) = sshNew(:)
                sshSubcycleCur(:) = sshNew(:)
                normalBarotropicVelocityCur(:) = normalBarotropicVelocitySubcycleCur(:)
-               endif
             endif ! split_implicit_step
 
             do iEdge = 1, nEdges
@@ -869,7 +850,6 @@ module ocn_time_integration_si
 
             nCells = nCellsArray( 1 )
             nEdges = nEdgesArray( 2 )
-!           nCells = nCellsArray(cellHaloComputeCounter) 
 
             do iCell = 1, nCells
                sshTendb1 = 0.0_RKIND
@@ -895,9 +875,9 @@ module ocn_time_integration_si
                   fluxb2 = thicknessSumCur * (alpha2*gravity*sshDiffCur + (-barotropicCoriolisTerm(iEdge)-barotropicForcing(iEdge)))
                   fluxAx = thicknessSumCur * sshDiffCur
   
-                  sshTendb1 = sshTendb1 + edgeSignOnCell(i, iCell) * fluxb1 * dvEdge(iEdge) !/ areaCell(iCell)
-                  sshTendb2 = sshTendb2 + edgeSignOnCell(i, iCell) * fluxb2 * dvEdge(iEdge) !/ areaCell(iCell)
-                  sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge) !/ areaCell(iCell)
+                  sshTendb1 = sshTendb1 + edgeSignOnCell(i, iCell) * fluxb1 * dvEdge(iEdge)
+                  sshTendb2 = sshTendb2 + edgeSignOnCell(i, iCell) * fluxb2 * dvEdge(iEdge)
+                  sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                end do ! i
 
                sshTendb1  = R1_alpha1s_g_dt(split_implicit_step) * sshTendb1
@@ -1031,7 +1011,7 @@ module ocn_time_integration_si
                   ! nabla (ssh^0)
                   sshDiffCur = (CGvec_rh0(cell2)- CGvec_rh0(cell1)) / dcEdge(iEdge)
                       fluxAx = thicknessSumCur * sshDiffCur
-                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge) !/ areaCell(iCell)
+                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
    
                end do ! i
   
@@ -1047,32 +1027,6 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-!        CGcst_allreduce(:) = 0.0_RKIND
-         CGcst_allreduce2(1) = CGcst_r00r0
-         CGcst_allreduce2(2) = CGcst_r00w0
-
-         ! Global sum across CPUs
-         call mpas_timer_start("si reduction r0")
-
-!        call mpas_timer_start("si wait local")
-!        call mpi_barrier(mpi_local_comm,mpi_ierr)
-!        call mpas_timer_stop("si wait local")
-
-!        call mpi_iallreduce(CGcst_allreduce,CGcst_allreduce_global,5,mpi_double,mpi_sum,dminfo%comm,mpi_ireq,mpi_ierr)
-!        call mpi_ireduce(CGcst_allreduce,CGcst_allreduce_global,5,mpi_double,mpi_sum,mrank,dminfo%comm,mpi_ireq,mpi_ierr)
-
-         call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
-         call mpas_timer_stop("si reduction r0")
-
-!        if ( split_implicit_step == 1 ) then
-!          if ( rank == 0 ) then
-!          print*,CGcst_allreduce_global2(:)
-!          !print*,CGcst_allreduce_global3(:)
-!          !print*,CGcst_r00r1_global,CGcst_r00w1_global,CGcst_r00s0_global,CGcst_r00z0_global,resid
-!          endif
-!        endif
-!        call mpi_barrier(dminfo%comm,mpi_ierr)
-!        stop
 
          ! Preconditioning ------------------------------------------------------------------------!
 
@@ -1195,7 +1149,7 @@ module ocn_time_integration_si
                   !--------------------------------------------------------------!
                      fluxAx = thicknessSumCur * sshDiffCur
      
-                  sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge) !/ areaCell(iCell)
+                  sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                   !--------------------------------------------------------------!
    
                end do ! i
@@ -1217,15 +1171,18 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-!        call mpas_timer_start ("si wait")
-!        call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
-!        call mpi_ibcast(CGcst_allreduce_global,5,mpi_double,mrank,dminfo%comm,mpi_ireq,mpi_ierr)
-!        call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
-!        call mpas_timer_stop ("si wait")
 
-         CGcst_r00r0_global = CGcst_allreduce_global2(1)
-         CGcst_r00w0_global = CGcst_allreduce_global2(2)
+         CGcst_allreduce(:) = 0.0_RKIND
+         CGcst_allreduce(1) = CGcst_r00r0
+         CGcst_allreduce(2) = CGcst_r00w0
 
+         ! Global sum across CPUs
+         call mpas_timer_start("si reduction r0")
+         call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce, CGcst_allreduce_global)
+         call mpas_timer_stop ("si reduction r0")
+
+         CGcst_r00r0_global = CGcst_allreduce_global(1)
+         CGcst_r00w0_global = CGcst_allreduce_global(2)
 
          CGcst_alpha0 = CGcst_r00r0_global / CGcst_r00w0_global
          CGcst_beta0  = 0.0_RKIND
@@ -1306,29 +1263,20 @@ module ocn_time_integration_si
             end do  ! block
    
 
-!           CGcst_allreduce(:) = 0.0_RKIND
-            CGcst_allreduce3(1) = CGcst_q0y0
-            CGcst_allreduce3(2) = CGcst_y0y0
-            CGcst_allreduce3(3) = CGcst_r00r0
+            CGcst_allreduce(:) = 0.0_RKIND
+            CGcst_allreduce(1) = CGcst_q0y0
+            CGcst_allreduce(2) = CGcst_y0y0
+            CGcst_allreduce(3) = CGcst_r00r0
    
             ! Global sum across CPUs
             call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
+            call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce, CGcst_allreduce_global)
             call mpas_timer_stop("si reduction iter")
-
    
-            CGcst_q0y0_global  = CGcst_allreduce_global3(1)
-            CGcst_y0y0_global  = CGcst_allreduce_global3(2)
-            CGcst_r00r0_global = CGcst_allreduce_global3(3)
+            CGcst_q0y0_global  = CGcst_allreduce_global(1)
+            CGcst_y0y0_global  = CGcst_allreduce_global(2)
+            CGcst_r00r0_global = CGcst_allreduce_global(3)
    
-!        if ( split_implicit_step == 1 ) then
-!          if ( rank == 0 ) then
-!          print*,CGcst_allreduce_global3(:)
-!          !print*,CGcst_r00r1_global,CGcst_r00w1_global,CGcst_r00s0_global,CGcst_r00z0_global,resid
-!          endif
-!        endif
-!        call mpi_barrier(dminfo%comm,mpi_ierr)
-!        stop
    
             ! Preconditioning ------------------------------------------------------------------------!
    
@@ -1453,7 +1401,7 @@ module ocn_time_integration_si
      
                      fluxAx = thicknessSumLag * sshDiffNew
      
-                     sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge) !/ areaCell(iCell)
+                     sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                   end do ! i
                    
                   sshLagArea = R1_alpha1s_g_dts(split_implicit_step) * CGvec_zh1(iCell) * areaCell(iCell)
@@ -1495,22 +1443,22 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
 
-            CGcst_allreduce5(1) = CGcst_r00r1
-            CGcst_allreduce5(2) = CGcst_r00w1
-            CGcst_allreduce5(3) = CGcst_r00s0
-            CGcst_allreduce5(4) = CGcst_r00z0
-            CGcst_allreduce5(5) = CGcst_r1r1
+            CGcst_allreduce(1) = CGcst_r00r1
+            CGcst_allreduce(2) = CGcst_r00w1
+            CGcst_allreduce(3) = CGcst_r00s0
+            CGcst_allreduce(4) = CGcst_r00z0
+            CGcst_allreduce(5) = CGcst_r1r1
    
             ! Global sum across CPUs
             call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce5, CGcst_allreduce_global5)
+            call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce, CGcst_allreduce_global)
             call mpas_timer_stop("si reduction iter")
    
-            CGcst_r00r1_global = CGcst_allreduce_global5(1)
-            CGcst_r00w1_global = CGcst_allreduce_global5(2)
-            CGcst_r00s0_global = CGcst_allreduce_global5(3)
-            CGcst_r00z0_global = CGcst_allreduce_global5(4)
-                         resid = CGcst_allreduce_global5(5)
+            CGcst_r00r1_global = CGcst_allreduce_global(1)
+            CGcst_r00w1_global = CGcst_allreduce_global(2)
+            CGcst_r00s0_global = CGcst_allreduce_global(3)
+            CGcst_r00z0_global = CGcst_allreduce_global(4)
+                         resid = CGcst_allreduce_global(5)
    
    
             ! Preconditioning ------------------------------------------------------------------------!
@@ -1644,7 +1592,7 @@ module ocn_time_integration_si
      
                      fluxAx = thicknessSumLag * sshDiffNew
     
-                     sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge) !/ areaCell(iCell)
+                     sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                   end do ! i
                    
                   sshLagArea = R1_alpha1s_g_dts(split_implicit_step) * CGvec_wh1(iCell) * areaCell(iCell)
@@ -1997,21 +1945,6 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-!        CGcst_allreduce(:) = 0.0_RKIND
-         CGcst_allreduce2(1) = CGcst_r00r0
-         CGcst_allreduce2(2) = CGcst_r00w0
-
-         ! Global sum across CPUs
-         call mpas_timer_start("si reduction r0")
-!        call mpas_timer_start("si wait local")
-!        call mpi_barrier(mpi_local_comm,mpi_ierr)
-!        call mpas_timer_stop("si wait local")
-
-!        call mpi_iallreduce(CGcst_allreduce,CGcst_allreduce_global,5,mpi_double,mpi_sum,dminfo%comm,mpi_ireq,mpi_ierr)
-
-         call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
-         call mpas_timer_stop("si reduction r0")
-
 
          ! Preconditioning ------------------------------------------------------------------------!
 
@@ -2150,12 +2083,17 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-!        call mpas_timer_start ("si wait")
-!        call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
-!        call mpas_timer_stop ("si wait")
+         CGcst_allreduce(:) = 0.0_RKIND
+         CGcst_allreduce(1) = CGcst_r00r0
+         CGcst_allreduce(2) = CGcst_r00w0
 
-         CGcst_r00r0_global = CGcst_allreduce_global2(1)
-         CGcst_r00w0_global = CGcst_allreduce_global2(2)
+         ! Global sum across CPU 
+         call mpas_timer_start("si reduction r0")
+         call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce, CGcst_allreduce_global)
+         call mpas_timer_stop("si reduction r0")
+
+         CGcst_r00r0_global = CGcst_allreduce_global(1)
+         CGcst_r00w0_global = CGcst_allreduce_global(2)
 
          CGcst_alpha0 = CGcst_r00r0_global / CGcst_r00w0_global
          CGcst_beta0  = 0.0_RKIND
@@ -2243,19 +2181,19 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
    
-!           CGcst_allreduce(:) = 0.0_RKIND
-            CGcst_allreduce3(1) = CGcst_q0y0
-            CGcst_allreduce3(2) = CGcst_y0y0
-            CGcst_allreduce3(3) = CGcst_r00r0
+            CGcst_allreduce(:) = 0.0_RKIND
+            CGcst_allreduce(1) = CGcst_q0y0
+            CGcst_allreduce(2) = CGcst_y0y0
+            CGcst_allreduce(3) = CGcst_r00r0
    
             ! Global sum across CPUs
             call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
+            call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce, CGcst_allreduce_global)
             call mpas_timer_stop("si reduction iter")
    
-            CGcst_q0y0_global  = CGcst_allreduce_global3(1)
-            CGcst_y0y0_global  = CGcst_allreduce_global3(2)
-            CGcst_r00r0_global = CGcst_allreduce_global3(3)
+            CGcst_q0y0_global  = CGcst_allreduce_global(1)
+            CGcst_y0y0_global  = CGcst_allreduce_global(2)
+            CGcst_r00r0_global = CGcst_allreduce_global(3)
    
    
             ! Preconditioning ------------------------------------------------------------------------!
@@ -2419,23 +2357,22 @@ module ocn_time_integration_si
                CGcst_r1r1  = CGcst_r1r1  + CGvec_r1(iCell)  * CGvec_r1(iCell) 
             end do
    
-            CGcst_allreduce5(1) = CGcst_r00r1
-            CGcst_allreduce5(2) = CGcst_r00w1
-            CGcst_allreduce5(3) = CGcst_r00s0
-            CGcst_allreduce5(4) = CGcst_r00z0
-            CGcst_allreduce5(5) = CGcst_r1r1
+            CGcst_allreduce(1) = CGcst_r00r1
+            CGcst_allreduce(2) = CGcst_r00w1
+            CGcst_allreduce(3) = CGcst_r00s0
+            CGcst_allreduce(4) = CGcst_r00z0
+            CGcst_allreduce(5) = CGcst_r1r1
    
             ! Global sum across CPUs
             call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce5, CGcst_allreduce_global5)
+            call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce, CGcst_allreduce_global)
             call mpas_timer_stop("si reduction iter")
    
-            CGcst_r00r1_global = CGcst_allreduce_global5(1)
-            CGcst_r00w1_global = CGcst_allreduce_global5(2)
-            CGcst_r00s0_global = CGcst_allreduce_global5(3)
-            CGcst_r00z0_global = CGcst_allreduce_global5(4)
-                         resid = CGcst_allreduce_global5(5)
-
+            CGcst_r00r1_global = CGcst_allreduce_global(1)
+            CGcst_r00w1_global = CGcst_allreduce_global(2)
+            CGcst_r00s0_global = CGcst_allreduce_global(3)
+            CGcst_r00z0_global = CGcst_allreduce_global(4)
+                         resid = CGcst_allreduce_global(5)
    
             ! Preconditioning ------------------------------------------------------------------------!
    
@@ -2711,10 +2648,7 @@ module ocn_time_integration_si
 
             ! #Iteration  check
 !           if ( split_implicit_step == 2 ) then
-!           if ( rank == 0 ) then
 !           call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
-!            print*, iter
-!           endif
 !           endif
 
             block => block % next
@@ -2726,7 +2660,6 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'barotropicThicknessFlux')
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocity',2)
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocitySubcycle',1)
-!        call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'sshSubcycleCur',1)
          call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, finalBtrGroupName)
          call mpas_dmpar_exch_group_destroy(domain, finalBtrGroupName)
@@ -3499,13 +3432,10 @@ module ocn_time_integration_si
       integer, dimension(:), pointer :: nCellsArray, nEdgesArray
       real (kind=RKIND) :: local_num_cells,sum1,total_area_sum,local_area_sum,tmp1
       real (kind=RKIND), dimension(:), pointer :: areaCell
-      integer :: ncpus,ihh,imm,iss,isum1,isum2,rank,mpi_ierr,rankRepId
-
-      include 'mpif.h'
+      integer :: ncpus,ihh,imm,iss
 
       dminfo = domain % dminfo
       ncpus = dminfo % nprocs
-       rank = dminfo % my_proc_id
 
       call mpas_pool_get_config(domain % configs, 'config_do_restart', config_do_restart)
 
@@ -3665,60 +3595,29 @@ module ocn_time_integration_si
       
          if ( tmp1 > 3600.0_RKIND .or. config_n_ts_iter == 1 ) then
             dt_si(1) = tmp1 * 2.0_RKIND
-            dt_si(2) = tmp1 * 2.0_RKIND
-            si_opt = 1
+            R1_alpha1s_g_dts(1) = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * ((tmp1*2.0_RKIND)**2.0_RKIND))
+            R1_alpha1s_g_dt(1)  = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * tmp1*2.0_RKIND)
+            if ( config_n_ts_iter == 1 ) then
+               tavg(1,1)=0.50_RKIND
+               tavg(2,1)=0.50_RKIND
+            else
+               tavg(1,1)=0.25_RKIND
+               tavg(2,1)=0.75_RKIND
+            end if
          else
-            dt_si(1) = tmp1 
-            dt_si(2) = tmp1
-            si_opt = 2
+            dt_si(1) = tmp1
+            R1_alpha1s_g_dts(1) = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * (tmp1**2.0_RKIND))
+            R1_alpha1s_g_dt(1)  = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * tmp1)
+            tavg(1,1)=0.50_RKIND
+            tavg(2,1)=0.50_RKIND
          endif
+            dt_si(2) = tmp1
+            R1_alpha1s_g_dts(2) = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * (tmp1**2.0_RKIND))
+            R1_alpha1s_g_dt(2)  = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * tmp1)
+            tavg(1,2)=0.50_RKIND
+            tavg(2,2)=0.50_RKIND
 
-         R1_alpha1s_g_dts(1) = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * (dt_si(1)**2.0_RKIND))
-         R1_alpha1s_g_dt(1)  = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * dt_si(1))
-         tavg(1,1)=0.50_RKIND
-         tavg(2,1)=0.50_RKIND
-
-         R1_alpha1s_g_dts(2) = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * (dt_si(2)**2.0_RKIND))
-         R1_alpha1s_g_dt(2)  = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * dt_si(2))
-         tavg(1,2)=0.50_RKIND
-         tavg(2,2)=0.50_RKIND
-
-         R1_alpha1_g = 1.0_RKIND/(gravity*alpha1)
-
-         print*, 'End of si_init'
-!************************************************************************
-!
-!        MPI communicator for local and cross allreduce
-!
-!-------------------------------------------!
-
-         !--- Define local communicator
-!         call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
-!         call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
-!         call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
-!
-!
-!!--- Calcaulate #3D grids for each core
-!            isum1 = 0
-!            do iEdge = 1, nEdges
-!               isum1 = isum1 + maxLevelEdgeTop(iEdge)
-!            enddo
-!!           print*, rank,isum1
-!
-!            call mpas_dmpar_min_int(dminfo,isum1,isum2)
-!!           call mpi_allreduce(isum1,isum2,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
-!
-!
-!            if ( isum1 == isum2 ) then
-!!              print*,'aaa', rank,isum1
-!               mrank = rank
-!            endif
-!            isum2 = mrank
-!            mrank = 0
-!
-!            call mpas_dmpar_sum_int(dminfo,isum2,mrank)
-!!           call mpi_allreduce(isum2,mrank,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
-
+            R1_alpha1_g = 1.0_RKIND/(gravity*alpha1)
 
       end if ! config_time_integrator
    end subroutine ocn_time_integration_si_init!}}}
@@ -3806,6 +3705,7 @@ module ocn_time_integration_si
          call mpas_pool_get_array(meshPool, 'indexToCellID',   globalCellId    )
  
          nCells   = nCellsArray(1)
+         nEdges   = nEdgesArray(1)
          nCellsA2 = nCellsArray(2)
          nCellsA3 = nCellsArray(3)
  
@@ -3818,11 +3718,7 @@ module ocn_time_integration_si
          ! Restricted Additive Schwarz preconditioner ---------------------------------------------!
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
  
-!           if ( config_num_halos <= 3 ) then
-!              nPrecVec = nCellsArray(config_num_halos)
-!           elseif ( config_num_halos > 3 ) then
-               nPrecVec = nCellsArray(3)
-!           endif
+            nPrecVec = nCellsA3
   
             allocate(prec_ivmat(1:nPrecVec,1:nPrecVec))
                      prec_ivmat(:,:) = 0.0_RKIND

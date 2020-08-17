@@ -76,7 +76,7 @@ module ocn_time_integration_si
    real (kind=RKIND), allocatable,dimension(:)   :: R1_alpha1s_g_dt
    real (kind=RKIND) :: total_num_cells,mean_num_cells,area_mean
    real (kind=RKIND) :: R1_alpha1_g,alpha1,alpha2,crit_main
-   integer :: nPrecVec,si_opt
+   integer :: nPrecVec,n_si_iter
    !-------------------
    integer :: rank,ncpus,mrank
    integer :: mpi_local_comm,local_size,local_rank
@@ -719,6 +719,8 @@ module ocn_time_integration_si
          cellHaloComputeCounter = config_num_halos
          edgeHaloComputeCounter = config_num_halos + 1
 
+         do k = 1,n_si_iter
+
          ! Initialize variables for barotropic subcycling
          call mpas_timer_start('btr vel si init')
 
@@ -765,15 +767,9 @@ module ocn_time_integration_si
                sshSubcycleCur(:) = sshCur(:)
                normalBarotropicVelocitySubcycleCur(:) = normalBarotropicVelocityCur(:)
             else 
-               if ( si_opt == 1 ) then
-                       sshNew(:) = sshCur(:)
-               sshSubcycleCur(:) = sshCur(:)
-               normalBarotropicVelocitySubcycleCur(:) = normalBarotropicVelocityCur(:)
-               else 
                        sshCur(:) = sshNew(:)
                sshSubcycleCur(:) = sshNew(:)
                normalBarotropicVelocityCur(:) = normalBarotropicVelocitySubcycleCur(:)
-               endif
             endif ! split_implicit_step
 
             do iEdge = 1, nEdges
@@ -1758,7 +1754,8 @@ module ocn_time_integration_si
                do i = 1, nEdgesOnEdge(iEdge)
                   eoe = edgesOnEdge(i,iEdge)
                   CoriolisTerm =  CoriolisTerm + weightsOnEdge(i,iEdge)  &
-                                 * normalBarotropicVelocitySubcycleNew(eoe) * fEdge(eoe)
+                                 * 0.5_RKIND * (  normalBarotropicVelocityCur(eoe)  &
+                                                + normalBarotropicVelocitySubcycleNew(eoe)) * fEdge(eoe)
                end do
                barotropicCoriolisTerm(iEdge) = CoriolisTerm
             end do
@@ -2673,12 +2670,13 @@ module ocn_time_integration_si
             nCells = nCellsArray(1)
             nEdges = nEdgesArray(2)
 
+
             do iEdge = 1, nEdges
                temp_mask = edgeMask(1, iEdge)
-
+   
                cell1 = cellsOnEdge(1,iEdge)
                cell2 = cellsOnEdge(2,iEdge)
-
+   
                normalBarotropicVelocitySubcycleNew(iEdge) &
                   = temp_mask &
                   * (normalBarotropicVelocityCur(iEdge) &
@@ -2687,27 +2685,36 @@ module ocn_time_integration_si
                             - (alpha1*sshSubcycleCur(cell1)+alpha2*sshCur(cell1)) ) &
                          / dcEdge(iEdge) - barotropicForcing(iEdge)))
             end do ! iEdge
-
+   
             do iEdge = 1, nEdges
                normalBarotropicVelocitySubcycleCur(iEdge) &
                   =  tavg(1,split_implicit_step)*normalBarotropicVelocitySubcycleNew(iEdge)  &
                    + tavg(2,split_implicit_step)*normalBarotropicVelocityCur(iEdge)
             end do ! iEdge
+   
 
-            do iEdge = 1, nEdges
-               cell1 = cellsOnEdge(1,iEdge)
-               cell2 = cellsOnEdge(2,iEdge)
-
-               sshEdge =   0.5_RKIND*( 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2)))  &
-                         + 0.5_RKIND*( 0.5_RKIND * (sshCur(cell1) + sshCur(cell2)))
-               thicknessSum = sshEdge + min(bottomDepth(cell1), bottomDepth(cell2))
-               barotropicThicknessFlux(iEdge) = 0.5*( normalBarotropicVelocitySubcycleNew(iEdge) &
-                                                     +normalBarotropicVelocityCur(iEdge)) * thicknessSum
-            end do ! iEdge
-       
-            do iEdge = 1, nEdges
-               normalBarotropicVelocityNew(iEdge) = normalBarotropicVelocitySubcycleCur(iEdge)
-            end do ! iEdge
+            if ( k == 1 .and. n_si_iter == 2 .and. split_implicit_step == 1) then
+               sshCur(:) = sshSubcycleCur(:)
+               normalBarotropicVelocityCur(:) = normalBarotropicVelocitySubcycleCur(:)
+            elseif ( k == 1 .and. n_si_iter == 2 .and. split_implicit_step == 2) then
+               sshNew(:) = sshSubcycleCur(:)
+!              normalBarotropicVelocitySubcycleCur(:) = normalBarotropicVelocitySubcycleNew(:)
+            else
+               do iEdge = 1, nEdges
+                  cell1 = cellsOnEdge(1,iEdge)
+                  cell2 = cellsOnEdge(2,iEdge)
+      
+                  sshEdge =   0.5_RKIND*( 0.5_RKIND * (sshSubcycleCur(cell1) + sshSubcycleCur(cell2)))  &
+                            + 0.5_RKIND*( 0.5_RKIND * (sshCur(cell1) + sshCur(cell2)))
+                  thicknessSum = sshEdge + min(bottomDepth(cell1), bottomDepth(cell2))
+                  barotropicThicknessFlux(iEdge) = 0.5*( normalBarotropicVelocitySubcycleNew(iEdge) &
+                                                        +normalBarotropicVelocityCur(iEdge)) * thicknessSum
+               end do ! iEdge
+          
+               do iEdge = 1, nEdges
+                  normalBarotropicVelocityNew(iEdge) = normalBarotropicVelocitySubcycleCur(iEdge)
+               end do ! iEdge
+            end if
 
             ! #Iteration  check
 !           if ( split_implicit_step == 2 ) then
@@ -2715,27 +2722,43 @@ module ocn_time_integration_si
 !           call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
 !            print*, iter
 !           endif
-!           endif
 
             block => block % next
          end do  ! block
 
-         ! boundary update on F
+            if ( n_si_iter == 2) then
+
+            call mpas_timer_start("si halo btr vel")
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+
+            if ( k == 1 .and. split_implicit_step == 1) then
+               call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocity',1)
+            elseif ( k == 1 .and. split_implicit_step == 2) then
+               call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'normalBarotropicVelocitySubcycle',1)
+            end if
+
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_timer_stop("si halo btr vel")
+            call mpas_threading_barrier()
+            end if
+
+         call mpas_timer_stop("si btr vel update")
+
+         end do ! k = n_si_iter
+
          call mpas_timer_start("si halo btr vel")
          call mpas_dmpar_exch_group_create(domain, finalBtrGroupName)
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'barotropicThicknessFlux')
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocity',2)
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocitySubcycle',1)
-!        call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'sshSubcycleCur',1)
          call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, finalBtrGroupName)
          call mpas_dmpar_exch_group_destroy(domain, finalBtrGroupName)
          call mpas_timer_stop("si halo btr vel")
          call mpas_threading_barrier()
 
-         call mpas_timer_stop("si btr vel update")
-
-         call mpas_threading_barrier()
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
@@ -3664,28 +3687,39 @@ module ocn_time_integration_si
          tmp1 = ihh * 3600.0_RKIND + imm * 60.0_RKIND + iss
       
          if ( tmp1 > 3600.0_RKIND .or. config_n_ts_iter == 1 ) then
-            dt_si(1) = tmp1 * 2.0_RKIND
-            dt_si(2) = tmp1 * 2.0_RKIND
-            si_opt = 1
+            if ( config_n_ts_iter == 1 ) then
+               dt_si(1) = tmp1 
+               R1_alpha1s_g_dts(1) = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * (dt_si(1)**2.0_RKIND))
+               R1_alpha1s_g_dt(1)  = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * dt_si(1))
+               tavg(1,1)=0.50_RKIND
+               tavg(2,1)=0.50_RKIND
+               n_si_iter = 2
+            else
+!              tavg(1,1)=0.25_RKIND
+!              tavg(2,1)=0.75_RKIND
+               dt_si(1) = tmp1 
+               R1_alpha1s_g_dts(1) = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * (dt_si(1)**2.0_RKIND))
+               R1_alpha1s_g_dt(1)  = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * dt_si(1))
+               tavg(1,1)=0.50_RKIND
+               tavg(2,1)=0.50_RKIND
+               n_si_iter = 2
+            end if
          else
-            dt_si(1) = tmp1 
-            dt_si(2) = tmp1
-            si_opt = 2
+            dt_si(1) = tmp1
+            R1_alpha1s_g_dts(1) = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * (tmp1**2.0_RKIND))
+            R1_alpha1s_g_dt(1)  = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * tmp1)
+            tavg(1,1)=0.50_RKIND
+            tavg(2,1)=0.50_RKIND
+            n_si_iter = 1
          endif
+            dt_si(2) = tmp1
+            R1_alpha1s_g_dts(2) = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * (tmp1**2.0_RKIND))
+            R1_alpha1s_g_dt(2)  = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * tmp1)
+            tavg(1,2)=0.50_RKIND
+            tavg(2,2)=0.50_RKIND
 
-         R1_alpha1s_g_dts(1) = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * (dt_si(1)**2.0_RKIND))
-         R1_alpha1s_g_dt(1)  = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * dt_si(1))
-         tavg(1,1)=0.50_RKIND
-         tavg(2,1)=0.50_RKIND
+            R1_alpha1_g = 1.0_RKIND/(gravity*alpha1)
 
-         R1_alpha1s_g_dts(2) = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * (dt_si(2)**2.0_RKIND))
-         R1_alpha1s_g_dt(2)  = 1.0_RKIND/((alpha1**2.0_RKIND) * gravity * dt_si(2))
-         tavg(1,2)=0.50_RKIND
-         tavg(2,2)=0.50_RKIND
-
-         R1_alpha1_g = 1.0_RKIND/(gravity*alpha1)
-
-         print*, 'End of si_init'
 !************************************************************************
 !
 !        MPI communicator for local and cross allreduce
@@ -3693,31 +3727,31 @@ module ocn_time_integration_si
 !-------------------------------------------!
 
          !--- Define local communicator
-!         call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
-!         call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
-!         call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
-!
-!
-!!--- Calcaulate #3D grids for each core
-!            isum1 = 0
-!            do iEdge = 1, nEdges
-!               isum1 = isum1 + maxLevelEdgeTop(iEdge)
-!            enddo
-!!           print*, rank,isum1
-!
-!            call mpas_dmpar_min_int(dminfo,isum1,isum2)
-!!           call mpi_allreduce(isum1,isum2,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
-!
-!
-!            if ( isum1 == isum2 ) then
-!!              print*,'aaa', rank,isum1
-!               mrank = rank
-!            endif
-!            isum2 = mrank
-!            mrank = 0
-!
-!            call mpas_dmpar_sum_int(dminfo,isum2,mrank)
-!!           call mpi_allreduce(isum2,mrank,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
+         call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
+         call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
+         call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
+
+
+!--- Calcaulate #3D grids for each core
+            isum1 = 0
+            do iEdge = 1, nEdges
+               isum1 = isum1 + maxLevelEdgeTop(iEdge)
+            enddo
+!           print*, rank,isum1
+
+            call mpas_dmpar_min_int(dminfo,isum1,isum2)
+!           call mpi_allreduce(isum1,isum2,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
+
+
+            if ( isum1 == isum2 ) then
+!              print*,'aaa', rank,isum1
+               mrank = rank
+            endif
+            isum2 = mrank
+            mrank = 0
+
+            call mpas_dmpar_sum_int(dminfo,isum2,mrank)
+!           call mpi_allreduce(isum2,mrank,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
 
 
       end if ! config_time_integrator
@@ -3806,6 +3840,7 @@ module ocn_time_integration_si
          call mpas_pool_get_array(meshPool, 'indexToCellID',   globalCellId    )
  
          nCells   = nCellsArray(1)
+         nEdges   = nEdgesArray(1)
          nCellsA2 = nCellsArray(2)
          nCellsA3 = nCellsArray(3)
  
