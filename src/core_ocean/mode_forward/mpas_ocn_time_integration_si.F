@@ -1454,6 +1454,7 @@ module ocn_time_integration_si
                      fluxAx = thicknessSumLag * sshDiffNew
      
                      sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge) !/ areaCell(iCell)
+!                    print*,rank,iCell,iEdge,cell1,cell2
                   end do ! i
                    
                   sshLagArea = R1_alpha1s_g_dts(split_implicit_step) * CGvec_zh1(iCell) * areaCell(iCell)
@@ -1461,6 +1462,9 @@ module ocn_time_integration_si
                   CGvec_v1(iCell) = -sshLagArea - sshTendAx
        
                end do ! iCell
+
+!              call mpi_barrier(dminfo%comm,mpi_ierr)
+!              stop
       
                ! End reduction -----------------------------------------------------------------------!
    
@@ -1891,6 +1895,7 @@ module ocn_time_integration_si
             nCells = nCellsArray( 1 )
             nEdges = nEdgesArray( 2 )
 
+            call mpas_timer_start("applyPrec")
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
                call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_r0(1:nPrecVec), 1, 0.0_RKIND, CGvec_rh0(1:nPrecVec), 1)
@@ -1908,6 +1913,7 @@ module ocn_time_integration_si
                CGvec_rh0(1:nPrecVec) = CGvec_r0(1:nPrecVec)
 
             end if
+            call mpas_timer_stop("applyPrec")
 
             block => block % next
          end do  ! block
@@ -1960,6 +1966,7 @@ module ocn_time_integration_si
             CGcst_r00r0 = 0.0_RKIND
             CGcst_r00w0 = 0.0_RKIND
  
+            call mpas_timer_start("applyOp")
             do iCell = 1, nCells
  
                sshTendAx = 0.0_RKIND
@@ -1993,6 +2000,7 @@ module ocn_time_integration_si
                CGcst_r00w0 = CGcst_r00w0 + CGvec_r00(iCell) * CGvec_w0(iCell)
  
             end do ! iCell
+            call mpas_timer_stop("applyOp")
  
             block => block % next
          end do  ! block
@@ -2043,6 +2051,7 @@ module ocn_time_integration_si
             nCells = nCellsArray( 1 )
             nEdges = nEdgesArray( 2 )
  
+            call mpas_timer_start("applyPrec")
             if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
                call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_w0(1:nPrecVec), 1, 0.0_RKIND, CGvec_wh0(1:nPrecVec), 1)
@@ -2059,6 +2068,7 @@ module ocn_time_integration_si
                ! No preconditioning
                CGvec_wh0(1:nPrecVec) = CGvec_w0(1:nPrecVec)
             end if
+            call mpas_timer_stop("applyPrec")
 
            block => block % next
          end do  ! block
@@ -2110,6 +2120,7 @@ module ocn_time_integration_si
             nCells = nCellsArray( 1 )
             nEdges = nEdgesArray( 2 )
 
+            call mpas_timer_start("applyOp")
             do iCell = 1, nCells
  
                sshTendAx = 0.0_RKIND
@@ -2146,6 +2157,7 @@ module ocn_time_integration_si
                CGvec_s0(iCell)  = 0.0_RKIND
  
             end do ! iCell
+            call mpas_timer_stop("applyOp")
  
             block => block % next
          end do  ! block
@@ -2287,6 +2299,7 @@ module ocn_time_integration_si
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
    
+               call mpas_timer_start("applyPrec")
                if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                   ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
                   call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_z1(1:nPrecVec), 1, 0.0_RKIND, CGvec_zh1(1:nPrecVec), 1)
@@ -2303,6 +2316,7 @@ module ocn_time_integration_si
                   ! No preconditioning 
                   CGvec_zh1(1:nPrecVec) = CGvec_z1(1:nPrecVec)
                end if
+               call mpas_timer_stop("applyPrec")
    
                block => block % next
             end do  ! block
@@ -2355,9 +2369,10 @@ module ocn_time_integration_si
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_zh1', CGvec_zh1)
                call mpas_pool_get_array(diagnosticsPool, 'CGvec_y0' , CGvec_y0)
     
-               nCells = nCellsArray(2)
-               nEdges = nEdgesArray(3)
+               nCells = nCellsArray(1)
+               nEdges = nEdgesArray(2)
     
+               call mpas_timer_start("applyOp")
                do iCell = 1, nCells
                   sshTendAx = 0.0_RKIND
    
@@ -2386,6 +2401,7 @@ module ocn_time_integration_si
                   CGvec_v1(iCell) = -sshLagArea - sshTendAx
             
                end do ! iCell
+               call mpas_timer_stop("applyOp")
            
                ! End reduction ------------------------------------------------------------------------!
    
@@ -2467,6 +2483,7 @@ module ocn_time_integration_si
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
    
+               call mpas_timer_start("applyPrec")
                if ( trim(config_btr_si_preconditioner) == 'ras' ) then
                   ! RAS preconditioning: Use BLAS for symmetric matrix-vector multiplication
                   call DSYMV('U', nPrecVec, 1.0_RKIND, prec_ivmat, nPrecVec, CGvec_w1(1:nPrecVec), 1, 0.0_RKIND, CGvec_wh1(1:nPrecVec), 1)
@@ -2482,6 +2499,7 @@ module ocn_time_integration_si
                   ! No preconditioning 
                   CGvec_wh1(1:nPrecVec) = CGvec_w1(1:nPrecVec)
                end if
+               call mpas_timer_stop("applyPrec")
    
                block => block % next
             end do  ! block
@@ -2548,6 +2566,7 @@ module ocn_time_integration_si
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
    
+               call mpas_timer_start("applyOp")
                do iCell = 1, nCells
                   sshTendAx = 0.0_RKIND
    
@@ -2575,6 +2594,7 @@ module ocn_time_integration_si
    
                   CGvec_t1(iCell) = -sshLagArea - sshTendAx
                end do ! iCell
+               call mpas_timer_stop("applyOp")
           
                ! End reduction -----------------------------------------------------------------------!
    
@@ -3685,7 +3705,6 @@ module ocn_time_integration_si
 
          R1_alpha1_g = 1.0_RKIND/(gravity*alpha1)
 
-         print*, 'End of si_init'
 !************************************************************************
 !
 !        MPI communicator for local and cross allreduce
