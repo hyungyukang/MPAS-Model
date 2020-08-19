@@ -63,7 +63,7 @@ module ocn_time_integration_si
    !--------------------------------------------------------------------
 
    public :: ocn_time_integrator_si, ocn_time_integration_si_init
-   public :: ocn_time_integrator_si_preconditioner
+   public :: ocn_time_integrator_si_preconditioner,my_allreduce
 
    character (len=*), parameter :: iterGroupName = 'iterFields'
    character (len=*), parameter :: finalBtrGroupName = 'finalBtrFields'
@@ -1058,8 +1058,45 @@ module ocn_time_integration_si
 !        call mpi_barrier(mpi_local_comm,mpi_ierr)
 !        call mpas_timer_stop("si wait local")
 
+!        CGcst_allreduce(1) = 1.0_RKIND
+!        CGcst_allreduce(2) = 1.0_RKIND
+!        CGcst_allreduce(3) = 1.0_RKIND
+!        CGcst_allreduce(4) = 1.0_RKIND
+!        CGcst_allreduce(5) = 5.0_RKIND
+!        call mpas_timer_start("si reduction_local")
+!        call mpi_reduce_local(CGcst_allreduce,CGcst_allreduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_ierr)
+!        call mpi_reduce_local(CGcst_allreduce,CGcst_allreduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_ierr)
+!        call mpi_reduce_local(CGcst_allreduce,CGcst_allreduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_ierr)
+!        call mpas_timer_stop("si reduction_local")
+
 !        call mpi_iallreduce(CGcst_allreduce,CGcst_allreduce_global,5,mpi_double,mpi_sum,dminfo%comm,mpi_ireq,mpi_ierr)
 !        call mpi_ireduce(CGcst_allreduce,CGcst_allreduce_global,5,mpi_double,mpi_sum,mrank,dminfo%comm,mpi_ireq,mpi_ierr)
+
+!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+
+         call mpas_timer_start("si reduce")
+         call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM,mrank,mpi_local_comm,mpi_ierr)
+         call mpas_timer_stop("si reduce")
+
+!        if ( local_rank == mrank ) then
+!           print*, CGcst_allreduce_global2(:)
+!        endif
+
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+   
+!        call mpas_timer_start("si my reduce")
+!        call my_allreduce(2, CGcst_allreduce2, CGcst_allreduce_global2)
+!        call mpas_timer_stop("si my reduce")
+
+!        print*, 'After my reduce'
+
+!        if ( local_rank == mrank ) then
+!           print*, CGcst_allreduce_global2(:)
+!        endif
 
          call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
          call mpas_timer_stop("si reduction r0")
@@ -1071,6 +1108,8 @@ module ocn_time_integration_si
 !          !print*,CGcst_r00r1_global,CGcst_r00w1_global,CGcst_r00s0_global,CGcst_r00z0_global,resid
 !          endif
 !        endif
+
+
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
 !        stop
 
@@ -3519,7 +3558,7 @@ module ocn_time_integration_si
       integer, dimension(:), pointer :: nCellsArray, nEdgesArray
       real (kind=RKIND) :: local_num_cells,sum1,total_area_sum,local_area_sum,tmp1
       real (kind=RKIND), dimension(:), pointer :: areaCell
-      integer :: ncpus,ihh,imm,iss,isum1,isum2,rank,mpi_ierr,rankRepId
+      integer :: ncpus,ihh,imm,iss,isum1,isum2,mpi_ierr,rankRepId
 
       include 'mpif.h'
 
@@ -3712,32 +3751,41 @@ module ocn_time_integration_si
 !-------------------------------------------!
 
          !--- Define local communicator
-!         call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
-!         call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
-!         call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
-!
-!
-!!--- Calcaulate #3D grids for each core
-!            isum1 = 0
-!            do iEdge = 1, nEdges
-!               isum1 = isum1 + maxLevelEdgeTop(iEdge)
-!            enddo
-!!           print*, rank,isum1
-!
-!            call mpas_dmpar_min_int(dminfo,isum1,isum2)
-!!           call mpi_allreduce(isum1,isum2,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
-!
-!
-!            if ( isum1 == isum2 ) then
-!!              print*,'aaa', rank,isum1
-!               mrank = rank
-!            endif
-!            isum2 = mrank
-!            mrank = 0
-!
-!            call mpas_dmpar_sum_int(dminfo,isum2,mrank)
-!!           call mpi_allreduce(isum2,mrank,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
+         call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
+         call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
+         call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
 
+
+!--- Calcaulate #3D grids for each core
+         isum1 = 0
+         mrank = 0
+         do iEdge = 1, nEdges
+            isum1 = isum1 + maxLevelEdgeTop(iEdge)
+         enddo
+         call mpi_allreduce(isum1,isum2,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
+
+         if ( isum2 == isum1 ) then
+            mrank = rank
+         endif
+        
+         isum1 = mrank 
+         mrank = 0
+         call mpi_allreduce(isum1,mrank,1,MPI_INT,MPI_SUM,mpi_local_comm,mpi_ierr)
+
+
+         !--- Define cross communicator
+         if ( local_rank == mrank ) then
+            rankRepId = 0
+         else
+            rankRepId = MPI_UNDEFINED
+         endif
+
+         !--- Representative rank coloring and  communicator localizing
+         call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_cross_comm, mpi_ierr)
+         if ( local_rank == mrank ) then
+         call MPI_COMM_SIZE( mpi_cross_comm, cross_size, mpi_ierr)
+         call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
+         endif
 
       end if ! config_time_integrator
    end subroutine ocn_time_integration_si_init!}}}
@@ -3978,6 +4026,32 @@ module ocn_time_integration_si
       end do  ! block
 
    end subroutine ocn_time_integrator_si_preconditioner !}}}
+
+
+   subroutine my_allreduce (n,cst,cst_global) !{{{
+      implicit none
+      integer,intent(in) :: n
+      !real(kind=RKIND),dimension(n),intent(in)  :: cst
+      real(kind=RKIND),dimension(n)  :: cst
+      real(kind=RKIND),dimension(n)  :: cst_global
+      real(kind=RKIND),dimension(n)             :: cst_work
+      integer,dimension(local_size-1) :: ireq
+      integer :: i,mpi_ierr,mpi_ireq,mpi_jreq,mpi_status
+      include 'mpif.h'
+
+      if ( local_rank == mrank ) then
+         cst_global(:) = cst(:)
+         do i = 1,local_size-1
+!           call mpi_recv(cst_work,n,mpi_double,MPI_ANY_SOURCE,MPI_ANY_TAG,mpi_local_comm,mpi_status,mpi_ierr)
+            call mpi_irecv(cst_work,n,mpi_double,MPI_ANY_SOURCE,MPI_ANY_TAG,mpi_local_comm,mpi_jreq,mpi_ierr)
+            call mpi_wait(mpi_jreq,MPI_STATUS_IGNORE,mpi_ierr)
+            cst_global(:) = cst_global(:) + cst_work(:) 
+         end do
+      else
+         call mpi_isend(cst,n,mpi_double,mrank,rank,mpi_local_comm,mpi_ireq,mpi_ierr)
+!        call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+      endif
+   end subroutine my_allreduce !}}}
 
 end module ocn_time_integration_si
 
