@@ -78,7 +78,7 @@ module ocn_time_integration_si
    real (kind=RKIND) :: R1_alpha1_g,alpha1,alpha2,crit_main
    integer :: nPrecVec,si_opt
    !-------------------
-   integer :: rank,ncpus,mrank
+   integer :: rank,ncpus,mrank,crank
    integer :: mpi_local_comm,local_size,local_rank
    integer :: mpi_cross_comm,cross_size,cross_rank
    integer :: mpi_peer_comm,peer_size,peer_rank
@@ -1077,9 +1077,9 @@ module ocn_time_integration_si
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
 
-         call mpas_timer_start("si reduce")
-         call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM,mrank,mpi_local_comm,mpi_ierr)
-         call mpas_timer_stop("si reduce")
+!        call mpas_timer_start("si reduce")
+!        call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM,mrank,mpi_local_comm,mpi_ierr)
+!        call mpas_timer_stop("si reduce")
 
 !        if ( local_rank == mrank ) then
 !           print*, CGcst_allreduce_global2(:)
@@ -1088,9 +1088,13 @@ module ocn_time_integration_si
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
    
-!        call mpas_timer_start("si my reduce")
-!        call my_allreduce(2, CGcst_allreduce2, CGcst_allreduce_global2)
-!        call mpas_timer_stop("si my reduce")
+         call mpas_timer_start("si my reduce")
+         call my_allreduce(2, CGcst_allreduce2, CGcst_allreduce_global2)
+         call mpas_timer_stop("si my reduce")
+
+         call mpas_timer_start("si wait")
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+         call mpas_timer_stop("si wait")
 
 !        print*, 'After my reduce'
 
@@ -3787,6 +3791,7 @@ module ocn_time_integration_si
          call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
          endif
 
+
       end if ! config_time_integrator
    end subroutine ocn_time_integration_si_init!}}}
 
@@ -4040,16 +4045,13 @@ module ocn_time_integration_si
       include 'mpif.h'
 
       if ( local_rank == mrank ) then
-         cst_global(:) = cst(:)
          do i = 1,local_size-1
-!           call mpi_recv(cst_work,n,mpi_double,MPI_ANY_SOURCE,MPI_ANY_TAG,mpi_local_comm,mpi_status,mpi_ierr)
             call mpi_irecv(cst_work,n,mpi_double,MPI_ANY_SOURCE,MPI_ANY_TAG,mpi_local_comm,mpi_jreq,mpi_ierr)
             call mpi_wait(mpi_jreq,MPI_STATUS_IGNORE,mpi_ierr)
             cst_global(:) = cst_global(:) + cst_work(:) 
          end do
       else
          call mpi_isend(cst,n,mpi_double,mrank,rank,mpi_local_comm,mpi_ireq,mpi_ierr)
-!        call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
       endif
    end subroutine my_allreduce !}}}
 
