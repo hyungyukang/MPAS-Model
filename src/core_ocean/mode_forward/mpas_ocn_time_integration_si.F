@@ -1077,9 +1077,9 @@ module ocn_time_integration_si
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
 
-!        call mpas_timer_start("si reduce")
-!        call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM,mrank,mpi_local_comm,mpi_ierr)
-!        call mpas_timer_stop("si reduce")
+         call mpas_timer_start("si reduce")
+         call mpi_reduce(CGcst_allreduce2,CGcst_allreduce_global2,2,MPI_DOUBLE,MPI_SUM,mrank,mpi_local_comm,mpi_ierr)
+         call mpas_timer_stop("si reduce")
 
 !        if ( local_rank == mrank ) then
 !           print*, CGcst_allreduce_global2(:)
@@ -1088,9 +1088,9 @@ module ocn_time_integration_si
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
    
-         call mpas_timer_start("si my reduce")
-         call my_allreduce(2, CGcst_allreduce2, CGcst_allreduce_global2)
-         call mpas_timer_stop("si my reduce")
+!        call mpas_timer_start("si my reduce")
+!        call my_allreduce(2, CGcst_allreduce2, CGcst_allreduce_global2)
+!        call mpas_timer_stop("si my reduce")
 
          call mpas_timer_start("si wait")
          call mpi_barrier(dminfo%comm,mpi_ierr)
@@ -3767,14 +3767,15 @@ module ocn_time_integration_si
             isum1 = isum1 + maxLevelEdgeTop(iEdge)
          enddo
          call mpi_allreduce(isum1,isum2,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
-
-         if ( isum2 == isum1 ) then
-            mrank = rank
-         endif
-        
-         isum1 = mrank 
+     
          mrank = 0
-         call mpi_allreduce(isum1,mrank,1,MPI_INT,MPI_SUM,mpi_local_comm,mpi_ierr)
+         if ( isum2 == isum1 ) then
+            mrank = local_rank
+         endif
+     
+         call mpi_allreduce(mrank,isum1,1,MPI_INT,MPI_SUM,mpi_local_comm,mpi_ierr)
+         mrank = isum1
+         
 
 
          !--- Define cross communicator
@@ -4051,7 +4052,9 @@ module ocn_time_integration_si
             cst_global(:) = cst_global(:) + cst_work(:) 
          end do
       else
-         call mpi_isend(cst,n,mpi_double,mrank,rank,mpi_local_comm,mpi_ireq,mpi_ierr)
+!        call mpi_isend(cst,n,mpi_double,mrank,local_rank,mpi_local_comm,mpi_jreq,mpi_ierr)
+!        call mpi_wait(mpi_jreq,MPI_STATUS_IGNORE,mpi_ierr)
+         call mpi_send(cst,n,mpi_double,mrank,local_rank,mpi_local_comm,mpi_ierr)
       endif
    end subroutine my_allreduce !}}}
 
