@@ -289,7 +289,7 @@ module ocn_time_integration_si
       integer :: temp_mask
       real (kind=RKIND) :: tracer2_value, lat
       integer :: mpi_ierr,mpi_ireq,mpi_jreq
-      real (kind=RKIND) :: stime,etime
+      real (kind=RKIND) :: stime,etime,sum1,sum2
 
       include 'mpif.h'
 
@@ -1153,24 +1153,35 @@ module ocn_time_integration_si
 
 !        print*, 'After my reduce'
 
-         call mpas_timer_start("si reduction r0")
 
-         call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+         stime  = MPI_WTIME()
+!        call mpas_timer_start("si reduction r0")
 
-!        call my_allreduce(2, CGcst_allreduce2, CGcst_allreduce_global2)
-!        if ( local_rank == mrank) then
-!           do i = 1,local_size-1
-!              call mpi_send(CGcst_allreduce_global2,2,mpi_double,dest(i),dest(i),mpi_local_comm,mpi_ierr)
-!           end do
-!        else
-!           call mpi_irecv(CGcst_allreduce_global2,2,mpi_double,mrank,local_rank,mpi_local_comm,mpi_jreq,mpi_ierr)
-!        endif
-
-         call mpas_timer_stop("si reduction r0")
+!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
 
 
+         do k = 1,20
 
+!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
 
+         call my_allreduce(2, CGcst_allreduce2, CGcst_allreduce_global2)
+         if ( local_rank == mrank) then
+            do i = 1,local_size-1
+               call mpi_send(CGcst_allreduce_global2,2,mpi_double,dest(i),dest(i),mpi_local_comm,mpi_ierr)
+            end do
+         else
+            call mpi_irecv(CGcst_allreduce_global2,2,mpi_double,mrank,local_rank,mpi_local_comm,mpi_jreq,mpi_ierr)
+         endif
+         if ( local_rank /= mrank ) then
+            call mpi_wait(mpi_jreq,MPI_STATUS_IGNORE,mpi_ierr)
+         endif
+
+         end do
+
+         etime = MPI_WTIME()
+
+!        call mpas_timer_stop("si reduction r0")
+         print*,  rank,"*",etime - stime
 
 
 !        if ( split_implicit_step == 1 ) then
@@ -1182,8 +1193,8 @@ module ocn_time_integration_si
 !        endif
 
 
-!        call mpi_barrier(dminfo%comm,mpi_ierr)
-!        stop
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+         stop
 
          ! Preconditioning ------------------------------------------------------------------------!
 
