@@ -4020,14 +4020,16 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:), pointer :: CGvec_r0,CGvec_r1
       integer :: i,j,k,mpi_ierr,mpi_ireq,mpi_jreq,mpi_kreq,mpi_nreq,rank,ncpus
       integer :: i1,i2,j1,j2,itmp1,itmp2
-      integer :: nCells2,nCells2_n,isum1,iCell,mpi_status
+      integer :: nCells2,nCells2_n,isum1,iCell
       integer,dimension(:,:),allocatable :: global_crow
       integer,dimension(:),allocatable :: crow,ncrow
       include 'mpif.h'
+      integer :: mpi_status(mpi_status_size)
 
       dminfo = domain % dminfo
       rank = dminfo % my_proc_id
       ncpus = dminfo % nprocs
+
 
       block => domain % blocklist
       do while (associated(block))
@@ -4050,13 +4052,13 @@ module ocn_time_integration_si
          nEdges = nEdgesArray( 2 )
     
          nCells2 = nCellsArray(2)
-         nCells2_n = nCellsArray(2) - nCellsArray(1) + 1
+         nCells2_n = nCellsArray(2) - nCellsArray(1)
    
-         allocate(crow(10))
+         allocate(crow(1:10))
          crow(:) = ncpus+1
    
          if ( rank == 0 ) then
-            allocate(global_crow(0:ncpus-1,10))
+            allocate(global_crow(0:ncpus-1,1:10))
             allocate(ncrow(0:ncpus-1))
    
             global_crow(:,:) = ncpus+1
@@ -4068,14 +4070,12 @@ module ocn_time_integration_si
          CGvec_r0(:) = ncpus+1
          CGvec_r0(1:nCells) = rank
    
-   
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
          call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
            
-   
          CALL PIKSRT(nCells2_n,CGvec_r0(nCellsArray(1)+1:nCellsArray(2)))
    
          crow(1) = rank
@@ -4087,6 +4087,7 @@ module ocn_time_integration_si
                crow(isum1) = int(CGvec_r0(iCell))
             endif
          end do
+
     
          ! Send crow info ---
          if ( rank > 0 ) then
@@ -4097,6 +4098,7 @@ module ocn_time_integration_si
             end do
                global_crow(0,:) = crow(:)
          endif
+
    
          ! Send ncrow info ---
          if ( rank > 0 ) then
@@ -4108,6 +4110,7 @@ module ocn_time_integration_si
                ncrow(0) = isum1
          endif
 
+
 !        if ( rank == 0 ) then
 !           do i = 0,ncpus-1
 !              print*,ncrow(i),global_crow(i,:)
@@ -4116,8 +4119,6 @@ module ocn_time_integration_si
 !           print*
 !           print*
 !        endif
-
-
 
          ! Remove the same rank number
          if ( rank == 0 ) then
@@ -4143,15 +4144,15 @@ module ocn_time_integration_si
 
 
          if ( rank == 0 ) then
+            isum1 = 0
             do i = 0,ncpus-1
-               print*,ncrow(i),global_crow(i,:)
+               !print*,ncrow(i),global_crow(i,:)
+               if ( ncrow(i) == 0 ) then
+                  isum1 = isum1 + 1
+               endif
             end do
-            print*
-            print*
-            print*
+            print*, isum1,ncpus
          endif
-
-         call mpi_barrier(dminfo%comm,mpi_ierr)
 
       block => block % next
       end do  ! block
