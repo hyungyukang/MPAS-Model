@@ -4020,7 +4020,7 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:), pointer :: CGvec_r0,CGvec_r1
       integer :: i,j,k,mpi_ierr,mpi_ireq,mpi_jreq,mpi_kreq,mpi_nreq,rank,ncpus
       integer :: i1,i2,j1,j2,itmp1,itmp2
-      integer :: nCells2,nCells2_n,isum1,iCell
+      integer :: nCells2,nCells2_n,isum1,iCell,ncmax
       integer,dimension(:,:),allocatable :: global_crow
       integer,dimension(:),allocatable :: crow,ncrow
       include 'mpif.h'
@@ -4108,6 +4108,9 @@ module ocn_time_integration_si
                call mpi_recv(ncrow(i),1,mpi_int,i,i,dminfo%comm,mpi_status,mpi_ierr)
             end do
                ncrow(0) = isum1
+
+               ncmax = maxval(ncrow)
+               print*, ncmax
          endif
 
 
@@ -4122,24 +4125,48 @@ module ocn_time_integration_si
 
          ! Remove the same rank number
          if ( rank == 0 ) then
+
+         do i = ncmax,0,-1
             do i1 = 0,ncpus-2
-            do j1 = 1,ncrow(i1)
+               if ( ncrow(i1) == i ) then
 
-               do i2 = i1+1,ncpus-1
-               do j2 = 1,ncrow(i2)
+                  do j1 = 1,ncrow(i1)
+      
+                     ! Up - down sweeps
+                     do i2 = i1+1,ncpus-1
+                     do j2 = 1,ncrow(i2)
+      
+                        if ( global_crow(i2,j2) == global_crow(i1,j1) ) then
+                           itmp1 = global_crow(i2,ncrow(i2))
+                           global_crow(i2,j2) = itmp1
+                           global_crow(i2,ncrow(i2)) = ncpus+1
+                           ncrow(i2) = ncrow(i2) - 1
+                        endif
+      
+                     end do ! j2
+                     end do ! i2
 
-                  if ( global_crow(i2,j2) == global_crow(i1,j1) ) then
-                     itmp1 = global_crow(i2,ncrow(i2))
-                     global_crow(i2,j2) = itmp1
-                     global_crow(i2,ncrow(i2)) = ncpus+1
-                     ncrow(i2) = ncrow(i2) - 1
-                  endif
+                     ! Down - up sweeps
+                     do i2 = i1-1,0,-1
+                     do j2 = 1,ncrow(i2)
+      
+                        if ( global_crow(i2,j2) == global_crow(i1,j1) ) then
+                           itmp1 = global_crow(i2,ncrow(i2))
+                           global_crow(i2,j2) = itmp1
+                           global_crow(i2,ncrow(i2)) = ncpus+1
+                           ncrow(i2) = ncrow(i2) - 1
+                        endif
+      
+                     end do ! j2
+                     end do ! i2
+      
 
-               end do ! j2
-               end do ! i2
+                  end do ! j1
 
-            end do ! j1
+               endif
             end do ! i1
+         end do ! i
+
          endif
 
 
