@@ -64,6 +64,7 @@ module ocn_time_integration_si
 
    public :: ocn_time_integrator_si, ocn_time_integration_si_init
    public :: ocn_time_integrator_si_preconditioner
+   public :: my_allreduce_init
 !  public :: my_allreduce
 
    character (len=*), parameter :: iterGroupName = 'iterFields'
@@ -3671,74 +3672,76 @@ module ocn_time_integration_si
 !
 !-------------------------------------------!
 
+         call my_allreduce_init(domain) 
+
          !--- Define local communicator
-         call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
-         call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
-         call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
-
-
-!--- Calcaulate #3D grids for each core
-         isum1 = 0
-         mrank = 0
-         do iEdge = 1, nEdges
-            isum1 = isum1 + maxLevelEdgeTop(iEdge)
-         enddo
-         call mpi_allreduce(isum1,isum2,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
-     
-         mrank = 0
-         if ( isum2 == isum1 ) then
-            mrank = local_rank
-         endif
-     
-         call mpi_allreduce(mrank,isum1,1,MPI_INT,MPI_SUM,mpi_local_comm,mpi_ierr)
-         mrank = isum1
-         
-
-
-         !--- Define cross communicator
-         if ( local_rank == mrank ) then
-            rankRepId = 0
-         else
-            rankRepId = MPI_UNDEFINED
-         endif
-
-         !--- Representative rank coloring and  communicator localizing
-         call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_cross_comm, mpi_ierr)
-         if ( local_rank == mrank ) then
-         call MPI_COMM_SIZE( mpi_cross_comm, cross_size, mpi_ierr)
-         call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
-         endif
-
-
-         if ( local_rank == mrank ) then
-            isum1 = 0
-            crank = 0
-            do iEdge = 1, nEdges
-               isum1 = isum1 + maxLevelEdgeTop(iEdge)
-            enddo
-            call mpi_allreduce(isum1,isum2,1,MPI_INT,MPI_MIN,mpi_cross_comm,mpi_ierr)
-
-            crank = 0
-            if ( isum2 == isum1 ) then
-               crank = cross_rank
-            endif
-
-            call mpi_allreduce(crank,isum1,1,MPI_INT,MPI_SUM,mpi_cross_comm,mpi_ierr)
-            crank = isum1
-         end if
-
-         allocate(dest(local_size-1))
-         if ( local_rank == mrank ) then
-            isum1 = 0
-            do i = 1,local_size
-               if ( i-1 /= mrank ) then
-                  isum1 = isum1 + 1
-                  dest(isum1) = i-1
-               endif
-            end do
-         end if
- 
-         call mpi_bcast(dest,local_size-1,mpi_int,mrank,mpi_local_comm,mpi_ierr)
+!         call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
+!         call MPI_COMM_RANK(mpi_local_comm, local_rank, mpi_ierr)
+!         call MPI_COMM_SIZE(mpi_local_comm, local_size, mpi_ierr)
+!
+!
+!!--- Calcaulate #3D grids for each core
+!         isum1 = 0
+!         mrank = 0
+!         do iEdge = 1, nEdges
+!            isum1 = isum1 + maxLevelEdgeTop(iEdge)
+!         enddo
+!         call mpi_allreduce(isum1,isum2,1,MPI_INT,MPI_MIN,mpi_local_comm,mpi_ierr)
+!     
+!         mrank = 0
+!         if ( isum2 == isum1 ) then
+!            mrank = local_rank
+!         endif
+!     
+!         call mpi_allreduce(mrank,isum1,1,MPI_INT,MPI_SUM,mpi_local_comm,mpi_ierr)
+!         mrank = isum1
+!         
+!
+!
+!         !--- Define cross communicator
+!         if ( local_rank == mrank ) then
+!            rankRepId = 0
+!         else
+!            rankRepId = MPI_UNDEFINED
+!         endif
+!
+!         !--- Representative rank coloring and  communicator localizing
+!         call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_cross_comm, mpi_ierr)
+!         if ( local_rank == mrank ) then
+!         call MPI_COMM_SIZE( mpi_cross_comm, cross_size, mpi_ierr)
+!         call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
+!         endif
+!
+!
+!         if ( local_rank == mrank ) then
+!            isum1 = 0
+!            crank = 0
+!            do iEdge = 1, nEdges
+!               isum1 = isum1 + maxLevelEdgeTop(iEdge)
+!            enddo
+!            call mpi_allreduce(isum1,isum2,1,MPI_INT,MPI_MIN,mpi_cross_comm,mpi_ierr)
+!
+!            crank = 0
+!            if ( isum2 == isum1 ) then
+!               crank = cross_rank
+!            endif
+!
+!            call mpi_allreduce(crank,isum1,1,MPI_INT,MPI_SUM,mpi_cross_comm,mpi_ierr)
+!            crank = isum1
+!         end if
+!
+!         allocate(dest(local_size-1))
+!         if ( local_rank == mrank ) then
+!            isum1 = 0
+!            do i = 1,local_size
+!               if ( i-1 /= mrank ) then
+!                  isum1 = isum1 + 1
+!                  dest(isum1) = i-1
+!               endif
+!            end do
+!         end if
+! 
+!         call mpi_bcast(dest,local_size-1,mpi_int,mrank,mpi_local_comm,mpi_ierr)
          
       end if ! config_time_integrator
    end subroutine ocn_time_integration_si_init!}}}
@@ -3981,6 +3984,184 @@ module ocn_time_integration_si
    end subroutine ocn_time_integrator_si_preconditioner !}}}
 
 
+!--------------------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------------------
+
+   subroutine my_allreduce_init(domain)  !{{{
+      implicit none
+      type (domain_type), intent(inout) :: domain
+      type (dm_info) :: dminfo
+!     integer,intent(in) :: n
+!     !real(kind=RKIND),dimension(n),intent(in)  :: cst
+!     real(kind=RKIND),dimension(n)  :: cst
+!     real(kind=RKIND),dimension(n)  :: cst_global
+!     real(kind=RKIND),dimension(n)             :: cst_work,cst_local
+!     integer,dimension(local_size-1) :: ireq
+      type (block_type), pointer :: block
+
+      type (mpas_pool_type), pointer :: statePool
+      type (mpas_pool_type), pointer :: tracersPool
+      type (mpas_pool_type), pointer :: meshPool
+      type (mpas_pool_type), pointer :: verticalMeshPool
+      type (mpas_pool_type), pointer :: diagnosticsPool
+      type (mpas_pool_type), pointer :: tendPool
+      type (mpas_pool_type), pointer :: tracersTendPool
+
+      integer :: nCells, nEdges
+      integer, pointer :: nCellsPtr, nEdgesPtr
+      integer, dimension(:), pointer :: nCellsArray, nEdgesArray
+ 
+      ! Mesh array pointers
+      integer, dimension(:)  , pointer :: maxLevelCell, maxLevelEdgeTop, nEdgesOnEdge, nEdgesOnCell
+      integer, dimension(:,:), pointer :: cellsOnEdge, edgeMask, edgesOnEdge
+      integer, dimension(:,:), pointer :: edgesOnCell, edgeSignOnCell
+      real (kind=RKIND), dimension(:)  , pointer :: dcEdge,bottomDepth
+      real (kind=RKIND), dimension(:)  , pointer :: dvEdge,areaCell
+      real (kind=RKIND), dimension(:), pointer :: CGvec_r0,CGvec_r1
+      integer :: i,j,k,mpi_ierr,mpi_ireq,mpi_jreq,mpi_kreq,mpi_nreq,rank,ncpus
+      integer :: i1,i2,j1,j2,itmp1,itmp2
+      integer :: nCells2,nCells2_n,isum1,iCell,mpi_status
+      integer,dimension(:,:),allocatable :: global_crow
+      integer,dimension(:),allocatable :: crow,ncrow
+      include 'mpif.h'
+
+      dminfo = domain % dminfo
+      rank = dminfo % my_proc_id
+      ncpus = dminfo % nprocs
+
+      block => domain % blocklist
+      do while (associated(block))
+
+
+         call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+         call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+   
+         call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+         call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+         call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+         call mpas_pool_get_subpool(block % structs, 'state', statePool)
+         call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+         call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+   
+         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
+         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
+   
+         nCells = nCellsArray( 1 )
+         nEdges = nEdgesArray( 2 )
+    
+         nCells2 = nCellsArray(2)
+         nCells2_n = nCellsArray(2) - nCellsArray(1) + 1
+   
+         allocate(crow(10))
+         crow(:) = ncpus+1
+   
+         if ( rank == 0 ) then
+            allocate(global_crow(0:ncpus-1,10))
+            allocate(ncrow(0:ncpus-1))
+   
+            global_crow(:,:) = ncpus+1
+         end if
+   
+   
+         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
+   
+         CGvec_r0(:) = ncpus+1
+         CGvec_r0(1:nCells) = rank
+   
+   
+         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+         call mpas_threading_barrier()
+         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+           
+   
+         CALL PIKSRT(nCells2_n,CGvec_r0(nCellsArray(1)+1:nCellsArray(2)))
+   
+         crow(1) = rank
+         isum1 = 2
+         crow(isum1) = int(CGvec_r0(nCellsArray(1)+1))
+         do iCell = nCellsArray(1)+2,nCellsArray(2)
+            if ( CGvec_r0(iCell-1) /= CGvec_r0(iCell) ) then
+               isum1 = isum1 + 1
+               crow(isum1) = int(CGvec_r0(iCell))
+            endif
+         end do
+    
+         ! Send crow info ---
+         if ( rank > 0 ) then
+            call mpi_send(crow,10,mpi_int,0,rank,dminfo%comm,mpi_ierr)
+         else
+            do i = 1,ncpus-1
+               call mpi_recv(global_crow(i,:),10,mpi_int,i,i,dminfo%comm,mpi_status,mpi_ierr)
+            end do
+               global_crow(0,:) = crow(:)
+         endif
+   
+         ! Send ncrow info ---
+         if ( rank > 0 ) then
+            call mpi_send(isum1,1,mpi_int,0,rank,dminfo%comm,mpi_ierr)
+         else
+            do i = 1,ncpus-1
+               call mpi_recv(ncrow(i),1,mpi_int,i,i,dminfo%comm,mpi_status,mpi_ierr)
+            end do
+               ncrow(0) = isum1
+         endif
+
+!        if ( rank == 0 ) then
+!           do i = 0,ncpus-1
+!              print*,ncrow(i),global_crow(i,:)
+!           end do
+!           print*
+!           print*
+!           print*
+!        endif
+
+
+
+         ! Remove the same rank number
+         if ( rank == 0 ) then
+            do i1 = 0,ncpus-2
+            do j1 = 1,ncrow(i1)
+
+               do i2 = i1+1,ncpus-1
+               do j2 = 1,ncrow(i2)
+
+                  if ( global_crow(i2,j2) == global_crow(i1,j1) ) then
+                     itmp1 = global_crow(i2,ncrow(i2))
+                     global_crow(i2,j2) = itmp1
+                     global_crow(i2,ncrow(i2)) = ncpus+1
+                     ncrow(i2) = ncrow(i2) - 1
+                  endif
+
+               end do ! j2
+               end do ! i2
+
+            end do ! j1
+            end do ! i1
+         endif
+
+
+         if ( rank == 0 ) then
+            do i = 0,ncpus-1
+               print*,ncrow(i),global_crow(i,:)
+            end do
+            print*
+            print*
+            print*
+         endif
+
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+
+      block => block % next
+      end do  ! block
+
+
+   call mpi_barrier(dminfo%comm,mpi_ierr)
+   stop
+   end subroutine my_allreduce_init !}}}
+
+
 !   subroutine my_allreduce (n,cst,cst_global) !{{{
 !      implicit none
 !      integer,intent(in) :: n
@@ -4076,5 +4257,21 @@ subroutine inverse (n,Ainv) !{{{
     Ainv = -Ainv ! (-) sign to restore a matrix sign
     if (info.ne.0) stop 'ERROR in inverse routine: Matrix inversion failed!'
 end subroutine inverse !}}}
+
+
+SUBROUTINE PIKSRT(N,ARR)
+  real ARR(N)
+  do j=2, N
+    a=ARR(j)
+    do i=j-1,1,-1
+      if (ARR(i)<=a) goto 10
+      ARR(i+1)=ARR(i)
+    end do
+        i=0
+10  ARR(i+1)=a
+  end do
+  return
+END
+
 
 ! vim: foldmethod=marker
