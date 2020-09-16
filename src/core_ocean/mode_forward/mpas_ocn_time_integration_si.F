@@ -81,6 +81,7 @@ module ocn_time_integration_si
    real (kind=RKIND) :: R1_alpha1_g,alpha1,alpha2,crit_main
    integer :: nPrecVec,si_opt
    !-------------------
+   integer,dimension(:),allocatable :: sumLoc,putLoc
    integer :: rank,ncpus,mrank,crank
    integer :: mpi_local_comm,local_size,local_rank
    integer :: mpi_cross_comm,cross_size,cross_rank
@@ -4018,13 +4019,15 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:)  , pointer :: dcEdge,bottomDepth
       real (kind=RKIND), dimension(:)  , pointer :: dvEdge,areaCell
       real (kind=RKIND), dimension(:), pointer :: CGvec_r0,CGvec_r1
+      real (kind=RKIND) :: tmp1,tmp2,sum1,sum2
       integer :: i,j,k,mpi_ierr,mpi_ireq,mpi_jreq,mpi_kreq,mpi_nreq,rank,ncpus
       integer :: i1,i2,j1,j2,itmp1,itmp2
-      integer :: nCells2,nCells2_n,isum1,iCell,ncmax
+      integer :: nCells2,nCells2_n,isum1,iCell,ncmax,nrow
       integer,dimension(:,:),allocatable :: global_crow
       integer,dimension(:),allocatable :: crow,ncrow
       include 'mpif.h'
       integer :: mpi_status(mpi_status_size)
+      integer :: rankRepId
 
       dminfo = domain % dminfo
       rank = dminfo % my_proc_id
@@ -4066,6 +4069,8 @@ module ocn_time_integration_si
    
    
          call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
+         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
+
    
          CGvec_r0(:) = ncpus+1
          CGvec_r0(1:nCells) = rank
@@ -4110,18 +4115,8 @@ module ocn_time_integration_si
                ncrow(0) = isum1
 
                ncmax = maxval(ncrow)
-               print*, ncmax
+               print*,'Max #Connection', ncmax
          endif
-
-
-!        if ( rank == 0 ) then
-!           do i = 0,ncpus-1
-!              print*,ncrow(i),global_crow(i,:)
-!           end do
-!           print*
-!           print*
-!           print*
-!        endif
 
          ! Remove the same rank number
          if ( rank == 0 ) then
@@ -4173,17 +4168,284 @@ module ocn_time_integration_si
          if ( rank == 0 ) then
             isum1 = 0
             do i = 0,ncpus-1
-               !print*,ncrow(i),global_crow(i,:)
+!              if ( ncrow(i) == 1 .and. global_crow(i,1) /= i) then
+!                 ncrow(global_crow(i,1)) = ncrow(global_crow(i,1))+1
+!                 ncrow(i) = ncrow(i)-1
+!                 global_crow(global_crow(i,1),1) = global_crow(i,1)
+!                 global_crow(i,1) = ncpus+1
+!              endif
+
+!              print*,i,ncrow(i),global_crow(i,:)
                if ( ncrow(i) == 0 ) then
                   isum1 = isum1 + 1
                endif
             end do
-            print*, isum1,ncpus
+            print*,'Ratio (#CrossRank / #nCPUs)', real(isum1)/ncpus
+            print*
+            print*
+            print*
          endif
+
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+
+         ! Send back cRow info to each rank ---
+         if ( rank == 0 ) then
+            do i = 1,ncpus-1
+               call mpi_send(global_crow(i,:),10,mpi_int,i,i,dminfo%comm,mpi_ierr)
+            end do
+            crow(:) = global_crow(0,:)
+         else
+            call mpi_recv(crow(:),10,mpi_int,0,rank,dminfo%comm,mpi_status,mpi_ierr)
+         endif
+
+         if ( rank == 0 ) then
+            do i = 1,ncpus-1
+               call mpi_send(ncrow(i),1,mpi_int,i,i,dminfo%comm,mpi_ierr)
+            end do
+            nrow = ncrow(0)
+         else
+            call mpi_recv(nrow,1,mpi_int,0,rank,dminfo%comm,mpi_status,mpi_ierr)
+         endif
+       
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+
+
+         ! Setup array indices for summation ---
+         CGvec_r0(:) = ncpus+1
+         CGvec_r0(1:nCells) = rank
+
+         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+         call mpas_threading_barrier()
+         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+
+
+
+         !----------------------------------------------------------------------
+
+         ! Checking boundary cells ---
+         CGvec_r0(:) = ncpus+1 
+
+         do iCell = 1,nCells
+            CGvec_r0(iCell) = iCell
+            CGvec_r1(iCell) = rank
+         end do
+
+         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+         call mpas_threading_barrier()
+         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+
+         if ( nrow /= 0 ) then
+            do i = 1,nrow
+               isum1 = 0
+
+               do iCell = nCellsArray(1)+1,nCellsArray(2)
+                  if ( int(CGvec_r1(iCell)) == crow(i) ) then
+                     isum1 = isum1 + 1
+                  endif
+               end do
+
+               do iCell = nCellsArray(2)+1,nCellsArray(3)
+                  if ( int(CGvec_r1(iCell)) == crow(i) ) then
+                     isum1 = isum1 + 1
+                  endif
+               end do
+
+               do iCell = nCellsArray(3)+1,nCellsArray(4)
+                  if ( int(CGvec_r1(iCell)) == crow(i) ) then
+                     isum1 = isum1 + 1
+                  endif
+               end do
+
+
+
+               print*, crow(i),isum1
+            end do
+         endif
+
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+         stop
+
+         !----------------------------------------------------------------------
+
+        
+         !print*,CGvec_r0(nCellsArray(3)+1:nCellsArray(4)),CGvec_r1(nCellsArray(3)+1:nCellsArray(4))
+         !if ( rank == 0 ) then
+         !   do iCell = nCellsArray(3)+1,nCellsArray(4)
+         !      print*,CGvec_r0(iCell),CGvec_r1(iCell)
+         !   end do
+         !endif
+
+         !call mpi_barrier(dminfo%comm,mpi_ierr)
+         !stop
+
+
+         isum1 = 0
+         if ( nrow /= 0 ) then
+
+            if ( crow(1) == rank ) then
+               allocate(sumLoc(nrow+1))
+               isum1 = 1
+               sumLoc(isum1) = 1 
+            else
+               allocate(sumLoc(nrow))
+               isum1 = 0
+            end if
+
+            do i = 1,nrow
+               do iCell = nCellsArray(3)+1,nCellsArray(4)
+                  if ( crow(i) == int(CGvec_r0(iCell)) ) then
+                     isum1 = isum1 + 1
+                     sumLoc(isum1) = iCell
+                     exit
+                  endif
+               end do
+            end do
+            nrow = isum1
+
+         else
+            allocate(sumLoc(1))
+            sumLoc(1) = nCellsArray(4)+2 
+         endif
+
+       
+
+
+         
+         ! Define cross communicator ---
+         if ( nrow /= 0 ) then
+             rankRepId = 0
+         else
+             rankRepId = MPI_UNDEFINED
+         endif
+
+         ! Representative rank coloring and  communicator localizing
+         call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_cross_comm, mpi_ierr)
+         if ( nrow /= 0 ) then
+            call MPI_COMM_SIZE( mpi_cross_comm, cross_size, mpi_ierr)
+            call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
+            !print*, rank,cross_size,cross_rank
+         endif
+
+
+
+         
+
+         ! Set a receiving point (putLoc) ---
+!         CGvec_r0(:) = ncpus+1 
+!
+!         if ( nrow /= 0 ) then
+!            do iCell = 1,nCells
+!               CGvec_r0(iCell) = iCell
+!            end do
+!               CGvec_r1(:) = rank
+!         else
+!            CGvec_r0(:) = 0.0_RKIND
+!            CGvec_r1(:) = 0.0_RKIND
+!         endif
+!
+!         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+!         call mpas_threading_barrier()
+!         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!
+!         if ( nrow == 0 ) then
+!
+!            isum1 = 0
+!            do iCell = nCellsArray(3)+1,nCellsArray(4)
+!               if ( CGvec_r0(iCell) /= 0.0_RKIND ) then
+!                  isum1 = isum1 + 1
+!                  CGvec_r0(isum1) = CGvec_r0(iCell)
+!                  CGvec_r1(isum1) = rank
+!               endif
+!
+!               if ( isum1 > nCells ) exit
+!            end do
+!         else
+!            CGvec_r0(nCellsArray(1)+1:nCellsArray(4)) = 0.0_RKIND
+!            CGvec_r1(nCellsArray(1)+1:nCellsArray(4)) = 0.0_RKIND
+!         endif
+!
+!         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+!         call mpas_threading_barrier()
+!         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!         
+!!        if ( nrow/=0 ) then
+!!           print*,CGvec_r0(nCellsArray(3)+1:nCellsArray(4))
+!!           print*,CGvec_r1(nCellsArray(3)+1:nCellsArray(4))
+!!        endif
+!
+!
+!         call mpi_barrier(dminfo%comm,mpi_ierr)
+!         stop
+
+
+         ! Summation test
+
+            tmp1 = 1.0_RKIND
+            ! Stage 1: Local halo exchange (Local -> Cross)
+               CGvec_r0(1:nCells) = 1.0_RKIND
+               call mpas_dmpar_exch_group_create(domain, iterGroupName)
+               call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+               call mpas_threading_barrier()
+               call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+               call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+
+            ! Stage 1.2: Summation for cross ranks
+               if ( nrow /= 0 ) then
+               tmp2 = 0.0_RKIND
+               do i = 1,nrow
+                  tmp2 = tmp2 + CGvec_r0(sumLoc(i))
+               end do
+               endif
+
+            ! Stage 2: Allreduce for mpi_cross_comm
+               if ( nrow /= 0 ) then
+                  call mpi_allreduce(tmp2,tmp1,1,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+                  CGvec_r0(1:nCellsArray(1)) = tmp1
+               else
+                  CGvec_r0(1:nCellsArray(1)) = 0.0_RKIND
+               endif
+
+            ! Stage 3: Local halo exchange (Cross -> Local)
+               call mpas_dmpar_exch_group_create(domain, iterGroupName)
+               call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+               call mpas_threading_barrier()
+               call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+               call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+
+               if ( nrow == 0 ) then
+                  tmp1 = maxval(CGvec_r0) 
+               end if
+ 
+
+
+            ! Compare: just allreduce for dminfo%comm
+              
+         isum1 = 1
+
+      
+!        do i = 1,nrow
+!           isum1 = isum1 + 1
+!        end do
+
+
 
       block => block % next
       end do  ! block
 
+   call mpi_barrier(dminfo%comm,mpi_ierr)
+
+!  print*,rank,nrow,crow(:)
 
    call mpi_barrier(dminfo%comm,mpi_ierr)
    stop
