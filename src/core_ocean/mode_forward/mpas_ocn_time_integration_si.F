@@ -4243,30 +4243,20 @@ module ocn_time_integration_si
             do i = 1,nrow
                isum1 = 0
 
-               do iCell = nCellsArray(1)+1,nCellsArray(2)
-                  if ( int(CGvec_r1(iCell)) == crow(i) ) then
-                     isum1 = isum1 + 1
-                  endif
-               end do
-
-               do iCell = nCellsArray(2)+1,nCellsArray(3)
-                  if ( int(CGvec_r1(iCell)) == crow(i) ) then
-                     isum1 = isum1 + 1
-                  endif
-               end do
-
-               do iCell = nCellsArray(3)+1,nCellsArray(4)
+               do iCell = nCellsArray(1)+1,nCellsArray(4)
                   if ( int(CGvec_r1(iCell)) == crow(i) ) then
                      isum1 = isum1 + 1
                   endif
                end do
 
 
-
-               print*, crow(i),isum1
+               if ( isum1 < 5 .and. isum1 > 0 ) then
+                  print*, crow(i),isum1
+               endif
             end do
          endif
 
+!        print*, size(nCellsArray)
          call mpi_barrier(dminfo%comm,mpi_ierr)
          stop
 
