@@ -4022,7 +4022,7 @@ module ocn_time_integration_si
       real (kind=RKIND) :: tmp1,tmp2,sum1,sum2
       integer :: i,j,k,mpi_ierr,mpi_ireq,mpi_jreq,mpi_kreq,mpi_nreq,rank,ncpus
       integer :: i1,i2,j1,j2,itmp1,itmp2
-      integer :: nCells2,nCells2_n,isum1,iCell,ncmax,nrow
+      integer :: nCells2,nCells2_n,isum1,isum2,iCell,ncmax,nrow
       integer,dimension(:,:),allocatable :: global_crow
       integer,dimension(:),allocatable :: crow,ncrow
       include 'mpif.h'
@@ -4093,6 +4093,47 @@ module ocn_time_integration_si
             endif
          end do
 
+         !----------------------------------------------------------------------
+
+         ! Checking boundary cells ---
+         CGvec_r0(:) = ncpus+1 
+
+         do iCell = 1,nCells
+            CGvec_r0(iCell) = iCell
+            CGvec_r1(iCell) = rank
+         end do
+
+         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+         call mpas_threading_barrier()
+         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+
+!        if ( nrow /= 0 ) then
+            do i = 1,isum1
+               isum2 = 0
+
+               do iCell = nCellsArray(1)+1,nCellsArray(4)
+                  if ( int(CGvec_r1(iCell)) == crow(i) ) then
+                     isum2 = isum2 + 1
+                  endif
+               end do
+
+
+               if ( isum2 < 5 .and. isum2 > 0 ) then
+                  print*, crow(i),isum2
+                  crow(10) = crow(i)
+               endif
+            end do
+!        endif
+
+!        print*, size(nCellsArray)
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+!        stop
+
+         !----------------------------------------------------------------------
+
     
          ! Send crow info ---
          if ( rank > 0 ) then
@@ -4118,7 +4159,11 @@ module ocn_time_integration_si
                print*,'Max #Connection', ncmax
          endif
 
-         ! Remove the same rank number
+
+
+
+
+         ! Remove the same rank number ---
          if ( rank == 0 ) then
 
          do i = ncmax,0,-1
@@ -4162,6 +4207,15 @@ module ocn_time_integration_si
             end do ! i1
          end do ! i
 
+            ! Remove ranks that have less than 5 arrays
+            do i = 0,ncpus-1
+               if ( global_crow(i,10) < ncpus+1 ) then
+                  global_c
+                  print*, global_crow(i,10)
+               endif
+            end do
+         
+
          endif
 
 
@@ -4175,7 +4229,7 @@ module ocn_time_integration_si
 !                 global_crow(i,1) = ncpus+1
 !              endif
 
-!              print*,i,ncrow(i),global_crow(i,:)
+               print*,i,ncrow(i),global_crow(i,:)
                if ( ncrow(i) == 0 ) then
                   isum1 = isum1 + 1
                endif
@@ -4187,6 +4241,7 @@ module ocn_time_integration_si
          endif
 
          call mpi_barrier(dminfo%comm,mpi_ierr)
+         stop
 
          ! Send back cRow info to each rank ---
          if ( rank == 0 ) then
@@ -4222,45 +4277,6 @@ module ocn_time_integration_si
 
 
 
-         !----------------------------------------------------------------------
-
-         ! Checking boundary cells ---
-         CGvec_r0(:) = ncpus+1 
-
-         do iCell = 1,nCells
-            CGvec_r0(iCell) = iCell
-            CGvec_r1(iCell) = rank
-         end do
-
-         call mpas_dmpar_exch_group_create(domain, iterGroupName)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
-         call mpas_threading_barrier()
-         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-
-         if ( nrow /= 0 ) then
-            do i = 1,nrow
-               isum1 = 0
-
-               do iCell = nCellsArray(1)+1,nCellsArray(4)
-                  if ( int(CGvec_r1(iCell)) == crow(i) ) then
-                     isum1 = isum1 + 1
-                  endif
-               end do
-
-
-               if ( isum1 < 5 .and. isum1 > 0 ) then
-                  print*, crow(i),isum1
-               endif
-            end do
-         endif
-
-!        print*, size(nCellsArray)
-         call mpi_barrier(dminfo%comm,mpi_ierr)
-         stop
-
-         !----------------------------------------------------------------------
 
         
          !print*,CGvec_r0(nCellsArray(3)+1:nCellsArray(4)),CGvec_r1(nCellsArray(3)+1:nCellsArray(4))
