@@ -81,7 +81,8 @@ module ocn_time_integration_si
    real (kind=RKIND) :: R1_alpha1_g,alpha1,alpha2,crit_main
    integer :: nPrecVec,si_opt
    !-------------------
-   integer,dimension(:),allocatable :: sumLoc,putLoc
+   integer,dimension(:,:),allocatable :: sumLoc,sumRank
+   integer,dimension(:)  ,allocatable :: putLoc,putRank
    integer :: rank,ncpus,mrank,crank
    integer :: mpi_local_comm,local_size,local_rank
    integer :: mpi_cross_comm,cross_size,cross_rank
@@ -4023,8 +4024,9 @@ module ocn_time_integration_si
       integer :: i,j,k,mpi_ierr,mpi_ireq,mpi_jreq,mpi_kreq,mpi_nreq,rank,ncpus
       integer :: i1,i2,j1,j2,itmp1,itmp2
       integer :: nCells2,nCells2_n,isum1,isum2,iCell,ncmax,nrow,max_nrow
-      integer,dimension(:,:),allocatable :: global_crow
+      integer,dimension(:,:),allocatable :: global_crow,iatmp1
       integer,dimension(:),allocatable :: crow,ncrow
+      real (kind=RKIND), dimension(5) :: reduce,reduce_global
       include 'mpif.h'
       integer :: mpi_status(mpi_status_size)
       integer :: rankRepId
@@ -4123,7 +4125,7 @@ module ocn_time_integration_si
                end do
 
                if ( isum2 < 5 .and. isum2 > 0 ) then
-                  print*,rank,crow(i),isum2
+!                 print*,rank,crow(i),isum2
                   crow(max_nrow) = crow(i)
                endif
 
@@ -4153,10 +4155,13 @@ module ocn_time_integration_si
             do i = 1,ncpus-1
                call mpi_recv(ncrow(i),1,mpi_int,i,i,dminfo%comm,mpi_status,mpi_ierr)
             end do
-               ncrow(0) = isum1
 
-               ncmax = maxval(ncrow)
-               print*,'Max #Connection', ncmax
+            ncrow(0) = isum1
+
+            ncmax = maxval(ncrow)
+            print*
+            print*,'Max #Connection', ncmax
+            print*
          endif
 
 
@@ -4245,7 +4250,6 @@ module ocn_time_integration_si
 
                endif
             end do
-         
 
          endif
 
@@ -4253,26 +4257,21 @@ module ocn_time_integration_si
          if ( rank == 0 ) then
             isum1 = 0
             do i = 0,ncpus-1
-!              if ( ncrow(i) == 1 .and. global_crow(i,1) /= i) then
-!                 ncrow(global_crow(i,1)) = ncrow(global_crow(i,1))+1
-!                 ncrow(i) = ncrow(i)-1
-!                 global_crow(global_crow(i,1),1) = global_crow(i,1)
-!                 global_crow(i,1) = ncpus+1
-!              endif
-
-               print*,i,ncrow(i),global_crow(i,:)
                if ( ncrow(i) == 0 ) then
                   isum1 = isum1 + 1
+               else
+                  print*,i,ncrow(i),global_crow(i,:)
                endif
             end do
-            print*,'Ratio (#CrossRank / #nCPUs)', real(isum1)/ncpus
+
             print*
+            print*,'Ratio (#CrossRank / #nCPUs)', real(isum1)/ncpus
             print*
             print*
          endif
 
          call mpi_barrier(dminfo%comm,mpi_ierr)
-         stop
+
 
          ! Send back cRow info to each rank ---
          if ( rank == 0 ) then
@@ -4295,61 +4294,95 @@ module ocn_time_integration_si
        
          call mpi_barrier(dminfo%comm,mpi_ierr)
 
+         ! Reordering for the first rank
+         do j = 2,nrow
+            if ( crow(j) == rank ) then
+               itmp1 = crow(j)
+               crow(j) = crow(1)
+               crow(1) = itmp1
+            endif
+         end do
+
 
          ! Setup array indices for summation ---
          CGvec_r0(:) = ncpus+1
          CGvec_r0(1:nCells) = rank
 
+         CGvec_r1(:) = 0.0_RKIND
+         do iCell = 1,nCells
+            CGvec_r1(iCell) = iCell
+         end do
+
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
          call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
 
+         call mpi_barrier(dminfo%comm,mpi_ierr)
 
+    
+         if ( nrow /= 0 ) then 
 
+            allocate(sumLoc(5,nrow))
+            allocate(iatmp1(nrow,5))
+            allocate(sumRank(nrow,5))
+            sumLoc(:,:) = 0
+            iatmp1(:,:) = 0
+            sumRank(:,:) = ncpus+1
 
-        
-         !print*,CGvec_r0(nCellsArray(3)+1:nCellsArray(4)),CGvec_r1(nCellsArray(3)+1:nCellsArray(4))
-         !if ( rank == 0 ) then
-         !   do iCell = nCellsArray(3)+1,nCellsArray(4)
-         !      print*,CGvec_r0(iCell),CGvec_r1(iCell)
-         !   end do
-         !endif
-
-         !call mpi_barrier(dminfo%comm,mpi_ierr)
-         !stop
-
-
-         isum1 = 0
-         if ( nrow /= 0 ) then
-
-            if ( crow(1) == rank ) then
-               allocate(sumLoc(nrow+1))
-               isum1 = 1
-               sumLoc(isum1) = 1 
-            else
-               allocate(sumLoc(nrow))
+            do i = 2,nrow
                isum1 = 0
-            end if
-
-            do i = 1,nrow
-               do iCell = nCellsArray(3)+1,nCellsArray(4)
-                  if ( crow(i) == int(CGvec_r0(iCell)) ) then
+               do iCell = nCellsArray(1)+1,nCellsArray(4)
+                  if ( int(CGvec_r0(iCell)) == crow(i) ) then
                      isum1 = isum1 + 1
-                     sumLoc(isum1) = iCell
-                     exit
+                     sumLoc(isum1,i) = iCell
+                     iatmp1(i,isum1) = CGvec_r1(iCell)
+                     sumRank(i,isum1) = rank
+                     if ( isum1 == 5 ) exit
                   endif
                end do
+            end do ! i
+
+            if ( crow(1) /= rank ) then
+               isum2 = 0
+               do iCell = nCellsArray(1)+1,nCellsArray(4)
+                  if ( int(CGvec_r0(iCell)) == crow(1) ) then
+                     isum2 = isum2 + 1
+                     sumLoc(isum2,1) = iCell
+                     iatmp1(1,isum2) = CGvec_r1(iCell)
+                     sumRank(1,isum2) = rank
+                     if ( isum2 == 5 ) exit
+                  endif
+               end do
+            elseif ( crow(1) == rank ) then
+               do i = 1,5
+                  sumLoc(i,1) = i
+                  iatmp1(1,i) = i
+                  sumRank(1,i) = rank
+               end do
+            endif 
+ 
+
+            ! Send back array info to local ranks 
+            do i = 2,nrow
+               call mpi_send(iatmp1(i,:),5,mpi_int,crow(i),0,dminfo%comm,mpi_ierr)
+               call mpi_send(sumRank(i,:),5,mpi_int,crow(i),1,dminfo%comm,mpi_ierr)
             end do
-            nrow = isum1
+            if ( crow(1) /= rank ) then
+               call mpi_send(iatmp1(1,:),5,mpi_int,crow(1),0,dminfo%comm,mpi_ierr)
+               call mpi_send(sumRank(1,:),5,mpi_int,crow(1),1,dminfo%comm,mpi_ierr)
+            endif
 
-         else
-            allocate(sumLoc(1))
-            sumLoc(1) = nCellsArray(4)+2 
+         endif ! nrow
+     
+         if ( nrow == 0 ) then
+            allocate(putLoc(5))
+            allocate(putRank(5))
+            call mpi_recv(putLoc,5,mpi_int,MPI_ANY_SOURCE,0,dminfo%comm,mpi_status,mpi_ierr)
+            call mpi_recv(putRank,5,mpi_int,MPI_ANY_SOURCE,1,dminfo%comm,mpi_status,mpi_ierr)
          endif
-
-       
 
 
          
@@ -4365,85 +4398,62 @@ module ocn_time_integration_si
          if ( nrow /= 0 ) then
             call MPI_COMM_SIZE( mpi_cross_comm, cross_size, mpi_ierr)
             call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
-            !print*, rank,cross_size,cross_rank
          endif
 
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+
+         ! Summation test ---
+         CGvec_r0(:) = 0.0
+
+            do i = 1,5
+               reduce(i) = real(i)
+            end do
+
+            ! Stage 1: Put values
+            if ( nrow == 0 ) then
+               do i = 1,5
+                  CGvec_r0(putLoc(i)) = reduce(i)
+               end do
+            endif
 
 
-         
-
-         ! Set a receiving point (putLoc) ---
-!         CGvec_r0(:) = ncpus+1 
-!
-!         if ( nrow /= 0 ) then
-!            do iCell = 1,nCells
-!               CGvec_r0(iCell) = iCell
-!            end do
-!               CGvec_r1(:) = rank
-!         else
-!            CGvec_r0(:) = 0.0_RKIND
-!            CGvec_r1(:) = 0.0_RKIND
-!         endif
-!
-!         call mpas_dmpar_exch_group_create(domain, iterGroupName)
-!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
-!         call mpas_threading_barrier()
-!         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-!         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-!
-!         if ( nrow == 0 ) then
-!
-!            isum1 = 0
-!            do iCell = nCellsArray(3)+1,nCellsArray(4)
-!               if ( CGvec_r0(iCell) /= 0.0_RKIND ) then
-!                  isum1 = isum1 + 1
-!                  CGvec_r0(isum1) = CGvec_r0(iCell)
-!                  CGvec_r1(isum1) = rank
-!               endif
-!
-!               if ( isum1 > nCells ) exit
-!            end do
-!         else
-!            CGvec_r0(nCellsArray(1)+1:nCellsArray(4)) = 0.0_RKIND
-!            CGvec_r1(nCellsArray(1)+1:nCellsArray(4)) = 0.0_RKIND
-!         endif
-!
-!         call mpas_dmpar_exch_group_create(domain, iterGroupName)
-!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
-!         call mpas_threading_barrier()
-!         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-!         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-!         
-!!        if ( nrow/=0 ) then
-!!           print*,CGvec_r0(nCellsArray(3)+1:nCellsArray(4))
-!!           print*,CGvec_r1(nCellsArray(3)+1:nCellsArray(4))
-!!        endif
-!
-!
-!         call mpi_barrier(dminfo%comm,mpi_ierr)
-!         stop
+            ! Stage 2: Local halo exchange (Local -> Cross)
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
 
 
-         ! Summation test
+            ! Stage 3: Summation for cross ranks
+            do i = 1,5
+               CGvec_r0(i) = reduce(i)
+            end do
 
-            tmp1 = 1.0_RKIND
-            ! Stage 1: Local halo exchange (Local -> Cross)
-               CGvec_r0(1:nCells) = 1.0_RKIND
-               call mpas_dmpar_exch_group_create(domain, iterGroupName)
-               call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-               call mpas_threading_barrier()
-               call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-               call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-
-            ! Stage 1.2: Summation for cross ranks
-               if ( nrow /= 0 ) then
-               tmp2 = 0.0_RKIND
-               do i = 1,nrow
-                  tmp2 = tmp2 + CGvec_r0(sumLoc(i))
+            if ( nrow /= 0 ) then
+!              reduce(:) = 0.0
+               if ( rank == 7 ) then
+               do i = 1,5
+                  do j = 1,nrow
+!                    reduce(i) = reduce(i) + CGvec_r0(sumLoc(i,j))
+                     print*,i,j,crow(j), CGvec_r0(sumLoc(i,j))
+                  end do
                end do
                endif
+!              print*, rank,reduce(1)
+            endif
+             
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+         stop
+
+
+            ! Stage 1.2: Summation for cross ranks
+!              if ( nrow /= 0 ) then
+!              tmp2 = 0.0_RKIND
+!              do i = 1,nrow
+!                 tmp2 = tmp2 + CGvec_r0(sumLoc(i))
+!              end do
+!              endif
 
             ! Stage 2: Allreduce for mpi_cross_comm
                if ( nrow /= 0 ) then
@@ -4600,5 +4610,19 @@ SUBROUTINE PIKSRT(N,ARR)
   return
 END
 
+
+SUBROUTINE PIKSRT_INT(N,ARR)
+  INTEGER ARR(N)
+  do j=2, N
+    a=ARR(j)
+    do i=j-1,1,-1
+      if (ARR(i)<=a) goto 10
+      ARR(i+1)=ARR(i)
+    end do
+        i=0
+10  ARR(i+1)=a
+  end do
+  return
+END
 
 ! vim: foldmethod=marker
