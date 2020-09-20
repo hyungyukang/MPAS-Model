@@ -83,7 +83,7 @@ module ocn_time_integration_si
    !-------------------
    integer,dimension(:,:),allocatable :: sumLoc,sumRank
    integer,dimension(:)  ,allocatable :: putLoc,putRank
-   integer :: rank,ncpus,mrank,crank
+   integer :: rank,ncpus,mrank,crank,srank
    integer :: mpi_local_comm,local_size,local_rank
    integer :: mpi_cross_comm,cross_size,cross_rank
    integer :: mpi_peer_comm,peer_size,peer_rank
@@ -4271,7 +4271,7 @@ module ocn_time_integration_si
          endif
 
          call mpi_barrier(dminfo%comm,mpi_ierr)
-
+!        stop
 
          ! Send back cRow info to each rank ---
          if ( rank == 0 ) then
@@ -4303,6 +4303,17 @@ module ocn_time_integration_si
             endif
          end do
 
+   
+         ! Defining sending local ranks (srank = 0 ) for global summation
+         srank = 1
+         if ( nrow == 0 ) then
+            srank = 0
+         else
+            if ( crow(1) /= rank ) then
+               srank = 0 
+            endif
+         endif
+
 
          ! Setup array indices for summation ---
          CGvec_r0(:) = ncpus+1
@@ -4321,6 +4332,7 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
 
          call mpi_barrier(dminfo%comm,mpi_ierr)
+!        stop
 
     
          if ( nrow /= 0 ) then 
@@ -4363,7 +4375,6 @@ module ocn_time_integration_si
                   sumRank(1,i) = rank
                end do
             endif 
- 
 
             ! Send back array info to local ranks 
             do i = 2,nrow
@@ -4376,15 +4387,13 @@ module ocn_time_integration_si
             endif
 
          endif ! nrow
-     
-         if ( nrow == 0 ) then
+         
+         if ( srank == 0 ) then
             allocate(putLoc(5))
             allocate(putRank(5))
             call mpi_recv(putLoc,5,mpi_int,MPI_ANY_SOURCE,0,dminfo%comm,mpi_status,mpi_ierr)
             call mpi_recv(putRank,5,mpi_int,MPI_ANY_SOURCE,1,dminfo%comm,mpi_status,mpi_ierr)
          endif
-
-
          
          ! Define cross communicator ---
          if ( nrow /= 0 ) then
@@ -4410,10 +4419,13 @@ module ocn_time_integration_si
             end do
 
             ! Stage 1: Put values
-            if ( nrow == 0 ) then
+            if ( srank == 0 ) then
                do i = 1,5
                   CGvec_r0(putLoc(i)) = reduce(i)
                end do
+!              if ( rank == 1 ) then
+!                 print*,putRank(1), putLoc(:)
+!              endif
             endif
 
 
@@ -4428,40 +4440,32 @@ module ocn_time_integration_si
             ! Stage 3: Summation for cross ranks
             do i = 1,5
                CGvec_r0(i) = reduce(i)
+               reduce(i) = 0.0
             end do
 
             if ( nrow /= 0 ) then
-!              reduce(:) = 0.0
-               if ( rank == 7 ) then
                do i = 1,5
                   do j = 1,nrow
-!                    reduce(i) = reduce(i) + CGvec_r0(sumLoc(i,j))
-                     print*,i,j,crow(j), CGvec_r0(sumLoc(i,j))
+                     reduce(i) = reduce(i) + CGvec_r0(sumLoc(i,j))
+!                    print*,i,j,crow(j), CGvec_r0(sumLoc(i,j))
                   end do
                end do
-               endif
-!              print*, rank,reduce(1)
             endif
              
-         call mpi_barrier(dminfo%comm,mpi_ierr)
-         stop
 
-
-            ! Stage 1.2: Summation for cross ranks
-!              if ( nrow /= 0 ) then
-!              tmp2 = 0.0_RKIND
-!              do i = 1,nrow
-!                 tmp2 = tmp2 + CGvec_r0(sumLoc(i))
-!              end do
-!              endif
 
             ! Stage 2: Allreduce for mpi_cross_comm
                if ( nrow /= 0 ) then
-                  call mpi_allreduce(tmp2,tmp1,1,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-                  CGvec_r0(1:nCellsArray(1)) = tmp1
-               else
-                  CGvec_r0(1:nCellsArray(1)) = 0.0_RKIND
+                  call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+!                 CGvec_r0(1:nCellsArray(1)) = 
+!              else
+!                 CGvec_r0(1:nCellsArray(1)) = 0.0_RKIND
+                  print*, rank,reduce_global(:)
                endif
+
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+!        stop
+
 
             ! Stage 3: Local halo exchange (Cross -> Local)
                call mpas_dmpar_exch_group_create(domain, iterGroupName)
@@ -4491,11 +4495,8 @@ module ocn_time_integration_si
       end do  ! block
 
    call mpi_barrier(dminfo%comm,mpi_ierr)
-
-!  print*,rank,nrow,crow(:)
-
-   call mpi_barrier(dminfo%comm,mpi_ierr)
    stop
+
    end subroutine my_allreduce_init !}}}
 
 
