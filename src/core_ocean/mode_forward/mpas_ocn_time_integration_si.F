@@ -4022,9 +4022,9 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:), pointer :: CGvec_r0,CGvec_r1
       real (kind=RKIND) :: tmp1,tmp2,sum1,sum2
       integer :: i,j,k,mpi_ierr,mpi_ireq,mpi_jreq,mpi_kreq,mpi_nreq,rank,ncpus
-      integer :: i1,i2,j1,j2,itmp1,itmp2
+      integer :: i1,i2,j1,j2,itmp1,itmp2,is,js
       integer :: nCells2,nCells2_n,isum1,isum2,iCell,ncmax,max_nrow
-      integer,dimension(:,:),allocatable :: global_crow,iatmp1
+      integer,dimension(:,:),allocatable :: global_crow,iatmp1,iatmp2,iatmp3
       integer,dimension(:),allocatable :: crow,ncrow,ibtmp1,ibtmp2
       real (kind=RKIND), dimension(5) :: reduce,reduce_global
       include 'mpif.h'
@@ -4418,106 +4418,252 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
 
 
-          if ( srank == 0 ) then 
+         if ( srank == 0 ) then 
 
-            allocate(ibtmp1(5))
-            allocate(ibtmp2(5))
-            allocate(getLoc(5))
-            ibtmp1(:) = 0
-            ibtmp2(:) = ncpus+1
+           allocate(ibtmp1(5))
+           allocate(ibtmp2(5))
+           allocate(getLoc(5))
+           ibtmp1(:) = 0
+           ibtmp2(:) = ncpus+1
 
-            isum1 = 0
-            do iCell = nCellsArray(1)+1,nCellsArray(4)
-               if ( int(CGvec_r0(iCell)) == putRank(1) ) then
-                  isum1 = isum1 + 1
-                  ibtmp1(isum1) = CGvec_r1(iCell)
-                  ibtmp2(isum1) = rank
-                  getLoc(isum1) = iCell
-                  if ( isum1 == 5 ) exit
-               endif
-            end do
+           isum1 = 0
+           do iCell = nCellsArray(1)+1,nCellsArray(4)
+              if ( int(CGvec_r0(iCell)) == putRank(1) ) then
+                 isum1 = isum1 + 1
+                 ibtmp1(isum1) = CGvec_r1(iCell)
+                 ibtmp2(isum1) = rank
+                 getLoc(isum1) = iCell
+                 if ( isum1 == 5 ) exit
+              endif
+           end do
 
-!           print*, rank,putRank(1),isum1 
+!          print*, rank,putRank(1),isum1 
 
-            ! Send back array info to local ranks 
-            call mpi_send(ibtmp1(:),5,mpi_int,putRank(1),0,dminfo%comm,mpi_ierr)
-            call mpi_send(ibtmp2(:),5,mpi_int,putRank(1),1,dminfo%comm,mpi_ierr)
+           ! Send back array info to local ranks 
+           call mpi_send(ibtmp1(:),5,mpi_int,putRank(1),0,dminfo%comm,mpi_ierr)
+           call mpi_send(ibtmp2(:),5,mpi_int,putRank(1),1,dminfo%comm,mpi_ierr)
+           call mpi_send(getLoc(:),5,mpi_int,putRank(1),2,dminfo%comm,mpi_ierr)
 
-            deallocate(ibtmp1,ibtmp2)
+           deallocate(ibtmp1,ibtmp2)
 
          endif ! srank
 
 
-         call mpi_barrier(dminfo%comm,mpi_ierr)
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
 !        stop
          
         if ( nrow /= 0 ) then
            allocate(iatmp1(5,nrow))
+           allocate(iatmp2(5,nrow))
            allocate(scatRank(5,nrow))
      
            if ( nrow > 1 ) then
               do i = 2,nrow
-                 call mpi_recv(iatmp1(:,i) ,5,mpi_int,crow(i),0,dminfo%comm,mpi_status,mpi_ierr)
+                 call mpi_recv(  iatmp1(:,i),5,mpi_int,crow(i),0,dminfo%comm,mpi_status,mpi_ierr)
                  call mpi_recv(scatRank(:,i),5,mpi_int,crow(i),1,dminfo%comm,mpi_status,mpi_ierr)
+                 call mpi_recv(  iatmp2(:,i),5,mpi_int,crow(i),2,dminfo%comm,mpi_status,mpi_ierr)
               end do
            endif
    
            if ( crow(1) /= rank ) then
-              call mpi_recv(iatmp1(:,1) ,5,mpi_int,crow(1),0,dminfo%comm,mpi_status,mpi_ierr)
+              call mpi_recv(  iatmp1(:,1),5,mpi_int,crow(1),0,dminfo%comm,mpi_status,mpi_ierr)
               call mpi_recv(scatRank(:,1),5,mpi_int,crow(1),1,dminfo%comm,mpi_status,mpi_ierr)
+              call mpi_recv(  iatmp2(:,1),5,mpi_int,crow(1),2,dminfo%comm,mpi_status,mpi_ierr)
            else
               do i = 1,5
                  iatmp1(i,1) = i
                  scatRank(i,1) = rank
+                 iatmp2(i,1) = i
               end do
            end if
               
-           srow = nrow
-           if ( crow(1) == rank ) then
-              srow = nrow - 1
-           endif
+!          srow = nrow
+!          if ( crow(1) == rank ) then
+!             srow = nrow - 1
+!          endif
 
-           allocate(scatLoc(5,srow))
+!          allocate(scatLoc(5,srow))
+!          allocate(iatmp3(5,srow))
+           allocate(scatLoc(5,nrow))
+           allocate(iatmp3(5,nrow))
            scatLoc(:,:) = 0
 
-           if ( crow(1) == rank ) then
-              do i = 1,srow
-                 scatLoc(:,i) = iatmp1(:,i+1)
-              end do
-           else
-              do i = 1,srow
-                 scatLoc(:,i) = iatmp1(:,i)
-              end do
-           endif
+!          if ( crow(1) == rank ) then
+!             do i = 1,srow
+!                scatLoc(:,i) = iatmp1(:,i+1)
+!                 iatmp3(:,i) = iatmp2(:,i+1)
+!             end do
+!          else
+!             do i = 1,srow
+!                scatLoc(:,i) = iatmp1(:,i)
+!                 iatmp3(:,i) = iatmp2(:,i)
+!             end do
+!          endif
 
- 
-!          if ( rank == 27 ) then 
+           scatLoc(:,:) = iatmp1(:,:)
+            iatmp3(:,:) = iatmp2(:,:)
+
+
+         if ( srank == 1 ) then
+            js = 2
+         else
+            js = 1
+         endif
+
+           ! (i1,j1) -> (i2,j2) change
            do i1 = 1,4
-           do j1 = 1,srow-1
+           do j1 = js,nrow
               do i2 = i1+1,5
-              do j2 = j1+1,srow
+              do j2 = js,nrow
                  if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
-                    if ( i1 /= i2 .or. j1 /= j2 ) then
-                       print*,rank, 'aaa',i1,j1,i2,j2,scatLoc(i2,j2)
+                    if ( i1 /= i2) then
+!                      if ( rank == 9 ) then
+!                         print*,rank, 'aaa',i1,j1,i2,j2,scatLoc(i2,j2)
+!                      endif 
+
+                       itmp1 = scatLoc(i2,j1)
+                       scatLoc(i2,j1) = scatLoc(i1,j1)
+                       scatLoc(i1,j1) = itmp1
+
+                       itmp1 =  iatmp3(i2,j1)
+                       iatmp3(i2,j1) = iatmp3(i1,j1) 
+                       iatmp3(i1,j1) = itmp1
                     endif
                  endif 
+
               end do
               end do
            end do
            end do
-!          endif
 
 
-!          if ( rank == 27 ) then
-           do i = 1,srow
-              print*, rank,scatRank(1,i),scatLoc(:,i)
+           ! (i2,j2) -> (i1,j1) change
+           do i1 = 1,4
+           do j1 = js,nrow
+              do i2 = i1+1,5
+              do j2 = js,nrow
+                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+                    if ( i1 /= i2) then
+!                      if ( rank == 9 ) then
+!                         print*,rank, 'bbb',i1,j1,i2,j2,scatLoc(i2,j2)
+!                      endif 
+
+                       itmp1 = scatLoc(i1,j2)
+                       scatLoc(i1,j2) = scatLoc(i2,j2)
+                       scatLoc(i2,j2) = itmp1
+
+                       itmp1 =  iatmp3(i1,j2)
+                       iatmp3(i1,j2) = iatmp3(i2,j2) 
+                       iatmp3(i2,j2) = itmp1
+                    endif
+                 endif 
+
+              end do
+              end do
            end do
-!          endif
+           end do
 
-        endif ! nrow
+
+
+
+!          if ( rank == 9 ) then
+!          do i = 1,nrow
+!             print*, rank,crow(i),scatLoc(:,i)
+!             !print*, rank,scatRank(1,i),iatmp3(:,i)
+!             !print*, rank,scatLoc(:,i),iatmp3(:,i)
+!          end do
+!          end if
+
+
+
+
+ 
+!          do i1 = 1,4
+!          do j1 = 1,srow-1
+!             do i2 = i1+1,5
+!             do j2 = j1+1,srow
+!                if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+!                   if ( i1 /= i2 .or. j1 /= j2 ) then
+!                      !print*,rank, 'aaa',i1,j1,i2,j2,scatLoc(i2,j2)
+!                      itmp1 = scatLoc(i1,j2)
+!                      scatLoc(i1,j2) = scatLoc(i1,j1) 
+!                      scatLoc(i2,j2) = itmp1
+
+!                      itmp1 =  iatmp3(i1,j2)
+!                       iatmp3(i1,j2) =  iatmp3(i1,j1) 
+!                       iatmp3(i2,j2) = itmp1
+!                   endif
+!                endif 
+!             end do
+!             end do
+!          end do
+!          end do
+
+!          do i = 1,srow
+!             print*, rank,scatRank(1,i),scatLoc(:,i)
+!          end do
+
+            ! Send back array info to local ranks 
+!           do i = 2,nrow
+!              call mpi_send(iatmp3(:,i-1),5,mpi_int,crow(i),0,dminfo%comm,mpi_ierr)
+!           end do
+!           if ( crow(1) /= rank ) then
+!              call mpi_send(iatmp3(:,1),5,mpi_int,crow(1),0,dminfo%comm,mpi_ierr)
+!           endif
+
+
+
+
+
+            ! Send back array info to local ranks 
+            do i = 2,nrow
+               call mpi_send(iatmp3(:,i),5,mpi_int,crow(i),0,dminfo%comm,mpi_ierr)
+            end do
+            if ( crow(1) /= rank ) then
+               call mpi_send(iatmp3(:,1),5,mpi_int,crow(1),0,dminfo%comm,mpi_ierr)
+            endif
+
+            deallocate(iatmp3)
+ 
+         endif ! nrow
          
-         call mpi_barrier(dminfo%comm,mpi_ierr)
-         stop
+         if ( srank == 0 ) then
+            call mpi_recv(getLoc,5,mpi_int,MPI_ANY_SOURCE,0,dminfo%comm,mpi_status,mpi_ierr)
+!           print*, rank,getLoc(:)
+         endif
+
+         
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+!        stop
+
+         
+!        if ( srank == 0 ) then
+!           allocate(ibtmp1(5))
+!           call mpi_recv(getLoc,5,mpi_int,MPI_ANY_SOURCE,0,dminfo%comm,mpi_status,mpi_ierr)
+!           print*, rank,ibtmp1
+!        endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+!        stop
 
          call mpi_barrier(dminfo%comm,mpi_ierr)
 !        stop
@@ -4581,18 +4727,16 @@ module ocn_time_integration_si
                   call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
 
             ! Stage 3: Put values that will be scattered
-                  do j = 1, srow
+                  !do j = 1, srow
+                  do j = 1, nrow
                      do i = 1,5
                         CGvec_r0(scatLoc(i,j)) = reduce_global(i)
                      end do
                   end do
-!                 do i = 1,5
-!                    CGvec_r0(scatLoc(i,j)) = reduce_global(i)
-!                 end do
 
-                  do j = 1,srow
-                     print*, rank,crow(j),scatLoc(:,j)
-                  end do
+!                 do j = 1,nrow
+!                    print*, rank,crow(j),scatLoc(:,j)
+!                 end do
                endif
 
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
@@ -4613,7 +4757,13 @@ module ocn_time_integration_si
                end if
  
             !print*,rank,getLoc(:)!,reduce_global(:) 
-!           print*,rank,reduce_global(:) 
+            print*,rank,reduce_global(:) 
+
+            do i = 1,5
+               if ( reduce_global(i) /= real(ncpus*i) ) then
+                  print*, 'fail',rank,i
+               end if
+            end do
 
          call mpi_barrier(dminfo%comm,mpi_ierr)
          stop
