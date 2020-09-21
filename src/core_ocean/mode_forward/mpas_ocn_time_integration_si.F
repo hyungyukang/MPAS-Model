@@ -81,9 +81,9 @@ module ocn_time_integration_si
    real (kind=RKIND) :: R1_alpha1_g,alpha1,alpha2,crit_main
    integer :: nPrecVec,si_opt
    !-------------------
-   integer,dimension(:,:),allocatable :: sumLoc,sumRank
-   integer,dimension(:)  ,allocatable :: putLoc,putRank
-   integer :: rank,ncpus,mrank,crank,srank
+   integer,dimension(:,:),allocatable :: sumLoc,scatLoc,sumRank,scatRank
+   integer,dimension(:)  ,allocatable :: putLoc,putRank,getLoc
+   integer :: rank,ncpus,mrank,crank,srank,srow,nrow
    integer :: mpi_local_comm,local_size,local_rank
    integer :: mpi_cross_comm,cross_size,cross_rank
    integer :: mpi_peer_comm,peer_size,peer_rank
@@ -4023,9 +4023,9 @@ module ocn_time_integration_si
       real (kind=RKIND) :: tmp1,tmp2,sum1,sum2
       integer :: i,j,k,mpi_ierr,mpi_ireq,mpi_jreq,mpi_kreq,mpi_nreq,rank,ncpus
       integer :: i1,i2,j1,j2,itmp1,itmp2
-      integer :: nCells2,nCells2_n,isum1,isum2,iCell,ncmax,nrow,max_nrow
+      integer :: nCells2,nCells2_n,isum1,isum2,iCell,ncmax,max_nrow
       integer,dimension(:,:),allocatable :: global_crow,iatmp1
-      integer,dimension(:),allocatable :: crow,ncrow
+      integer,dimension(:),allocatable :: crow,ncrow,ibtmp1,ibtmp2
       real (kind=RKIND), dimension(5) :: reduce,reduce_global
       include 'mpif.h'
       integer :: mpi_status(mpi_status_size)
@@ -4386,6 +4386,8 @@ module ocn_time_integration_si
                call mpi_send(sumRank(1,:),5,mpi_int,crow(1),1,dminfo%comm,mpi_ierr)
             endif
 
+            deallocate(iatmp1)
+ 
          endif ! nrow
          
          if ( srank == 0 ) then
@@ -4394,6 +4396,131 @@ module ocn_time_integration_si
             call mpi_recv(putLoc,5,mpi_int,MPI_ANY_SOURCE,0,dminfo%comm,mpi_status,mpi_ierr)
             call mpi_recv(putRank,5,mpi_int,MPI_ANY_SOURCE,1,dminfo%comm,mpi_status,mpi_ierr)
          endif
+
+         
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+
+
+         ! Defining scatter locations ---
+         CGvec_r0(:) = ncpus+1
+         CGvec_r1(:) = 0.0_RKIND
+
+         CGvec_r0(1:nCells) = rank
+         do iCell = 1,nCells
+            CGvec_r1(iCell) = iCell
+         end do
+
+         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+         call mpas_threading_barrier()
+         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+
+
+          if ( srank == 0 ) then 
+
+            allocate(ibtmp1(5))
+            allocate(ibtmp2(5))
+            allocate(getLoc(5))
+            ibtmp1(:) = 0
+            ibtmp2(:) = ncpus+1
+
+            isum1 = 0
+            do iCell = nCellsArray(1)+1,nCellsArray(4)
+               if ( int(CGvec_r0(iCell)) == putRank(1) ) then
+                  isum1 = isum1 + 1
+                  ibtmp1(isum1) = CGvec_r1(iCell)
+                  ibtmp2(isum1) = rank
+                  getLoc(isum1) = iCell
+                  if ( isum1 == 5 ) exit
+               endif
+            end do
+
+!           print*, rank,putRank(1),isum1 
+
+            ! Send back array info to local ranks 
+            call mpi_send(ibtmp1(:),5,mpi_int,putRank(1),0,dminfo%comm,mpi_ierr)
+            call mpi_send(ibtmp2(:),5,mpi_int,putRank(1),1,dminfo%comm,mpi_ierr)
+
+            deallocate(ibtmp1,ibtmp2)
+
+         endif ! srank
+
+
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+!        stop
+         
+        if ( nrow /= 0 ) then
+           allocate(iatmp1(5,nrow))
+           allocate(scatRank(5,nrow))
+     
+           if ( nrow > 1 ) then
+              do i = 2,nrow
+                 call mpi_recv(iatmp1(:,i) ,5,mpi_int,crow(i),0,dminfo%comm,mpi_status,mpi_ierr)
+                 call mpi_recv(scatRank(:,i),5,mpi_int,crow(i),1,dminfo%comm,mpi_status,mpi_ierr)
+              end do
+           endif
+   
+           if ( crow(1) /= rank ) then
+              call mpi_recv(iatmp1(:,1) ,5,mpi_int,crow(1),0,dminfo%comm,mpi_status,mpi_ierr)
+              call mpi_recv(scatRank(:,1),5,mpi_int,crow(1),1,dminfo%comm,mpi_status,mpi_ierr)
+           else
+              do i = 1,5
+                 iatmp1(i,1) = i
+                 scatRank(i,1) = rank
+              end do
+           end if
+              
+           srow = nrow
+           if ( crow(1) == rank ) then
+              srow = nrow - 1
+           endif
+
+           allocate(scatLoc(5,srow))
+           scatLoc(:,:) = 0
+
+           if ( crow(1) == rank ) then
+              do i = 1,srow
+                 scatLoc(:,i) = iatmp1(:,i+1)
+              end do
+           else
+              do i = 1,srow
+                 scatLoc(:,i) = iatmp1(:,i)
+              end do
+           endif
+
+ 
+!          if ( rank == 27 ) then 
+           do i1 = 1,4
+           do j1 = 1,srow-1
+              do i2 = i1+1,5
+              do j2 = j1+1,srow
+                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+                    if ( i1 /= i2 .or. j1 /= j2 ) then
+                       print*,rank, 'aaa',i1,j1,i2,j2,scatLoc(i2,j2)
+                    endif
+                 endif 
+              end do
+              end do
+           end do
+           end do
+!          endif
+
+
+!          if ( rank == 27 ) then
+           do i = 1,srow
+              print*, rank,scatRank(1,i),scatLoc(:,i)
+           end do
+!          endif
+
+        endif ! nrow
+         
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+         stop
+
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+!        stop
          
          ! Define cross communicator ---
          if ( nrow /= 0 ) then
@@ -4447,20 +4574,25 @@ module ocn_time_integration_si
                do i = 1,5
                   do j = 1,nrow
                      reduce(i) = reduce(i) + CGvec_r0(sumLoc(i,j))
-!                    print*,i,j,crow(j), CGvec_r0(sumLoc(i,j))
                   end do
                end do
-            endif
-             
-
 
             ! Stage 2: Allreduce for mpi_cross_comm
-               if ( nrow /= 0 ) then
                   call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-!                 CGvec_r0(1:nCellsArray(1)) = 
-!              else
-!                 CGvec_r0(1:nCellsArray(1)) = 0.0_RKIND
-                  print*, rank,reduce_global(:)
+
+            ! Stage 3: Put values that will be scattered
+                  do j = 1, srow
+                     do i = 1,5
+                        CGvec_r0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+!                 do i = 1,5
+!                    CGvec_r0(scatLoc(i,j)) = reduce_global(i)
+!                 end do
+
+                  do j = 1,srow
+                     print*, rank,crow(j),scatLoc(:,j)
+                  end do
                endif
 
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
@@ -4474,21 +4606,17 @@ module ocn_time_integration_si
                call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
                call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
 
-               if ( nrow == 0 ) then
-                  tmp1 = maxval(CGvec_r0) 
+               if ( srank == 0 ) then
+                  do i = 1,5
+                     reduce_global(i) = CGvec_r0(getLoc(i))
+                  end do
                end if
  
+            !print*,rank,getLoc(:)!,reduce_global(:) 
+!           print*,rank,reduce_global(:) 
 
-
-            ! Compare: just allreduce for dminfo%comm
-              
-         isum1 = 1
-
-      
-!        do i = 1,nrow
-!           isum1 = isum1 + 1
-!        end do
-
+         call mpi_barrier(dminfo%comm,mpi_ierr)
+         stop
 
 
       block => block % next
