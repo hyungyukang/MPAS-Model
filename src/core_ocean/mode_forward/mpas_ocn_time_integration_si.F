@@ -4723,16 +4723,34 @@ module ocn_time_integration_si
                   end do
                end do
 
+
             ! Stage 2: Allreduce for mpi_cross_comm
                   call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
 
+
             ! Stage 3: Put values that will be scattered
                   !do j = 1, srow
-                  do j = 1, nrow
-                     do i = 1,5
-                        CGvec_r0(scatLoc(i,j)) = reduce_global(i)
+!                 do j = 1, nrow
+!                    do i = 1,5
+!                       CGvec_r0(scatLoc(i,j)) = reduce_global(i)
+!                    end do
+!                 end do
+
+                  if ( nrow > 1 ) then
+                     do j = 2, nrow
+                        do i = 1,5
+                           CGvec_r0(scatLoc(i,j)) = reduce_global(i)
+                        end do
                      end do
-                  end do
+                  endif
+                  if ( crow(1) /= rank ) then
+                     do j = 1, nrow
+                        do i = 1,5
+                           CGvec_r0(scatLoc(i,j)) = reduce_global(i)
+                        end do
+                     end do
+                  endif 
+ 
 
 !                 do j = 1,nrow
 !                    print*, rank,crow(j),scatLoc(:,j)
