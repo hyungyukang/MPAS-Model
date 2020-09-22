@@ -4460,6 +4460,9 @@ module ocn_time_integration_si
 
          endif ! srank
 
+
+
+
          
         if ( nrow /= 0 ) then
            allocate(iatmp1(5,nrow))
@@ -4500,21 +4503,9 @@ module ocn_time_integration_si
            allocate(scatLoc(5,nrow))
            allocate(iatmp3(5,nrow))
            allocate(iatmp4(5,nrow))
+
            scatLoc(:,:) = 0
-
            iatmp4(:,:) = 0
-
-!          if ( crow(1) == rank ) then
-!             do i = 1,srow
-!                scatLoc(:,i) = iatmp1(:,i+1)
-!                 iatmp3(:,i) = iatmp2(:,i+1)
-!             end do
-!          else
-!             do i = 1,srow
-!                scatLoc(:,i) = iatmp1(:,i)
-!                 iatmp3(:,i) = iatmp2(:,i)
-!             end do
-!          endif
 
            scatLoc(:,:) = iatmp1(:,:)
             iatmp3(:,:) = iatmp2(:,:)
@@ -4526,152 +4517,335 @@ module ocn_time_integration_si
             js = 1
          endif
 
-           ! (i1,j1) -> (i2,j2) vertical change
-           isum1 = 0
-           do i1 = 1,4
-           do j1 = js,nrow
-              do i2 = i1+1,5
-              do j2 = js,nrow
 
-                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
-                    if ( i1 /= i2) then
-                       
-!                       print*,rank, 'aaa',i1,j1,i2,j2,scatLoc(i2,j2)
-                        isum1 = isum1 + 1
+         do i1 = 1,5
+         do j1 = js,nrow-1
 
-                       if ( iatmp4(i2,j1) == 0 ) then
+            do j2 = j1+1,nrow
 
-                          itmp1 = scatLoc(i2,j1)
-                          scatLoc(i2,j1) = scatLoc(i1,j1)
-                          scatLoc(i1,j1) = itmp1
-   
-                          iatmp4(i2,j2) = 1
-                          iatmp4(i2,j1) = 1
-   
-                          itmp1 =  iatmp3(i2,j1)
-                          iatmp3(i2,j1) = iatmp3(i1,j1) 
-                          iatmp3(i1,j1) = itmp1
+               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
+                  iatmp4(i1,j1) = 1
+                  iatmp4(i1,j2) = 1
+               endif
+ 
+            end do
 
-                       else
+         end do
+         end do
 
-                          itmp1 = scatLoc(i1,j2)
-                          scatLoc(i1,j2) = scatLoc(i2,j2)
-                          scatLoc(i2,j2) = itmp1
-   
-   
-                          iatmp4(i1,j1) = 1
-                          iatmp4(i1,j2) = 1
-   
-                          itmp1 =  iatmp3(i1,j2)
-                          iatmp3(i1,j2) = iatmp3(i2,j2) 
-                          iatmp3(i2,j2) = itmp1
-
-                       end if
-
-                    endif
-                 endif 
-
-              end do
-              end do
-           end do
-           end do
+!        if ( rank == 44 ) then
+!              do i = 1,nrow
+!                 print*,js,'ccc',rank,crow(i),iatmp4(:,i)
+!              end do
+!        endif
 
 
-           ! (i2,j2) -> (i1,j1)  vertical change
-           isum2 = 0
-           do i1 = 5,2,-1
-           do j1 = nrow,js,-1
-              do i2 = i1,1,-1
-              do j2 = nrow,js,-1
-                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
-                    if ( i1 /= i2) then
-                       
-!                       print*,rank, 'bbb',i1,j1,i2,j2,scatLoc(i2,j2)
-                        isum2 = isum2 + 1
+!          ! (i1,j1) -> (i2,j2) vertical change
+!          do i1 = 1,4
+!          do j1 = js,nrow
+!             do i2 = i1+1,5
+!             do j2 = js,nrow
 
-                       if ( iatmp4(i2,j1) == 0 ) then
+!                if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+!                   if ( i1 /= i2) then
+!                      
 
-                          itmp1 = scatLoc(i2,j1)
-                          scatLoc(i2,j1) = scatLoc(i1,j1)
-                          scatLoc(i1,j1) = itmp1
-   
-                          iatmp4(i2,j2) = 1
-                          iatmp4(i2,j1) = 1
-   
-                          itmp1 =  iatmp3(i2,j1)
-                          iatmp3(i2,j1) = iatmp3(i1,j1) 
-                          iatmp3(i1,j1) = itmp1
+!                      if ( iatmp4(i2,j1) == 0 ) then
 
-                       else
+!                         itmp1 = scatLoc(i2,j1)
+!                         scatLoc(i2,j1) = scatLoc(i1,j1)
+!                         scatLoc(i1,j1) = itmp1
+!  
+!                         iatmp4(i2,j2) = 1
+!                         iatmp4(i2,j1) = 1
+!  
+!                         itmp1 =  iatmp3(i2,j1)
+!                         iatmp3(i2,j1) = iatmp3(i1,j1) 
+!                         iatmp3(i1,j1) = itmp1
 
-                          itmp1 = scatLoc(i1,j2)
-                          scatLoc(i1,j2) = scatLoc(i2,j2)
-                          scatLoc(i2,j2) = itmp1
-   
-                          iatmp4(i1,j1) = 1
-                          iatmp4(i1,j2) = 1
-   
-                          itmp1 =  iatmp3(i1,j2)
-                          iatmp3(i1,j2) = iatmp3(i2,j2) 
-                          iatmp3(i2,j2) = itmp1
+!                      else
 
-                       end if
+!                         itmp1 = scatLoc(i1,j2)
+!                         scatLoc(i1,j2) = scatLoc(i2,j2)
+!                         scatLoc(i2,j2) = itmp1
+!  
+!  
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i1,j2) = 1
+!  
+!                         itmp1 =  iatmp3(i1,j2)
+!                         iatmp3(i1,j2) = iatmp3(i2,j2) 
+!                         iatmp3(i2,j2) = itmp1
 
-                    endif
-                 endif 
+!                      end if
 
-              end do
-              end do
-           end do
-           end do
+!                   endif
+!                endif 
+
+!             end do
+!             end do
+!          end do
+!          end do
+
+
+!          ! (i2,j2) -> (i1,j1)  vertical change
+!          do i1 = 5,2,-1
+!          do j1 = nrow,js,-1
+!             do i2 = i1,1,-1
+!             do j2 = nrow,js,-1
+!                if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+!                   if ( i1 /= i2) then
+!                      
+!                      if ( iatmp4(i2,j1) == 0 ) then
+
+!                         itmp1 = scatLoc(i2,j1)
+!                         scatLoc(i2,j1) = scatLoc(i1,j1)
+!                         scatLoc(i1,j1) = itmp1
+!  
+!                         iatmp4(i2,j2) = 1
+!                         iatmp4(i2,j1) = 1
+!  
+!                         itmp1 =  iatmp3(i2,j1)
+!                         iatmp3(i2,j1) = iatmp3(i1,j1) 
+!                         iatmp3(i1,j1) = itmp1
+
+!                      else
+
+!                         itmp1 = scatLoc(i1,j2)
+!                         scatLoc(i1,j2) = scatLoc(i2,j2)
+!                         scatLoc(i2,j2) = itmp1
+!  
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i1,j2) = 1
+!  
+!                         itmp1 =  iatmp3(i1,j2)
+!                         iatmp3(i1,j2) = iatmp3(i2,j2) 
+!                         iatmp3(i2,j2) = itmp1
+
+!                      end if
+
+!                   endif
+!                endif 
+
+!             end do
+!             end do
+!          end do
+!          end do
+
+
+!          ! (i2,j2) -> (i1,j1)  horizontal change
+
+!          do j1 = js,nrow
+!          do i1 = 1,5
+!             do j2 = js+1,nrow
+!             do i2 = 1,5
+!                if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+!                   if ( i1 /= i2) then
+!                      
+!                      if ( iatmp4(i1,j2) == 0 ) then
+
+!                         itmp1 = scatLoc(i1,j2)
+!                         scatLoc(i1,j2) = scatLoc(i2,j2)
+!                         scatLoc(i2,j2) = itmp1
+!  
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i1,j2) = 1
+!  
+!                         itmp1 =  iatmp3(i1,j2)
+!                         iatmp3(i1,j2) = iatmp3(i2,j2) 
+!                         iatmp3(i2,j2) = itmp1
+
+!                      else
+
+!                         itmp1 = scatLoc(i2,j1)
+!                         scatLoc(i2,j1) = scatLoc(i1,j1)
+!                         scatLoc(i1,j1) = itmp1
+!  
+!                         iatmp4(i2,j2) = 1
+!                         iatmp4(i2,j1) = 1
+!  
+!                         itmp1 =  iatmp3(i2,j1)
+!                         iatmp3(i2,j1) = iatmp3(i1,j1) 
+!                         iatmp3(i1,j1) = itmp1
+
+!                      end if
+
+!                   endif
+!                endif 
+
+!             end do
+!             end do
+!          end do
+!          end do
+
+
 
 
            ! (i2,j2) -> (i1,j1)  horizontal change
-           iatmp4(:,:) = 0 ! Reset for change of direction
 
-           do j1 = js,nrow
-           do i1 = 1,5
-              do j2 = js+1,nrow
+           do j1 = js,nrow-1
+              i1 = 1
+              isum1 = 0
+8407          continue
+           do while (i1 <= 5)
+
+              do j2 = j1+1,nrow
               do i2 = 1,5
-                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
-                    if ( i1 /= i2) then
-                       
-                       if ( iatmp4(i1,j2) == 0 ) then
+                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) .and. i1 /= i2 ) then
 
-                          itmp1 = scatLoc(i1,j2)
-                          scatLoc(i1,j2) = scatLoc(i2,j2)
-                          scatLoc(i2,j2) = itmp1
-   
-                          iatmp4(i1,j1) = 1
-                          iatmp4(i1,j2) = 1
-   
-                          itmp1 =  iatmp3(i1,j2)
-                          iatmp3(i1,j2) = iatmp3(i2,j2) 
-                          iatmp3(i2,j2) = itmp1
+!                         if ( rank == 24 ) then
+!                              if ( j2 == nrow ) then
+!                                 if ( i2 == 1 .or. i2 == 2 ) then
+!                                     print*, 'ddd',i2,j2,iatmp4(i1,j1),iatmp4(i1,j2),scatLoc(i2,j2)
+!                                 endif                           
+!                              endif                           
+!                             if ( scatLoc(i1,j1) == 32 ) then
+!                                print*, i1,j1,i2,j2,iatmp4(i1,j1),iatmp4(i2,j2)
+!                             endif
+!                         endif
 
-                       else
 
-                          itmp1 = scatLoc(i2,j1)
-                          scatLoc(i2,j1) = scatLoc(i1,j1)
-                          scatLoc(i1,j1) = itmp1
-   
-                          iatmp4(i2,j2) = 1
-                          iatmp4(i2,j1) = 1
-   
-                          itmp1 =  iatmp3(i2,j1)
-                          iatmp3(i2,j1) = iatmp3(i1,j1) 
-                          iatmp3(i1,j1) = itmp1
+!                     if ( scatLoc(i1,j1) == 30 ) then
+!                        print*,'check',i1,j1,i2,j2,iatmp4(i1,j1),iatmp4(i1,j2),iatmp4(i2,j1),iatmp4(i2,j2)
+!                        print*,'check',i1,j1,i2,j2,scatLoc(i1,j1),scatLoc(i1,j2),scatLoc(i2,j1),scatLoc(i2,j2)
+!                     endif
 
-                       end if
+                      if ( iatmp4(i1,j2) == 0 ) then
 
+                         itmp1 = scatLoc(i1,j2)
+                         scatLoc(i1,j2) = scatLoc(i2,j2)
+                         scatLoc(i2,j2) = itmp1
+  
+                         iatmp4(i1,j1) = 1
+                         iatmp4(i1,j2) = 1
+  
+                         itmp1 =  iatmp3(i1,j2)
+                         iatmp3(i1,j2) = iatmp3(i2,j2) 
+                         iatmp3(i2,j2) = itmp1
+
+                      else if ( iatmp4(i2,j1) == 0 ) then
+
+                         itmp1 = scatLoc(i2,j1)
+                         scatLoc(i2,j1) = scatLoc(i1,j1)
+                         scatLoc(i1,j1) = itmp1
+  
+                         iatmp4(i2,j2) = 1
+                         iatmp4(i2,j1) = 1
+  
+                         itmp1 =  iatmp3(i2,j1)
+                         iatmp3(i2,j1) = iatmp3(i1,j1) 
+                         iatmp3(i1,j1) = itmp1
+
+
+                      else
+
+!                        print*, "No space !!!",rank
+
+                         do i = 1,5
+                            if ( iatmp4(i,j1) == 0 .and. iatmp4(i,j2) == 0 ) then
+!                              print*, "Extra space !!!",rank 
+                              
+
+                               itmp1 = scatLoc(i,j1)
+                               scatLoc(i,j1) = scatLoc(i1,j1)
+                               scatLoc(i1,j1) = itmp1
+        
+                               iatmp4(i,j1) = 1
+                               iatmp4(i1,j1) = 0
+
+                               itmp1 =  iatmp3(i,j1)
+                               iatmp3(i,j1) = iatmp3(i1,j1) 
+                               iatmp3(i1,j1) = itmp1
+        
+                               !----
+
+                               itmp1 = scatLoc(i,j2)
+                               scatLoc(i,j2) = scatLoc(i2,j2)
+                               scatLoc(i2,j2) = itmp1
+        
+                               iatmp4(i,j2) = 1
+                               iatmp4(i2,j2) = 0
+
+                               itmp1 =  iatmp3(i,j2)
+                               iatmp3(i,j2) = iatmp3(i2,j2) 
+                               iatmp3(i2,j2) = itmp1
+
+                               exit 
+                            endif
+                         end do
+
+                      end if ! iatmp4
+
+
+                    isum1 = isum1 + 1
+                    if ( isum1 > 1000 ) then
+                       print*, 'Program can not find appropriate points. Now Abort'
+                       stop
                     endif
-                 endif 
+                    goto 8407
 
+                 end if
               end do
               end do
+
+              i1 = i1 + 1
+
            end do
            end do
 
+
+
+!          print*, 'end'
+!          call mpi_barrier(dminfo%comm,mpi_ierr)
+!          stop
+
+
+
+
+
+
+
+!             do j2 = js+1,nrow
+!             do i2 = 1,5
+!                if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+
+
+
+!                   if ( i1 /= i2) then
+!                      
+!                      if ( iatmp4(i1,j2) == 0 ) then
+
+!                         itmp1 = scatLoc(i1,j2)
+!                         scatLoc(i1,j2) = scatLoc(i2,j2)
+!                         scatLoc(i2,j2) = itmp1
+!  
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i1,j2) = 1
+!  
+!                         itmp1 =  iatmp3(i1,j2)
+!                         iatmp3(i1,j2) = iatmp3(i2,j2) 
+!                         iatmp3(i2,j2) = itmp1
+
+!                      else
+
+!                         itmp1 = scatLoc(i2,j1)
+!                         scatLoc(i2,j1) = scatLoc(i1,j1)
+!                         scatLoc(i1,j1) = itmp1
+!  
+!                         iatmp4(i2,j2) = 1
+!                         iatmp4(i2,j1) = 1
+!  
+!                         itmp1 =  iatmp3(i2,j1)
+!                         iatmp3(i2,j1) = iatmp3(i1,j1) 
+!                         iatmp3(i1,j1) = itmp1
+
+!                      end if ! iatmp4
+
+!                   endif ! i1,i2
+!                endif 
+
+!             end do
+!             end do
 
 
 
@@ -4726,46 +4900,54 @@ module ocn_time_integration_si
             endif
 
 
-            if ( rank == 1349 ) then
-               do i = 1,nrow
-                  print*,'aaa',rank,crow(i),scatLoc(:,i)
-               end do
-            endif
-            if ( rank == 1997 ) then
-               do i = 1,nrow
-                  print*,'bbb',rank,crow(i),scatLoc(:,i)
-               end do
-            endif
-            if ( rank == 2870 ) then
-               do i = 1,nrow
-                  print*,'ccc',rank,crow(i),scatLoc(:,i)
-               end do
-            endif
-            if ( rank == 1115 ) then
-               do i = 1,nrow
-                  print*,'ddd',rank,crow(i),scatLoc(:,i)
-               end do
-            endif
-            if ( rank == 1258 ) then
-               do i = 1,nrow
-                  print*,'eee',rank,crow(i),scatLoc(:,i)
-               end do
-            endif
-            if ( rank == 1728 ) then
-               do i = 1,nrow
-                  print*,'fff',rank,crow(i),scatLoc(:,i)
-               end do
-            endif
-            if ( rank == 1660 ) then
-               do i = 1,nrow
-                  print*,'ggg',rank,crow(i),scatLoc(:,i)
-               end do
-            endif
-            if ( rank == 1932 ) then
-               do i = 1,nrow
-                  print*,'hhh',rank,crow(i),scatLoc(:,i)
-               end do
-            endif
+!           if ( rank == 44 ) then
+!              do i = 1,nrow
+!                 print*,'bbb',rank,crow(i),scatLoc(:,i)
+!              end do
+!           endif
+
+
+
+!           if ( rank == 1349 ) then
+!              do i = 1,nrow
+!                 print*,'aaa',rank,crow(i),scatLoc(:,i)
+!              end do
+!           endif
+!           if ( rank == 1997 ) then
+!              do i = 1,nrow
+!                 print*,'bbb',rank,crow(i),scatLoc(:,i)
+!              end do
+!           endif
+!           if ( rank == 2870 ) then
+!              do i = 1,nrow
+!                 print*,'ccc',rank,crow(i),scatLoc(:,i)
+!              end do
+!           endif
+!           if ( rank == 1115 ) then
+!              do i = 1,nrow
+!                 print*,'ddd',rank,crow(i),scatLoc(:,i)
+!              end do
+!           endif
+!           if ( rank == 1258 ) then
+!              do i = 1,nrow
+!                 print*,'eee',rank,crow(i),scatLoc(:,i)
+!              end do
+!           endif
+!           if ( rank == 1728 ) then
+!              do i = 1,nrow
+!                 print*,'fff',rank,crow(i),scatLoc(:,i)
+!              end do
+!           endif
+!           if ( rank == 1660 ) then
+!              do i = 1,nrow
+!                 print*,'ggg',rank,crow(i),scatLoc(:,i)
+!              end do
+!           endif
+!           if ( rank == 1932 ) then
+!              do i = 1,nrow
+!                 print*,'hhh',rank,crow(i),scatLoc(:,i)
+!              end do
+!           endif
 
             deallocate(iatmp3)
  
