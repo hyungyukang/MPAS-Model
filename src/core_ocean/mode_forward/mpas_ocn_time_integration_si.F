@@ -4126,6 +4126,7 @@ module ocn_time_integration_si
 
             if ( isum2 < 5 .and. isum2 > 0 ) then
                crow(max_nrow) = crow(i)
+               print*,'555',rank,crow(i)
             endif
 
          end do
@@ -4161,10 +4162,26 @@ module ocn_time_integration_si
          endif
 
 
+         ! Set the ranks that have less than 5 arrays ---
+         if ( rank == 0 ) then
+            do i = 0,ncpus-1
+               if ( global_crow(i,max_nrow) < ncpus+1 ) then
+ 
+                  itmp1 = global_crow(i,max_nrow)
+
+                  global_crow(i,1:max_nrow-1) = ncpus+1
+                  global_crow(i,1) = i
+                  ncrow(i) = 1
+
+                  global_crow(itmp1,1:max_nrow-1) = ncpus+1
+                  global_crow(itmp1,1) = itmp1
+                  ncrow(itmp1) = 1
+
+               endif
+            end do
+
 
          ! Remove the same rank number ---
-         if ( rank == 0 ) then
-
          do i = ncmax,0,-1
             do i1 = 0,ncpus-2
                if ( ncrow(i1) == i ) then
@@ -4213,25 +4230,6 @@ module ocn_time_integration_si
 
                itmp1 = global_crow(i,max_nrow)
 
-               if ( ncrow(i) == 0 ) then
-
-               do i1 = itmp1,itmp1
-                  do j1 = 1,ncrow(i1)
-                     if ( global_crow(i1,j1) == i ) then
-                        itmp2 = global_crow(i1,ncrow(i1))
-                        global_crow(i1,j1) = itmp2
-                        global_crow(i1,ncrow(i1)) = ncpus+1
-                        ncrow(i1) = ncrow(i1)-1
-                     endif
-                  end do
-               end do
-
-               global_crow(i,1) = i
-               global_crow(i,max_nrow) = ncpus+1
-               ncrow(i) = 1
-          
-               else
- 
                do i1 = 0,ncpus-1
                   do j1 = 1,ncrow(i1)
                      if ( global_crow(i1,j1) == itmp1 ) then
@@ -4263,11 +4261,8 @@ module ocn_time_integration_si
                   end do
                end do
 
-            endif
-
-
-            endif
-         end do
+            endif ! global_crow
+         end do ! i
 
 
             isum1 = 0
@@ -4275,7 +4270,7 @@ module ocn_time_integration_si
                if ( ncrow(i) == 0 ) then
                   isum1 = isum1 + 1
                else
-                  print*,i,ncrow(i),global_crow(i,:)
+                  print('(17(i5,1x))'),i,ncrow(i),global_crow(i,:)
                endif
             end do
 
@@ -4287,6 +4282,8 @@ module ocn_time_integration_si
          endif
 
          call mpi_barrier(dminfo%comm,mpi_ierr)
+!        stop
+
 
          ! Send back cRow info to each rank ---
          if ( rank == 0 ) then
@@ -4309,8 +4306,6 @@ module ocn_time_integration_si
        
          call mpi_barrier(dminfo%comm,mpi_ierr)
 
-
-!        print*, 'aaa'
 
          ! Reordering for the first rank
          do j = 2,nrow
@@ -4391,6 +4386,7 @@ module ocn_time_integration_si
                end do
             endif 
 
+
             ! Send back array info to local ranks 
             do i = 2,nrow
                call mpi_send(iatmp1(i,:),5,mpi_int,crow(i),0,dminfo%comm,mpi_ierr)
@@ -4413,8 +4409,6 @@ module ocn_time_integration_si
          endif
 
          call mpi_barrier(dminfo%comm,mpi_ierr)
-
-!        print*, 'bbb'
 
          ! Defining scatter locations ---
          CGvec_r0(:) = ncpus+1
@@ -4477,7 +4471,6 @@ module ocn_time_integration_si
                  call mpi_recv(  iatmp1(:,i),5,mpi_int,crow(i),0,dminfo%comm,mpi_status,mpi_ierr)
                  call mpi_recv(scatRank(:,i),5,mpi_int,crow(i),1,dminfo%comm,mpi_status,mpi_ierr)
                  call mpi_recv(  iatmp2(:,i),5,mpi_int,crow(i),2,dminfo%comm,mpi_status,mpi_ierr)
-              print*,'rec',rank,crow(i)
               end do
            endif
    
@@ -4494,6 +4487,8 @@ module ocn_time_integration_si
            end if
               
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+!        stop
 
 !          srow = nrow
 !          if ( crow(1) == rank ) then
@@ -4532,42 +4527,48 @@ module ocn_time_integration_si
          endif
 
            ! (i1,j1) -> (i2,j2) change
+           isum1 = 0
            do i1 = 1,4
            do j1 = js,nrow
               do i2 = i1+1,5
               do j2 = js,nrow
+
                  if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
                     if ( i1 /= i2) then
                        
-!                      if ( rank == 7 ) then
 !                         print*,rank, 'aaa',i1,j1,i2,j2,scatLoc(i2,j2)
-!                      endif 
+                        isum1 = isum1 + 1
 
                        if ( iatmp4(i2,j1) == 0 ) then
 
-                       itmp1 = scatLoc(i2,j1)
-                       scatLoc(i2,j1) = scatLoc(i1,j1)
-                       scatLoc(i1,j1) = itmp1
-
-                       iatmp4(i1,j1) = 1
-                       iatmp4(i2,j1) = 1
-
-                       itmp1 =  iatmp3(i2,j1)
-                       iatmp3(i2,j1) = iatmp3(i1,j1) 
-                       iatmp3(i1,j1) = itmp1
+                          itmp1 = scatLoc(i2,j1)
+                          scatLoc(i2,j1) = scatLoc(i1,j1)
+                          scatLoc(i1,j1) = itmp1
+   
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i2,j1) = 1
+                          iatmp4(i2,j2) = 1
+                          iatmp4(i2,j1) = 1
+   
+                          itmp1 =  iatmp3(i2,j1)
+                          iatmp3(i2,j1) = iatmp3(i1,j1) 
+                          iatmp3(i1,j1) = itmp1
 
                        else
-                       itmp1 = scatLoc(i1,j2)
-                       scatLoc(i1,j2) = scatLoc(i2,j2)
-                       scatLoc(i2,j2) = itmp1
 
-
-                       iatmp4(i1,j2) = 1
-                       iatmp4(i2,j2) = 1
-
-                       itmp1 =  iatmp3(i1,j2)
-                       iatmp3(i1,j2) = iatmp3(i2,j2) 
-                       iatmp3(i2,j2) = itmp1
+                          itmp1 = scatLoc(i1,j2)
+                          scatLoc(i1,j2) = scatLoc(i2,j2)
+                          scatLoc(i2,j2) = itmp1
+   
+   
+!                         iatmp4(i1,j2) = 1
+!                         iatmp4(i2,j2) = 1
+                          iatmp4(i1,j1) = 1
+                          iatmp4(i1,j2) = 1
+   
+                          itmp1 =  iatmp3(i1,j2)
+                          iatmp3(i1,j2) = iatmp3(i2,j2) 
+                          iatmp3(i2,j2) = itmp1
 
                        end if
 
@@ -4581,6 +4582,7 @@ module ocn_time_integration_si
 
 
            ! (i2,j2) -> (i1,j1) change
+           isum2 = 0
            do i1 = 5,2,-1
            do j1 = nrow,js,-1
               do i2 = i1,1,-1
@@ -4588,35 +4590,38 @@ module ocn_time_integration_si
                  if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
                     if ( i1 /= i2) then
                        
-!                      if ( rank == 7 ) then
-!                         print*,rank, 'aaa',i1,j1,i2,j2,scatLoc(i2,j2)
-!                      endif 
+!                         print*,rank, 'bbb',i1,j1,i2,j2,scatLoc(i2,j2)
+                        isum2 = isum2 + 1
 
                        if ( iatmp4(i2,j1) == 0 ) then
 
-                       itmp1 = scatLoc(i2,j1)
-                       scatLoc(i2,j1) = scatLoc(i1,j1)
-                       scatLoc(i1,j1) = itmp1
-
-                       iatmp4(i1,j1) = 1
-                       iatmp4(i2,j1) = 1
-
-                       itmp1 =  iatmp3(i2,j1)
-                       iatmp3(i2,j1) = iatmp3(i1,j1) 
-                       iatmp3(i1,j1) = itmp1
+                          itmp1 = scatLoc(i2,j1)
+                          scatLoc(i2,j1) = scatLoc(i1,j1)
+                          scatLoc(i1,j1) = itmp1
+   
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i2,j1) = 1
+                          iatmp4(i2,j2) = 1
+                          iatmp4(i2,j1) = 1
+   
+                          itmp1 =  iatmp3(i2,j1)
+                          iatmp3(i2,j1) = iatmp3(i1,j1) 
+                          iatmp3(i1,j1) = itmp1
 
                        else
-                       itmp1 = scatLoc(i1,j2)
-                       scatLoc(i1,j2) = scatLoc(i2,j2)
-                       scatLoc(i2,j2) = itmp1
 
-
-                       iatmp4(i1,j2) = 1
-                       iatmp4(i2,j2) = 1
-
-                       itmp1 =  iatmp3(i1,j2)
-                       iatmp3(i1,j2) = iatmp3(i2,j2) 
-                       iatmp3(i2,j2) = itmp1
+                          itmp1 = scatLoc(i1,j2)
+                          scatLoc(i1,j2) = scatLoc(i2,j2)
+                          scatLoc(i2,j2) = itmp1
+   
+!                         iatmp4(i1,j2) = 1
+!                         iatmp4(i2,j2) = 1
+                          iatmp4(i1,j1) = 1
+                          iatmp4(i1,j2) = 1
+   
+                          itmp1 =  iatmp3(i1,j2)
+                          iatmp3(i1,j2) = iatmp3(i2,j2) 
+                          iatmp3(i2,j2) = itmp1
 
                        end if
 
@@ -4628,18 +4633,8 @@ module ocn_time_integration_si
            end do
            end do
 
+           print*, 'same less than 5',isum1,isum2
 
-
-!          if ( rank == 22 ) then
-!          do i = 1,nrow
-!             print*, rank,crow(i),scatLoc(:,i)
-!          end do
-!          end if
-
-
-
-
- 
 !          do i1 = 1,4
 !          do j1 = 1,srow-1
 !             do i2 = i1+1,5
@@ -4674,9 +4669,6 @@ module ocn_time_integration_si
 !           endif
 
 
-
-
-
             ! Send back array info to local ranks 
             do i = 2,nrow
                call mpi_send(iatmp3(:,i),5,mpi_int,crow(i),0,dminfo%comm,mpi_ierr)
@@ -4685,25 +4677,33 @@ module ocn_time_integration_si
                call mpi_send(iatmp3(:,1),5,mpi_int,crow(1),0,dminfo%comm,mpi_ierr)
             endif
 
+
+!           if ( rank == 2 ) then
+!              do i = 1,nrow
+!                 print*,'ddd',rank,crow(i),scatLoc(:,i)
+!              end do
+!           endif
+
             deallocate(iatmp3)
  
          endif ! nrow
+
          
          if ( srank == 0 ) then
             call mpi_recv(getLoc,5,mpi_int,MPI_ANY_SOURCE,0,dminfo%comm,mpi_status,mpi_ierr)
          endif
 
          
-         
          call mpi_barrier(dminfo%comm,mpi_ierr)
          
 
          ! Define cross communicator ---
          if ( nrow /= 0 ) then
-             rankRepId = 0
+            rankRepId = 0
          else
-             rankRepId = MPI_UNDEFINED
+            rankRepId = MPI_UNDEFINED
          endif
+
 
          ! Representative rank coloring and  communicator localizing
          call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_cross_comm, mpi_ierr)
