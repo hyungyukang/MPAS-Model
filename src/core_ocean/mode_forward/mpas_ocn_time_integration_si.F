@@ -4526,7 +4526,7 @@ module ocn_time_integration_si
             js = 1
          endif
 
-           ! (i1,j1) -> (i2,j2) change
+           ! (i1,j1) -> (i2,j2) vertical change
            isum1 = 0
            do i1 = 1,4
            do j1 = js,nrow
@@ -4536,7 +4536,7 @@ module ocn_time_integration_si
                  if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
                     if ( i1 /= i2) then
                        
-!                         print*,rank, 'aaa',i1,j1,i2,j2,scatLoc(i2,j2)
+!                       print*,rank, 'aaa',i1,j1,i2,j2,scatLoc(i2,j2)
                         isum1 = isum1 + 1
 
                        if ( iatmp4(i2,j1) == 0 ) then
@@ -4545,8 +4545,6 @@ module ocn_time_integration_si
                           scatLoc(i2,j1) = scatLoc(i1,j1)
                           scatLoc(i1,j1) = itmp1
    
-!                         iatmp4(i1,j1) = 1
-!                         iatmp4(i2,j1) = 1
                           iatmp4(i2,j2) = 1
                           iatmp4(i2,j1) = 1
    
@@ -4561,8 +4559,6 @@ module ocn_time_integration_si
                           scatLoc(i2,j2) = itmp1
    
    
-!                         iatmp4(i1,j2) = 1
-!                         iatmp4(i2,j2) = 1
                           iatmp4(i1,j1) = 1
                           iatmp4(i1,j2) = 1
    
@@ -4581,7 +4577,7 @@ module ocn_time_integration_si
            end do
 
 
-           ! (i2,j2) -> (i1,j1) change
+           ! (i2,j2) -> (i1,j1)  vertical change
            isum2 = 0
            do i1 = 5,2,-1
            do j1 = nrow,js,-1
@@ -4590,7 +4586,7 @@ module ocn_time_integration_si
                  if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
                     if ( i1 /= i2) then
                        
-!                         print*,rank, 'bbb',i1,j1,i2,j2,scatLoc(i2,j2)
+!                       print*,rank, 'bbb',i1,j1,i2,j2,scatLoc(i2,j2)
                         isum2 = isum2 + 1
 
                        if ( iatmp4(i2,j1) == 0 ) then
@@ -4599,8 +4595,6 @@ module ocn_time_integration_si
                           scatLoc(i2,j1) = scatLoc(i1,j1)
                           scatLoc(i1,j1) = itmp1
    
-!                         iatmp4(i1,j1) = 1
-!                         iatmp4(i2,j1) = 1
                           iatmp4(i2,j2) = 1
                           iatmp4(i2,j1) = 1
    
@@ -4614,8 +4608,6 @@ module ocn_time_integration_si
                           scatLoc(i1,j2) = scatLoc(i2,j2)
                           scatLoc(i2,j2) = itmp1
    
-!                         iatmp4(i1,j2) = 1
-!                         iatmp4(i2,j2) = 1
                           iatmp4(i1,j1) = 1
                           iatmp4(i1,j2) = 1
    
@@ -4633,7 +4625,63 @@ module ocn_time_integration_si
            end do
            end do
 
-           print*, 'same less than 5',isum1,isum2
+
+           ! (i2,j2) -> (i1,j1)  horizontal change
+           iatmp4(:,:) = 0 ! Reset for change of direction
+
+           do j1 = js,nrow
+           do i1 = 1,5
+              do j2 = js+1,nrow
+              do i2 = 1,5
+                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+                    if ( i1 /= i2) then
+                       
+                       if ( iatmp4(i1,j2) == 0 ) then
+
+                          itmp1 = scatLoc(i1,j2)
+                          scatLoc(i1,j2) = scatLoc(i2,j2)
+                          scatLoc(i2,j2) = itmp1
+   
+                          iatmp4(i1,j1) = 1
+                          iatmp4(i1,j2) = 1
+   
+                          itmp1 =  iatmp3(i1,j2)
+                          iatmp3(i1,j2) = iatmp3(i2,j2) 
+                          iatmp3(i2,j2) = itmp1
+
+                       else
+
+                          itmp1 = scatLoc(i2,j1)
+                          scatLoc(i2,j1) = scatLoc(i1,j1)
+                          scatLoc(i1,j1) = itmp1
+   
+                          iatmp4(i2,j2) = 1
+                          iatmp4(i2,j1) = 1
+   
+                          itmp1 =  iatmp3(i2,j1)
+                          iatmp3(i2,j1) = iatmp3(i1,j1) 
+                          iatmp3(i1,j1) = itmp1
+
+                       end if
+
+                    endif
+                 endif 
+
+              end do
+              end do
+           end do
+           end do
+
+
+
+
+
+
+
+
+
+
+!          print*, 'same less than 5',isum1,isum2
 
 !          do i1 = 1,4
 !          do j1 = 1,srow-1
@@ -4678,11 +4726,46 @@ module ocn_time_integration_si
             endif
 
 
-!           if ( rank == 2 ) then
-!              do i = 1,nrow
-!                 print*,'ddd',rank,crow(i),scatLoc(:,i)
-!              end do
-!           endif
+            if ( rank == 1349 ) then
+               do i = 1,nrow
+                  print*,'aaa',rank,crow(i),scatLoc(:,i)
+               end do
+            endif
+            if ( rank == 1997 ) then
+               do i = 1,nrow
+                  print*,'bbb',rank,crow(i),scatLoc(:,i)
+               end do
+            endif
+            if ( rank == 2870 ) then
+               do i = 1,nrow
+                  print*,'ccc',rank,crow(i),scatLoc(:,i)
+               end do
+            endif
+            if ( rank == 1115 ) then
+               do i = 1,nrow
+                  print*,'ddd',rank,crow(i),scatLoc(:,i)
+               end do
+            endif
+            if ( rank == 1258 ) then
+               do i = 1,nrow
+                  print*,'eee',rank,crow(i),scatLoc(:,i)
+               end do
+            endif
+            if ( rank == 1728 ) then
+               do i = 1,nrow
+                  print*,'fff',rank,crow(i),scatLoc(:,i)
+               end do
+            endif
+            if ( rank == 1660 ) then
+               do i = 1,nrow
+                  print*,'ggg',rank,crow(i),scatLoc(:,i)
+               end do
+            endif
+            if ( rank == 1932 ) then
+               do i = 1,nrow
+                  print*,'hhh',rank,crow(i),scatLoc(:,i)
+               end do
+            endif
 
             deallocate(iatmp3)
  
@@ -4787,7 +4870,8 @@ module ocn_time_integration_si
                call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
                call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
 
-               if ( srank == 0 ) then
+               !if ( srank == 0 ) then
+               if ( nrow == 0 ) then
                   do i = 1,5
                      reduce_global(i) = CGvec_r0(getLoc(i))
                   end do
