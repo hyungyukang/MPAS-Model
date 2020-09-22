@@ -4247,7 +4247,6 @@ module ocn_time_integration_si
                         endif
                            ncrow(i1) = ncrow(i1)-1
 
-                           print*,ncrow(itmp1),'aaa'
                         if ( ncrow(itmp1) == 0 ) then
                            global_crow(itmp1,1) = itmp1
                            ncrow(itmp1) = ncrow(itmp1)+1
@@ -4288,7 +4287,6 @@ module ocn_time_integration_si
          endif
 
          call mpi_barrier(dminfo%comm,mpi_ierr)
-!        stop
 
          ! Send back cRow info to each rank ---
          if ( rank == 0 ) then
@@ -4311,6 +4309,8 @@ module ocn_time_integration_si
        
          call mpi_barrier(dminfo%comm,mpi_ierr)
 
+
+!        print*, 'aaa'
 
          ! Reordering for the first rank
          do j = 2,nrow
@@ -4403,7 +4403,6 @@ module ocn_time_integration_si
 
             deallocate(iatmp1)
  
- 
          endif ! nrow
          
          if ( srank == 0 ) then
@@ -4415,6 +4414,7 @@ module ocn_time_integration_si
 
          call mpi_barrier(dminfo%comm,mpi_ierr)
 
+!        print*, 'bbb'
 
          ! Defining scatter locations ---
          CGvec_r0(:) = ncpus+1
@@ -4452,25 +4452,20 @@ module ocn_time_integration_si
               endif
            end do
 
-
            if ( isum1 < 5 ) then
               print*,'less than 5', rank,putRank(1),isum1
-              
            endif 
-
 
            ! Send back array info to local ranks 
            call mpi_send(ibtmp1(:),5,mpi_int,putRank(1),0,dminfo%comm,mpi_ierr)
            call mpi_send(ibtmp2(:),5,mpi_int,putRank(1),1,dminfo%comm,mpi_ierr)
            call mpi_send(getLoc(:),5,mpi_int,putRank(1),2,dminfo%comm,mpi_ierr)
 
+
            deallocate(ibtmp1,ibtmp2)
 
          endif ! srank
 
-
-         call mpi_barrier(dminfo%comm,mpi_ierr)
-!        stop
          
         if ( nrow /= 0 ) then
            allocate(iatmp1(5,nrow))
@@ -4482,6 +4477,7 @@ module ocn_time_integration_si
                  call mpi_recv(  iatmp1(:,i),5,mpi_int,crow(i),0,dminfo%comm,mpi_status,mpi_ierr)
                  call mpi_recv(scatRank(:,i),5,mpi_int,crow(i),1,dminfo%comm,mpi_status,mpi_ierr)
                  call mpi_recv(  iatmp2(:,i),5,mpi_int,crow(i),2,dminfo%comm,mpi_status,mpi_ierr)
+              print*,'rec',rank,crow(i)
               end do
            endif
    
@@ -4497,6 +4493,8 @@ module ocn_time_integration_si
               end do
            end if
               
+!        call mpi_barrier(dminfo%comm,mpi_ierr)
+
 !          srow = nrow
 !          if ( crow(1) == rank ) then
 !             srow = nrow - 1
