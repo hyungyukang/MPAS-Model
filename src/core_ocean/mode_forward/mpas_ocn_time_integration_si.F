@@ -4026,7 +4026,7 @@ module ocn_time_integration_si
       integer :: nCells2,nCells2_n,isum1,isum2,iCell,ncmax,max_nrow
       integer,dimension(:,:),allocatable :: global_crow,iatmp1,iatmp2,iatmp3,iatmp4
       integer,dimension(:),allocatable :: crow,ncrow,ibtmp1,ibtmp2
-      real (kind=RKIND), dimension(5) :: reduce,reduce_global
+      real (kind=RKIND), dimension(5) :: reduce,reduce_check,reduce_global,reduce_global_check
       include 'mpif.h'
       integer :: mpi_status(mpi_status_size)
       integer :: rankRepId
@@ -5438,7 +5438,9 @@ module ocn_time_integration_si
          CGvec_r0(:) = 0.0
 
             do i = 1,5
-               reduce(i) = real(i)
+               reduce(i)       = real(i) * rank
+               reduce_check(i) = real(i) * rank
+               !reduce(i) = real(i)
             end do
 
             ! Stage 1: Put values
@@ -5518,13 +5520,18 @@ module ocn_time_integration_si
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
 !        stop
 
-            print*, rank,reduce_global(:)
 
-            do i = 1,5
-               if ( reduce_global(i) /= real(ncpus*i) ) then
-                  print*, 'fail',rank,i
-               end if
-            end do
+            ! For check
+            call mpi_allreduce(reduce_check,reduce_global_check,5,MPI_DOUBLE,MPI_SUM,dminfo%comm,mpi_ierr)
+
+            print*, rank,reduce_global(:)-reduce_global_check(:)
+
+
+!           do i = 1,5
+!              if ( reduce_global(i) /= real(ncpus*i) ) then
+!                 print*, 'fail',rank,i
+!              end if
+!           end do
 
          call mpi_barrier(dminfo%comm,mpi_ierr)
          stop
