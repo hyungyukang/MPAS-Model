@@ -2955,9 +2955,9 @@ module ocn_time_integration_si
 !              endif
 !           end do
 
-            if ( rank == 0 ) then
-               print*,'Iter',iter 
-            endif
+!           if ( rank == 0 ) then
+!              print*,'Iter',iter 
+!           endif
 !-------------------------------------------------------------------------------
    
             ! SpMV -----------------------------------------------------------------------------------!
