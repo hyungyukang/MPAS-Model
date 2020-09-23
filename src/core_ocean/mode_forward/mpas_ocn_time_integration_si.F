@@ -4685,7 +4685,10 @@ module ocn_time_integration_si
 
               do j2 = j1+1,nrow
               do i2 = 1,5
-                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) .and. i1 /= i2 ) then
+
+                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+         
+                    if ( i1 /= i2 ) then
 
                       if ( iatmp4(i1,j2) == 0 ) then
                          itmp1 = scatLoc(i1,j2)
@@ -4737,15 +4740,25 @@ module ocn_time_integration_si
                             endif
                          end do
 
+
                       end if ! iatmp4
 
-                    if ( i >= 5 ) then
-!                      print*, rank,'Program can not find appropriate points. Now Abort'
-!                      stop
-                       exit
-                    endif
                     goto 8407
+                    else 
+
+                         iatmp4(i1,j1) = 1
+                         iatmp4(i2,j2) = 1
+
+                    endif ! i1/=i2
+
+
+!                        if ( i >= 5 ) then
+!                           print*, rank,'Program can not find appropriate points. Now Abort'
+!                           exit
+!                        endif
+
                  end if
+                
               end do
               end do
               i1 = i1 + 1
@@ -4775,8 +4788,9 @@ module ocn_time_integration_si
 
               do i2 = i1+1,5
               do j2 = js,nrow
-                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) .and. i1 /= i2 ) then
+                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
 
+                   if ( i1/=i2) then
                       if ( iatmp4(i1,j2) == 0 ) then
                          itmp1 = scatLoc(i1,j2)
                          scatLoc(i1,j2) = scatLoc(i2,j2)
@@ -4827,14 +4841,24 @@ module ocn_time_integration_si
                             endif
                          end do
 
+
+
                       end if ! iatmp4
 
-                    if ( i >= 5 ) then
-                       print*, rank,'Program can not find appropriate points. Now Abort'
-!                      stop
-                       exit
-                    endif
                     goto 8408
+
+                    else
+
+                         iatmp4(i1,j1) = 1
+                         iatmp4(i2,j2) = 1
+
+                    endif ! i1/=i2
+
+!                        if ( i >= 5 ) then
+!                           print*, rank,'Program can not find appropriate points. Now Abort'
+!                           exit
+!                        endif
+
                  end if
               end do
               end do
@@ -4865,7 +4889,10 @@ module ocn_time_integration_si
 
               do j2 = nrow-1,js,-1
               do i2 = 5,1,-1
-                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) .and. i1 /= i2 ) then
+                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+
+
+                   if ( i1 /= i2 ) then
 
                       if ( iatmp4(i1,j2) == 0 ) then
                          itmp1 = scatLoc(i1,j2)
@@ -4917,14 +4944,22 @@ module ocn_time_integration_si
                             endif
                          end do
 
-                      end if ! iatmp4
 
-                    if ( i >= 5 ) then
-                       print*, rank,'Program can not find appropriate points. Now Abort'
-!                      stop
-                       exit
-                    endif
+                       end if ! iatmp4
+
                     goto 8409
+                    else
+
+                         iatmp4(i1,j1) = 1
+                         iatmp4(i2,j2) = 1
+
+                    endif ! i1/=i2
+
+!                      if ( i >= 5 ) then
+!                         print*, rank,'Program can not find appropriate points. Now Abort'
+!                         exit
+!                      endif
+
                  end if
               end do
               end do
@@ -4955,7 +4990,9 @@ module ocn_time_integration_si
 
               do i2 = i1-1,1,-1
               do j2 = nrow,js,-1
-                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) .and. i1 /= i2 ) then
+                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+
+                   if ( i1 /= i2 ) then
 
                       if ( iatmp4(i1,j2) == 0 ) then
                          itmp1 = scatLoc(i1,j2)
@@ -5007,14 +5044,22 @@ module ocn_time_integration_si
                             endif
                          end do
 
+
                       end if ! iatmp4
 
-                    if ( i >= 5 ) then
-                       print*, rank,'Program can not find appropriate points. Now Abort'
-!                      stop
-                       exit
-                    endif
                     goto 8410
+                    else
+
+                         iatmp4(i1,j1) = 1
+                         iatmp4(i2,j2) = 1
+
+                    endif ! i1/=i2
+
+!                        if ( i >= 5 ) then
+!                           print*, rank,'Program can not find appropriate points. Now Abort'
+!                           exit
+!                        endif
+
                  end if
               end do
               end do
