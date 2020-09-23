@@ -4517,20 +4517,6 @@ module ocn_time_integration_si
          endif
 
 
-         do i1 = 1,5
-         do j1 = js,nrow-1
-
-            do j2 = j1+1,nrow
-
-               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
-                  iatmp4(i1,j1) = 1
-                  iatmp4(i1,j2) = 1
-               endif
- 
-            end do
-
-         end do
-         end do
 
 !        if ( rank == 44 ) then
 !              do i = 1,nrow
@@ -4681,6 +4667,17 @@ module ocn_time_integration_si
 
 
            ! Horizontal direction  
+         do i1 = 1,5
+         do j1 = js,nrow-1
+            do j2 = j1+1,nrow
+               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
+                  iatmp4(i1,j1) = 1
+                  iatmp4(i1,j2) = 1
+               endif
+            end do
+         end do
+         end do
+
            do j1 = js,nrow-1
               i1 = 1
 8407          continue
@@ -4742,10 +4739,11 @@ module ocn_time_integration_si
 
                       end if ! iatmp4
 
-!                   if ( i >= 5 ) then
+                    if ( i >= 5 ) then
 !                      print*, rank,'Program can not find appropriate points. Now Abort'
 !                      stop
-!                   endif
+                       exit
+                    endif
                     goto 8407
                  end if
               end do
@@ -4758,6 +4756,18 @@ module ocn_time_integration_si
 
            ! Vertical direction  
            iatmp4(:,:) = 0
+
+         do i1 = 1,5
+         do j1 = js,nrow-1
+            do j2 = j1+1,nrow
+               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
+                  iatmp4(i1,j1) = 1
+                  iatmp4(i1,j2) = 1
+               endif
+            end do
+         end do
+         end do
+
            do i1 = 1,4
               j1 = js
 8408          continue
@@ -4819,10 +4829,11 @@ module ocn_time_integration_si
 
                       end if ! iatmp4
 
-!                   if ( i >= 5 ) then
-!                      print*, rank,'Program can not find appropriate points. Now Abort'
+                    if ( i >= 5 ) then
+                       print*, rank,'Program can not find appropriate points. Now Abort'
 !                      stop
-!                   endif
+                       exit
+                    endif
                     goto 8408
                  end if
               end do
@@ -4833,8 +4844,20 @@ module ocn_time_integration_si
 
 !------------------------------------------------------------------------------------------
 
-           iatmp4(:,:) = 0
            ! Inverse horizontal direction  
+           iatmp4(:,:) = 0
+
+         do i1 = 1,5
+         do j1 = js,nrow-1
+            do j2 = j1+1,nrow
+               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
+                  iatmp4(i1,j1) = 1
+                  iatmp4(i1,j2) = 1
+               endif
+            end do
+         end do
+         end do
+
            do j1 = nrow,js+1,-1
               i1 = 5
 8409          continue
@@ -4896,15 +4919,106 @@ module ocn_time_integration_si
 
                       end if ! iatmp4
 
-!                   if ( i >= 5 ) then
-!                      print*, rank,'Program can not find appropriate points. Now Abort'
+                    if ( i >= 5 ) then
+                       print*, rank,'Program can not find appropriate points. Now Abort'
 !                      stop
-!                   endif
+                       exit
+                    endif
                     goto 8409
                  end if
               end do
               end do
               i1 = i1 - 1
+           end do
+           end do
+
+!------------------------------------------------------------------------------------------
+
+           ! Inverse vertical direction  
+           iatmp4(:,:) = 0
+
+         do i1 = 1,5
+         do j1 = js,nrow-1
+            do j2 = j1+1,nrow
+               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
+                  iatmp4(i1,j1) = 1
+                  iatmp4(i1,j2) = 1
+               endif
+            end do
+         end do
+         end do
+
+           do i1 = 5,2,-1
+              j1 = nrow
+8410          continue
+           do while (j1 >= js)
+
+              do i2 = i1-1,1,-1
+              do j2 = nrow,js,-1
+                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) .and. i1 /= i2 ) then
+
+                      if ( iatmp4(i1,j2) == 0 ) then
+                         itmp1 = scatLoc(i1,j2)
+                         scatLoc(i1,j2) = scatLoc(i2,j2)
+                         scatLoc(i2,j2) = itmp1
+  
+                         iatmp4(i1,j1) = 1
+                         iatmp4(i1,j2) = 1
+  
+                         itmp1 =  iatmp3(i1,j2)
+                         iatmp3(i1,j2) = iatmp3(i2,j2) 
+                         iatmp3(i2,j2) = itmp1
+                      else if ( iatmp4(i2,j1) == 0 ) then
+                         itmp1 = scatLoc(i2,j1)
+                         scatLoc(i2,j1) = scatLoc(i1,j1)
+                         scatLoc(i1,j1) = itmp1
+  
+                         iatmp4(i2,j2) = 1
+                         iatmp4(i2,j1) = 1
+  
+                         itmp1 =  iatmp3(i2,j1)
+                         iatmp3(i2,j1) = iatmp3(i1,j1) 
+                         iatmp3(i1,j1) = itmp1
+                      else
+                         do i = 1,5
+                            if ( iatmp4(i,j1) == 0 .and. iatmp4(i,j2) == 0 ) then
+                               itmp1 = scatLoc(i,j1)
+                               scatLoc(i,j1) = scatLoc(i1,j1)
+                               scatLoc(i1,j1) = itmp1
+        
+                               iatmp4(i,j1) = 1
+                               iatmp4(i1,j1) = 0
+
+                               itmp1 =  iatmp3(i,j1)
+                               iatmp3(i,j1) = iatmp3(i1,j1) 
+                               iatmp3(i1,j1) = itmp1
+                               !----
+                               itmp1 = scatLoc(i,j2)
+                               scatLoc(i,j2) = scatLoc(i2,j2)
+                               scatLoc(i2,j2) = itmp1
+        
+                               iatmp4(i,j2) = 1
+                               iatmp4(i2,j2) = 0
+
+                               itmp1 =  iatmp3(i,j2)
+                               iatmp3(i,j2) = iatmp3(i2,j2) 
+                               iatmp3(i2,j2) = itmp1
+                               exit 
+                            endif
+                         end do
+
+                      end if ! iatmp4
+
+                    if ( i >= 5 ) then
+                       print*, rank,'Program can not find appropriate points. Now Abort'
+!                      stop
+                       exit
+                    endif
+                    goto 8410
+                 end if
+              end do
+              end do
+              j1 = j1 - 1
            end do
            end do
 
@@ -4962,11 +5076,15 @@ module ocn_time_integration_si
             endif
 
 
-!           if ( rank == 44 ) then
-!              do i = 1,nrow
-!                 print*,'bbb',rank,crow(i),scatLoc(:,i)
-!              end do
-!           endif
+            if ( rank == 3015 ) then
+               do i = 1,nrow
+                  print*,'aaa',rank,crow(i),scatLoc(:,i)
+               end do
+               print*
+               do i = 1,nrow
+                  print*,'bbb',rank,crow(i),iatmp1(:,i)
+               end do
+            endif
 
 
 
