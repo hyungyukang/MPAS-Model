@@ -1057,9 +1057,9 @@ module ocn_time_integration_si
          CGcst_allreduce2(2) = CGcst_r00w0
 
          ! Global sum across CPUs
-         call mpas_timer_start("si reduction r0")
-         call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
-         call mpas_timer_stop("si reduction r0")
+!        call mpas_timer_start("si reduction r0")
+!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+!        call mpas_timer_stop("si reduction r0")
 
 !-------------------------------------------------------------------------------
          CGvec_u0(:) = 0.0_RKIND 
@@ -1104,7 +1104,9 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
+            call mpas_timer_start("si cross reduction r0")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+            call mpas_timer_stop ("si cross reduction r0")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -1183,19 +1185,19 @@ module ocn_time_integration_si
 
 !           print*, rank,CGcst_allreduce_global2(:),reduce_global(:)
                 
-            sum1 = dabs(reduce_global(1)-CGcst_allreduce_global2(1)) / dabs(CGcst_allreduce_global2(1))       
-            sum2 = dabs(reduce_global(2)-CGcst_allreduce_global2(2)) / dabs(CGcst_allreduce_global2(2))       
+!           sum1 = dabs(reduce_global(1)-CGcst_allreduce_global2(1)) / dabs(CGcst_allreduce_global2(1))       
+!           sum2 = dabs(reduce_global(2)-CGcst_allreduce_global2(2)) / dabs(CGcst_allreduce_global2(2))       
 
-               if ( sum1 > 1.d-13 ) then
-                  print*, 'Fail',rank,1,reduce_global(1),CGcst_allreduce_global2(1)
-                  print*,'PROGRAM STOP ---------------'
-                  stop
-               endif
-               if (  sum2 > 1.d-13 ) then
-                  print*, 'Fail',rank,2,reduce_global(2),CGcst_allreduce_global2(2)
-                  print*,'PROGRAM STOP ---------------'
-                  stop
-               endif
+!              if ( sum1 > 1.d-13 ) then
+!                 print*, 'Fail',rank,1,reduce_global(1),CGcst_allreduce_global2(1)
+!                 print*,'PROGRAM STOP ---------------'
+!                 stop
+!              endif
+!              if (  sum2 > 1.d-13 ) then
+!                 print*, 'Fail',rank,2,reduce_global(2),CGcst_allreduce_global2(2)
+!                 print*,'PROGRAM STOP ---------------'
+!                 stop
+!              endif
 !-------------------------------------------------------------------------------
 
 
@@ -1282,8 +1284,10 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-         CGcst_r00r0_global = CGcst_allreduce_global2(1)
-         CGcst_r00w0_global = CGcst_allreduce_global2(2)
+!        CGcst_r00r0_global = CGcst_allreduce_global2(1)
+!        CGcst_r00w0_global = CGcst_allreduce_global2(2)
+         CGcst_r00r0_global = reduce_global(1)
+         CGcst_r00w0_global = reduce_global(2)
 
          CGcst_alpha0 = CGcst_r00r0_global / CGcst_r00w0_global
          CGcst_beta0  = 0.0_RKIND
@@ -1364,19 +1368,19 @@ module ocn_time_integration_si
             end do  ! block
    
 
-            CGcst_allreduce3(1) = CGcst_q0y0
-            CGcst_allreduce3(2) = CGcst_y0y0
-            CGcst_allreduce3(3) = CGcst_r00r0
+!           CGcst_allreduce3(1) = CGcst_q0y0
+!           CGcst_allreduce3(2) = CGcst_y0y0
+!           CGcst_allreduce3(3) = CGcst_r00r0
    
             ! Global sum across CPUs
-            call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
-            call mpas_timer_stop("si reduction iter")
+!           call mpas_timer_start("si reduction iter")
+!           call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
+!           call mpas_timer_stop("si reduction iter")
 
    
-            CGcst_q0y0_global  = CGcst_allreduce_global3(1)
-            CGcst_y0y0_global  = CGcst_allreduce_global3(2)
-            CGcst_r00r0_global = CGcst_allreduce_global3(3)
+!           CGcst_q0y0_global  = CGcst_allreduce_global3(1)
+!           CGcst_y0y0_global  = CGcst_allreduce_global3(2)
+!           CGcst_r00r0_global = CGcst_allreduce_global3(3)
    
 
 
@@ -1421,7 +1425,9 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
+            call mpas_timer_start("si cross reduction iter")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+            call mpas_timer_stop ("si cross reduction iter")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -1498,16 +1504,19 @@ module ocn_time_integration_si
                end do
             end if
 
-!           print*, rank,CGcst_allreduce_global2(:),reduce_global(:)
-            do i = 1,3
-               sum1 = dabs(reduce_global(i)-CGcst_allreduce_global3(i)) / dabs(CGcst_allreduce_global3(i))
+            CGcst_q0y0_global  = reduce_global(1)
+            CGcst_y0y0_global  = reduce_global(2)
+            CGcst_r00r0_global = reduce_global(3)
 
-               if ( sum1 > 1.d-13 ) then
-                  print*, 'Fail',rank,1,reduce_global(1),CGcst_allreduce_global2(1)
-                  print*,'PROGRAM STOP ---------------'
-                  stop
-               endif
-            end do
+!           do i = 1,3
+!              sum1 = dabs(reduce_global(i)-CGcst_allreduce_global3(i)) / dabs(CGcst_allreduce_global3(i))
+
+!              if ( sum1 > 1.d-13 ) then
+!                 print*, 'Fail',rank,1,reduce_global(1),CGcst_allreduce_global2(1)
+!                 print*,'PROGRAM STOP ---------------'
+!                 stop
+!              endif
+!           end do
 !-------------------------------------------------------------------------------
 
    
@@ -1617,22 +1626,22 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
 
-            CGcst_allreduce5(1) = CGcst_r00r1
-            CGcst_allreduce5(2) = CGcst_r00w1
-            CGcst_allreduce5(3) = CGcst_r00s0
-            CGcst_allreduce5(4) = CGcst_r00z0
-            CGcst_allreduce5(5) = CGcst_r1r1
+!           CGcst_allreduce5(1) = CGcst_r00r1
+!           CGcst_allreduce5(2) = CGcst_r00w1
+!           CGcst_allreduce5(3) = CGcst_r00s0
+!           CGcst_allreduce5(4) = CGcst_r00z0
+!           CGcst_allreduce5(5) = CGcst_r1r1
    
             ! Global sum across CPUs
-            call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce5, CGcst_allreduce_global5)
-            call mpas_timer_stop("si reduction iter")
+!           call mpas_timer_start("si reduction iter")
+!           call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce5, CGcst_allreduce_global5)
+!           call mpas_timer_stop("si reduction iter")
    
-            CGcst_r00r1_global = CGcst_allreduce_global5(1)
-            CGcst_r00w1_global = CGcst_allreduce_global5(2)
-            CGcst_r00s0_global = CGcst_allreduce_global5(3)
-            CGcst_r00z0_global = CGcst_allreduce_global5(4)
-                         resid = CGcst_allreduce_global5(5)
+!           CGcst_r00r1_global = CGcst_allreduce_global5(1)
+!           CGcst_r00w1_global = CGcst_allreduce_global5(2)
+!           CGcst_r00s0_global = CGcst_allreduce_global5(3)
+!           CGcst_r00z0_global = CGcst_allreduce_global5(4)
+!                        resid = CGcst_allreduce_global5(5)
    
 
 
@@ -1678,7 +1687,9 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
+            call mpas_timer_start("si cross reduction iter")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+            call mpas_timer_stop ("si cross reduction iter")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -1756,16 +1767,21 @@ module ocn_time_integration_si
                end do
             end if
 
-!           print*, rank,CGcst_allreduce_global2(:),reduce_global(:)
-            do i = 1,5
-               sum1 = dabs(reduce_global(i)-CGcst_allreduce_global5(i)) / dabs(CGcst_allreduce_global5(i))
+            CGcst_r00r1_global = reduce_global(1)
+            CGcst_r00w1_global = reduce_global(2)
+            CGcst_r00s0_global = reduce_global(3)
+            CGcst_r00z0_global = reduce_global(4)
+                         resid = reduce_global(5)
 
-               if ( sum1 > 1.d-13 ) then
-                  print*, 'Fail',rank,i,reduce_global(i),CGcst_allreduce_global5(i)
-                  print*,'PROGRAM STOP ---------------'
-                  stop
-               endif
-            end do
+!           do i = 1,5
+!              sum1 = dabs(reduce_global(i)-CGcst_allreduce_global5(i)) / dabs(CGcst_allreduce_global5(i))
+
+!              if ( sum1 > 1.d-13 ) then
+!                 print*, 'Fail',rank,i,reduce_global(i),CGcst_allreduce_global5(i)
+!                 print*,'PROGRAM STOP ---------------'
+!                 stop
+!              endif
+!           end do
 !-------------------------------------------------------------------------------
 
 !        call mpi_barrier(dminfo%comm,mpi_ierr)
@@ -2206,12 +2222,10 @@ module ocn_time_integration_si
          CGcst_allreduce2(2) = CGcst_r00w0
 
          ! Global sum across CPUs
-         call mpas_timer_start("si reduction r0")
-
-!        call mpi_iallreduce(CGcst_allreduce,CGcst_allreduce_global,5,mpi_double,mpi_sum,dminfo%comm,mpi_ireq,mpi_ierr)
-
-         call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
-         call mpas_timer_stop("si reduction r0")
+!        call mpas_timer_start("si reduction r0")
+!        !call mpi_iallreduce(CGcst_allreduce,CGcst_allreduce_global,5,mpi_double,mpi_sum,dminfo%comm,mpi_ireq,mpi_ierr)
+!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+!        call mpas_timer_stop("si reduction r0")
 
 
 !-------------------------------------------------------------------------------
@@ -2257,7 +2271,9 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
+            call mpas_timer_start("si cross reduction r0")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+            call mpas_timer_stop ("si cross reduction r0")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -2336,21 +2352,20 @@ module ocn_time_integration_si
                end do
             end if
 
-!           print*, rank,CGcst_allreduce_global2(:),reduce_global(:)
                 
-            sum1 = dabs(reduce_global(1)-CGcst_allreduce_global2(1)) / dabs(CGcst_allreduce_global2(1))       
-            sum2 = dabs(reduce_global(2)-CGcst_allreduce_global2(2)) / dabs(CGcst_allreduce_global2(2))       
+!           sum1 = dabs(reduce_global(1)-CGcst_allreduce_global2(1)) / dabs(CGcst_allreduce_global2(1))       
+!           sum2 = dabs(reduce_global(2)-CGcst_allreduce_global2(2)) / dabs(CGcst_allreduce_global2(2))       
 
-               if ( sum1 > 1.d-13 ) then
-                  print*, 'Fail',rank,1,reduce_global(1),CGcst_allreduce_global2(1)
-                  print*,'PROGRAM STOP ---------------'
-                  stop
-               endif
-               if (  sum2 > 1.d-13 ) then
-                  print*, 'Fail',rank,2,reduce_global(2),CGcst_allreduce_global2(2)
-                  print*,'PROGRAM STOP ---------------'
-                  stop
-               endif
+!              if ( sum1 > 1.d-13 ) then
+!                 print*, 'Fail',rank,1,reduce_global(1),CGcst_allreduce_global2(1)
+!                 print*,'PROGRAM STOP ---------------'
+!                 stop
+!              endif
+!              if (  sum2 > 1.d-13 ) then
+!                 print*, 'Fail',rank,2,reduce_global(2),CGcst_allreduce_global2(2)
+!                 print*,'PROGRAM STOP ---------------'
+!                 stop
+!              endif
 !-------------------------------------------------------------------------------
 
          ! SpMV -----------------------------------------------------------------------------------!
@@ -2437,8 +2452,10 @@ module ocn_time_integration_si
 !        call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
 !        call mpas_timer_stop ("si wait")
 
-         CGcst_r00r0_global = CGcst_allreduce_global2(1)
-         CGcst_r00w0_global = CGcst_allreduce_global2(2)
+!        CGcst_r00r0_global = CGcst_allreduce_global2(1)
+!        CGcst_r00w0_global = CGcst_allreduce_global2(2)
+         CGcst_r00r0_global = reduce_global(1)
+         CGcst_r00w0_global = reduce_global(2)
 
          CGcst_alpha0 = CGcst_r00r0_global / CGcst_r00w0_global
          CGcst_beta0  = 0.0_RKIND
@@ -2526,18 +2543,18 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
    
-            CGcst_allreduce3(1) = CGcst_q0y0
-            CGcst_allreduce3(2) = CGcst_y0y0
-            CGcst_allreduce3(3) = CGcst_r00r0
+!           CGcst_allreduce3(1) = CGcst_q0y0
+!           CGcst_allreduce3(2) = CGcst_y0y0
+!           CGcst_allreduce3(3) = CGcst_r00r0
    
             ! Global sum across CPUs
-            call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
-            call mpas_timer_stop("si reduction iter")
+!           call mpas_timer_start("si reduction iter")
+!           call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
+!           call mpas_timer_stop("si reduction iter")
    
-            CGcst_q0y0_global  = CGcst_allreduce_global3(1)
-            CGcst_y0y0_global  = CGcst_allreduce_global3(2)
-            CGcst_r00r0_global = CGcst_allreduce_global3(3)
+!           CGcst_q0y0_global  = CGcst_allreduce_global3(1)
+!           CGcst_y0y0_global  = CGcst_allreduce_global3(2)
+!           CGcst_r00r0_global = CGcst_allreduce_global3(3)
    
 !-------------------------------------------------------------------------------
          CGvec_u0(:) = 0.0_RKIND 
@@ -2580,7 +2597,9 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
+            call mpas_timer_start("si cross reduction iter")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+            call mpas_timer_stop ("si cross reduction iter")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -2658,16 +2677,19 @@ module ocn_time_integration_si
                end do
             end if
 
-!           print*, rank,CGcst_allreduce_global2(:),reduce_global(:)
-            do i = 1,3
-               sum1 = dabs(reduce_global(i)-CGcst_allreduce_global3(i)) / dabs(CGcst_allreduce_global3(i))
+            CGcst_q0y0_global  = reduce_global(1)
+            CGcst_y0y0_global  = reduce_global(2)
+            CGcst_r00r0_global = reduce_global(3)
 
-               if ( sum1 > 1.d-13 ) then
-                  print*, 'Fail',rank,1,reduce_global(1),CGcst_allreduce_global2(1)
-                  print*,'PROGRAM STOP ---------------'
-                  stop
-               endif
-            end do
+!           do i = 1,3
+!              sum1 = dabs(reduce_global(i)-CGcst_allreduce_global3(i)) / dabs(CGcst_allreduce_global3(i))
+
+!              if ( sum1 > 1.d-13 ) then
+!                 print*, 'Fail',rank,1,reduce_global(1),CGcst_allreduce_global2(1)
+!                 print*,'PROGRAM STOP ---------------'
+!                 stop
+!              endif
+!           end do
 
 !-------------------------------------------------------------------------------
 
@@ -2777,22 +2799,22 @@ module ocn_time_integration_si
                CGcst_r1r1  = CGcst_r1r1  + CGvec_r1(iCell)  * CGvec_r1(iCell) 
             end do
    
-            CGcst_allreduce5(1) = CGcst_r00r1
-            CGcst_allreduce5(2) = CGcst_r00w1
-            CGcst_allreduce5(3) = CGcst_r00s0
-            CGcst_allreduce5(4) = CGcst_r00z0
-            CGcst_allreduce5(5) = CGcst_r1r1
+!           CGcst_allreduce5(1) = CGcst_r00r1
+!           CGcst_allreduce5(2) = CGcst_r00w1
+!           CGcst_allreduce5(3) = CGcst_r00s0
+!           CGcst_allreduce5(4) = CGcst_r00z0
+!           CGcst_allreduce5(5) = CGcst_r1r1
    
             ! Global sum across CPUs
-            call mpas_timer_start("si reduction iter")
-            call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce5, CGcst_allreduce_global5)
-            call mpas_timer_stop("si reduction iter")
+!           call mpas_timer_start("si reduction iter")
+!           call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce5, CGcst_allreduce_global5)
+!           call mpas_timer_stop("si reduction iter")
    
-            CGcst_r00r1_global = CGcst_allreduce_global5(1)
-            CGcst_r00w1_global = CGcst_allreduce_global5(2)
-            CGcst_r00s0_global = CGcst_allreduce_global5(3)
-            CGcst_r00z0_global = CGcst_allreduce_global5(4)
-                         resid = CGcst_allreduce_global5(5)
+!           CGcst_r00r1_global = CGcst_allreduce_global5(1)
+!           CGcst_r00w1_global = CGcst_allreduce_global5(2)
+!           CGcst_r00s0_global = CGcst_allreduce_global5(3)
+!           CGcst_r00z0_global = CGcst_allreduce_global5(4)
+!                        resid = CGcst_allreduce_global5(5)
 
 
 !-------------------------------------------------------------------------------
@@ -2837,7 +2859,9 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
+            call mpas_timer_start("si cross reduction iter")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+            call mpas_timer_stop ("si cross reduction iter")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -2915,20 +2939,24 @@ module ocn_time_integration_si
                end do
             end if
 
-!           print*, rank,CGcst_allreduce_global2(:),reduce_global(:)
-            do i = 1,5
-               sum1 = dabs(reduce_global(i)-CGcst_allreduce_global5(i)) / dabs(CGcst_allreduce_global5(i))
+            CGcst_r00r1_global = reduce_global(1)
+            CGcst_r00w1_global = reduce_global(2)
+            CGcst_r00s0_global = reduce_global(3)
+            CGcst_r00z0_global = reduce_global(4)
+                         resid = reduce_global(5)
 
-               if ( sum1 > 1.d-13 ) then
-                  print*, 'Fail',rank,i,reduce_global(i),CGcst_allreduce_global5(i)
-                  print*,'PROGRAM STOP ---------------'
-                  stop
-               endif
-            end do
+!           do i = 1,5
+!              sum1 = dabs(reduce_global(i)-CGcst_allreduce_global5(i)) / dabs(CGcst_allreduce_global5(i))
 
+!              if ( sum1 > 1.d-13 ) then
+!                 print*, 'Fail',rank,i,reduce_global(i),CGcst_allreduce_global5(i)
+!                 print*,'PROGRAM STOP ---------------'
+!                 stop
+!              endif
+!           end do
 
             if ( rank == 0 ) then
-               print*, "Pass all summation"
+               print*,'Iter',iter 
             endif
 !-------------------------------------------------------------------------------
    
