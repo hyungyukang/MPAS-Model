@@ -1091,6 +1091,7 @@ module ocn_time_integration_si
          end if 
 !-------------------------------------------------------------------------------
 
+            call mpas_timer_start("si cross reduction r0")
          do i = 1,5
             CGvec_u0(i) = reduce(i)
             reduce(i) = 0.0_RKIND 
@@ -1104,9 +1105,7 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-            call mpas_timer_start("si cross reduction r0")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-            call mpas_timer_stop ("si cross reduction r0")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -1124,6 +1123,7 @@ module ocn_time_integration_si
                   end do
                endif
          endif
+            call mpas_timer_stop ("si cross reduction r0")
 !-------------------------------------------------------------------------------
          
          block => domain % blocklist
@@ -1412,6 +1412,7 @@ module ocn_time_integration_si
 
 !-------------------------------------------------------------------------------
 
+            call mpas_timer_start("si cross reduction iter")
          do i = 1,5
             CGvec_u0(i) = reduce(i)
             reduce(i) = 0.0_RKIND 
@@ -1425,9 +1426,7 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-            call mpas_timer_start("si cross reduction iter")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-            call mpas_timer_stop ("si cross reduction iter")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -1445,9 +1444,8 @@ module ocn_time_integration_si
                   end do
                endif
          endif
+            call mpas_timer_stop ("si cross reduction iter")
 !-------------------------------------------------------------------------------
-
-
 
             block => domain % blocklist
             do while (associated(block))
@@ -1674,6 +1672,7 @@ module ocn_time_integration_si
          end if 
 
 !-------------------------------------------------------------------------------
+            call mpas_timer_start("si cross reduction iter")
          do i = 1,5
             CGvec_u0(i) = reduce(i)
             reduce(i) = 0.0_RKIND 
@@ -1687,9 +1686,7 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-            call mpas_timer_start("si cross reduction iter")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-            call mpas_timer_stop ("si cross reduction iter")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -1707,6 +1704,7 @@ module ocn_time_integration_si
                   end do
                endif
          endif
+            call mpas_timer_stop ("si cross reduction iter")
 !-------------------------------------------------------------------------------
 
 
@@ -2258,6 +2256,7 @@ module ocn_time_integration_si
          end if 
 !-------------------------------------------------------------------------------
 
+            call mpas_timer_start("si cross reduction r0")
          do i = 1,5
             CGvec_u0(i) = reduce(i)
             reduce(i) = 0.0_RKIND 
@@ -2271,9 +2270,7 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-            call mpas_timer_start("si cross reduction r0")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-            call mpas_timer_stop ("si cross reduction r0")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -2291,6 +2288,7 @@ module ocn_time_integration_si
                   end do
                endif
          endif
+            call mpas_timer_stop ("si cross reduction r0")
 !-------------------------------------------------------------------------------
 
          block => domain % blocklist
@@ -2584,6 +2582,7 @@ module ocn_time_integration_si
 
 !-------------------------------------------------------------------------------
 
+            call mpas_timer_start("si cross reduction iter")
          do i = 1,5
             CGvec_u0(i) = reduce(i)
             reduce(i) = 0.0_RKIND 
@@ -2597,9 +2596,7 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-            call mpas_timer_start("si cross reduction iter")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-            call mpas_timer_stop ("si cross reduction iter")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -2617,6 +2614,7 @@ module ocn_time_integration_si
                   end do
                endif
          endif
+            call mpas_timer_stop ("si cross reduction iter")
 !-------------------------------------------------------------------------------
    
             block => domain % blocklist
@@ -2846,6 +2844,7 @@ module ocn_time_integration_si
          end if 
 
 !-------------------------------------------------------------------------------
+            call mpas_timer_start("si cross reduction iter")
          do i = 1,5
             CGvec_u0(i) = reduce(i)
             reduce(i) = 0.0_RKIND 
@@ -2859,9 +2858,7 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-            call mpas_timer_start("si cross reduction iter")
                call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-            call mpas_timer_stop ("si cross reduction iter")
 
          ! Stage 3: Put values that will be scattered
                if ( nrow > 1 ) then
@@ -2879,6 +2876,7 @@ module ocn_time_integration_si
                   end do
                endif
          endif
+            call mpas_timer_stop ("si cross reduction iter")
 !-------------------------------------------------------------------------------
    
             block => domain % blocklist
