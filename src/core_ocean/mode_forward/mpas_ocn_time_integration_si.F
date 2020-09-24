@@ -1056,11 +1056,6 @@ module ocn_time_integration_si
          CGcst_allreduce2(1) = CGcst_r00r0
          CGcst_allreduce2(2) = CGcst_r00w0
 
-         ! Global sum across CPUs
-!        call mpas_timer_start("si reduction r0")
-!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
-!        call mpas_timer_stop("si reduction r0")
-
 !-------------------------------------------------------------------------------
          CGvec_u0(:) = 0.0_RKIND 
          CGcst_allreduce5(:) = 0.0_RKIND
@@ -1068,7 +1063,7 @@ module ocn_time_integration_si
          CGcst_allreduce5(2) = CGcst_r00w0
 
          do i = 1,5
-            reduce(:) = CGcst_allreduce5(:)
+            reduce(i) = CGcst_allreduce5(i)
          end do
 
          if ( srank == 0 ) then
@@ -1105,24 +1100,10 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-               call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-
-         ! Stage 3: Put values that will be scattered
-               if ( nrow > 1 ) then
-                  do j = 2, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
-               if ( crow(1) /= rank ) then
-                  do j = 1, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
+               call mpi_iallreduce(reduce,reduce_global,5,mpi_double,mpi_sum,mpi_cross_comm,mpi_ireq,mpi_ierr)
+               !call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
          endif
+
             call mpas_timer_stop ("si cross reduction r0")
 !-------------------------------------------------------------------------------
          
@@ -1165,7 +1146,32 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
+
 !-------------------------------------------------------------------------------
+
+         call mpas_timer_start ("si wait")
+         if ( nrow /= 0 ) then
+
+         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+
+         ! Stage 3: Put values that will be scattered
+               if ( nrow > 1 ) then
+                  do j = 2, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+               if ( crow(1) /= rank ) then
+                  do j = 1, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+         endif
+         call mpas_timer_stop ("si wait")
+
          call mpas_timer_start("si halo r0")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_wh0', 1)
@@ -1400,14 +1406,14 @@ module ocn_time_integration_si
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_z1', 1)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo iter")
          end if 
 
 !-------------------------------------------------------------------------------
@@ -1426,24 +1432,10 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-               call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+               call mpi_iallreduce(reduce,reduce_global,5,mpi_double,mpi_sum,mpi_cross_comm,mpi_ireq,mpi_ierr)
+               !call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+         end if
 
-         ! Stage 3: Put values that will be scattered
-               if ( nrow > 1 ) then
-                  do j = 2, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
-               if ( crow(1) /= rank ) then
-                  do j = 1, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
-         endif
             call mpas_timer_stop ("si cross reduction iter")
 !-------------------------------------------------------------------------------
 
@@ -1485,6 +1477,31 @@ module ocn_time_integration_si
             end do  ! block
    
 !-------------------------------------------------------------------------------
+         call mpas_timer_start ("si wait")
+         if ( nrow /= 0 ) then
+
+         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+
+         ! Stage 3: Put values that will be scattered
+               if ( nrow > 1 ) then
+                  do j = 2, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+               if ( crow(1) /= rank ) then
+                  do j = 1, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+         endif
+         call mpas_timer_stop ("si wait")
+
+
+
             call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_zh1', 1)
@@ -1661,14 +1678,14 @@ module ocn_time_integration_si
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_w1', 1)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo iter")
          end if 
 
 !-------------------------------------------------------------------------------
@@ -1686,24 +1703,10 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-               call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+               call mpi_iallreduce(reduce,reduce_global,5,mpi_double,mpi_sum,mpi_cross_comm,mpi_ireq,mpi_ierr)
+               !call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+         end if
 
-         ! Stage 3: Put values that will be scattered
-               if ( nrow > 1 ) then
-                  do j = 2, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
-               if ( crow(1) /= rank ) then
-                  do j = 1, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
-         endif
             call mpas_timer_stop ("si cross reduction iter")
 !-------------------------------------------------------------------------------
 
@@ -1747,6 +1750,28 @@ module ocn_time_integration_si
             end do  ! block
    
 !-------------------------------------------------------------------------------
+         call mpas_timer_start ("si wait")
+         if ( nrow /= 0 ) then
+
+         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+
+         ! Stage 3: Put values that will be scattered
+               if ( nrow > 1 ) then
+                  do j = 2, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+               if ( crow(1) /= rank ) then
+                  do j = 1, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+         endif
+         call mpas_timer_stop ("si wait")
 
             call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
@@ -2270,24 +2295,10 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-               call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+               call mpi_iallreduce(reduce,reduce_global,5,mpi_double,mpi_sum,mpi_cross_comm,mpi_ireq,mpi_ierr)
+               !call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+         end if
 
-         ! Stage 3: Put values that will be scattered
-               if ( nrow > 1 ) then
-                  do j = 2, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
-               if ( crow(1) /= rank ) then
-                  do j = 1, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
-         endif
             call mpas_timer_stop ("si cross reduction r0")
 !-------------------------------------------------------------------------------
 
@@ -2333,6 +2344,30 @@ module ocn_time_integration_si
 
 
 !-------------------------------------------------------------------------------
+         call mpas_timer_start ("si wait")
+         if ( nrow /= 0 ) then
+
+         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+
+         ! Stage 3: Put values that will be scattered
+               if ( nrow > 1 ) then
+                  do j = 2, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+               if ( crow(1) /= rank ) then
+                  do j = 1, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+         endif
+         call mpas_timer_stop ("si wait")
+
+
          call mpas_timer_start("si halo r0")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_wh0', 1)
@@ -2570,14 +2605,14 @@ module ocn_time_integration_si
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_z1', 1)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo iter")
          end if 
 
 !-------------------------------------------------------------------------------
@@ -2596,24 +2631,10 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-               call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+               call mpi_iallreduce(reduce,reduce_global,5,mpi_double,mpi_sum,mpi_cross_comm,mpi_ireq,mpi_ierr)
+               !call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+         end if
 
-         ! Stage 3: Put values that will be scattered
-               if ( nrow > 1 ) then
-                  do j = 2, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
-               if ( crow(1) /= rank ) then
-                  do j = 1, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
-         endif
             call mpas_timer_stop ("si cross reduction iter")
 !-------------------------------------------------------------------------------
    
@@ -2658,6 +2679,29 @@ module ocn_time_integration_si
    
 
 !-------------------------------------------------------------------------------
+         call mpas_timer_start ("si wait")
+         if ( nrow /= 0 ) then
+
+         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+
+         ! Stage 3: Put values that will be scattered
+               if ( nrow > 1 ) then
+                  do j = 2, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+               if ( crow(1) /= rank ) then
+                  do j = 1, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+         endif
+         call mpas_timer_stop ("si wait")
+
             call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_zh1', 1)
@@ -2858,24 +2902,10 @@ module ocn_time_integration_si
             end do
 
          ! Stage 2: Allreduce for mpi_cross_comm
-               call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+               call mpi_iallreduce(reduce,reduce_global,5,mpi_double,mpi_sum,mpi_cross_comm,mpi_ireq,mpi_ierr)
+               !call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+         end if
 
-         ! Stage 3: Put values that will be scattered
-               if ( nrow > 1 ) then
-                  do j = 2, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
-               if ( crow(1) /= rank ) then
-                  do j = 1, nrow
-                     do i = 1,5
-                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-                     end do
-                  end do
-               endif
-         endif
             call mpas_timer_stop ("si cross reduction iter")
 !-------------------------------------------------------------------------------
    
@@ -2919,6 +2949,28 @@ module ocn_time_integration_si
    
  
 !-------------------------------------------------------------------------------
+         call mpas_timer_start ("si wait")
+         if ( nrow /= 0 ) then
+
+         call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
+
+         ! Stage 3: Put values that will be scattered
+               if ( nrow > 1 ) then
+                  do j = 2, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+               if ( crow(1) /= rank ) then
+                  do j = 1, nrow
+                     do i = 1,5
+                        CGvec_u0(scatLoc(i,j)) = reduce_global(i)
+                     end do
+                  end do
+               endif
+         endif
+         call mpas_timer_stop ("si wait")
 
             call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
