@@ -1154,7 +1154,7 @@ module ocn_time_integration_si
 
          if ( nrow == 0 ) then
             do i = 1,5
-               reduce_global(i) = CGvec_u0(getLoc(i))
+               reduce_global(i) = CGvec_r0(getLoc(i))
             end do
          end if
 
@@ -1243,6 +1243,8 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
+!        CGcst_r00r0_global = CGcst_allreduce_global2(1)
+!        CGcst_r00w0_global = CGcst_allreduce_global2(2)
          CGcst_r00r0_global = reduce_global(1)
          CGcst_r00w0_global = reduce_global(2)
 

@@ -2708,8 +2708,8 @@ module ocn_time_integration_si
             ! #Iteration  check
 !           if ( split_implicit_step == 2 ) then
 !           if ( rank == 0 ) then
-!           call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
-!            print*, iter
+            call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
+!            print*, 'Iter',iter
 !           endif
 !           endif
 
