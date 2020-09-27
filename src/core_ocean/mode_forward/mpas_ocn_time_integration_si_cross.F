@@ -5450,14 +5450,14 @@ module ocn_time_integration_si
 
 
             ! Stage 3: Summation for cross ranks
-!           do i = 1,5
-!              CGvec_r0(i) = reduce(i)
-!              reduce(i) = 0.0
-!           end do
+            do i = 1,5
+               CGvec_r0(i) = reduce(i)
+               reduce(i) = 0.0
+            end do
 
             if ( nrow /= 0 ) then
                do i = 1,5
-                  do j = srow,nrow
+                  do j = 1row,nrow
                      reduce(i) = reduce(i) + CGvec_r0(sumLoc(i,j))
                   end do
                end do

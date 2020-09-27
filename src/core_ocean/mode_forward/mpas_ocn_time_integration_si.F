@@ -1058,7 +1058,7 @@ module ocn_time_integration_si
          reduce(:) = 0.0_RKIND 
          reduce(1) = CGcst_r00r0
          reduce(2) = CGcst_r00w0
-
+  
          if ( srank == 0 ) then
             do i = 1,5
                CGvec_u0(putLoc(i)) = reduce(i)
@@ -1081,9 +1081,14 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si cross reduction r0")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -1252,7 +1257,6 @@ module ocn_time_integration_si
 
          call mpas_timer_stop("si btr residual")
 
-
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
          ! Stage 2.3 : Outer iterations - lagged values are sufficiently up to date
@@ -1354,9 +1358,14 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si cross reduction iter")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -1593,9 +1602,14 @@ module ocn_time_integration_si
 !-------------------------------------------------------------------------------
          call mpas_timer_start("si cross reduction iter")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -2105,16 +2119,6 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-         CGcst_allreduce2(1) = CGcst_r00r0
-         CGcst_allreduce2(2) = CGcst_r00w0
-
-         ! Global sum across CPUs
-!        call mpas_timer_start("si reduction r0")
-!        !call mpi_iallreduce(CGcst_allreduce,CGcst_allreduce_global,5,mpi_double,mpi_sum,dminfo%comm,mpi_ireq,mpi_ierr)
-!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
-!        call mpas_timer_stop("si reduction r0")
-
-
 !-------------------------------------------------------------------------------
          CGvec_u0(:) = 0.0_RKIND 
          reduce(:) = 0.0_RKIND 
@@ -2143,9 +2147,14 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si cross reduction r0")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -2442,9 +2451,14 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si cross reduction iter")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -2665,9 +2679,14 @@ module ocn_time_integration_si
 !-------------------------------------------------------------------------------
          call mpas_timer_start("si cross reduction iter")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -5428,7 +5447,6 @@ module ocn_time_integration_si
             do i = 1,5
                reduce(i)       = real(i) * rank
                reduce_check(i) = real(i) * rank
-               !reduce(i) = real(i)
             end do
 
             ! Stage 1: Put values
@@ -5448,20 +5466,20 @@ module ocn_time_integration_si
 
 
             ! Stage 3: Summation for cross ranks
-!           do i = 1,5
-!              CGvec_r0(i) = reduce(i)
-!              reduce(i) = 0.0
-!           end do
+               do i = 1,5
+                  CGvec_r0(i) = reduce(i)
+                  reduce(i) = 0.0
+               end do
 
             if ( nrow /= 0 ) then
                do i = 1,5
-                  do j = srow,nrow
+                  do j = 1,nrow
                      reduce(i) = reduce(i) + CGvec_r0(sumLoc(i,j))
                   end do
                end do
 
             ! Stage 2: Allreduce for mpi_cross_comm
-                  call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+               call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
 
             ! Stage 3: Put values that will be scattered
 
@@ -5473,17 +5491,17 @@ module ocn_time_integration_si
             endif
 
             ! Stage 3: Local halo exchange (Cross -> Local)
-               call mpas_dmpar_exch_group_create(domain, iterGroupName)
-               call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-               call mpas_threading_barrier()
-               call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-               call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
 
-               if ( nrow == 0 ) then
-                  do i = 1,5
-                     reduce_global(i) = CGvec_r0(getLoc(i))
-                  end do
-               end if
+            if ( nrow == 0 ) then
+               do i = 1,5
+                  reduce_global(i) = CGvec_r0(getLoc(i))
+               end do
+            end if
  
             ! For check
             call mpi_allreduce(reduce_check,reduce_global_check,5,MPI_DOUBLE,MPI_SUM,dminfo%comm,mpi_ierr)
@@ -5501,6 +5519,7 @@ module ocn_time_integration_si
       block => block % next
       end do  ! block
 
+!  print*, 'Test passed'
    call mpi_barrier(dminfo%comm,mpi_ierr)
 !  stop
 
