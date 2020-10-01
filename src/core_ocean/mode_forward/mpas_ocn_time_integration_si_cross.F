@@ -924,7 +924,6 @@ module ocn_time_integration_si
             call mpas_timer_start("si halo r0")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo r0")
@@ -972,7 +971,6 @@ module ocn_time_integration_si
          call mpas_timer_start("si halo r0")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_rh0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo r0")
@@ -1058,7 +1056,7 @@ module ocn_time_integration_si
          reduce(:) = 0.0_RKIND 
          reduce(1) = CGcst_r00r0
          reduce(2) = CGcst_r00w0
-
+  
          if ( srank == 0 ) then
             do i = 1,5
                CGvec_u0(putLoc(i)) = reduce(i)
@@ -1072,7 +1070,6 @@ module ocn_time_integration_si
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_w0', 1)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo r0")
@@ -1081,9 +1078,14 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si cross reduction r0")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -1147,14 +1149,13 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_wh0', 1)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo r0")
 
          if ( nrow == 0 ) then
             do i = 1,5
-               reduce_global(i) = CGvec_r0(getLoc(i))
+               reduce_global(i) = CGvec_u0(getLoc(i))
             end do
          end if
 
@@ -1243,8 +1244,6 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-!        CGcst_r00r0_global = CGcst_allreduce_global2(1)
-!        CGcst_r00w0_global = CGcst_allreduce_global2(2)
          CGcst_r00r0_global = reduce_global(1)
          CGcst_r00w0_global = reduce_global(2)
 
@@ -1253,7 +1252,6 @@ module ocn_time_integration_si
          CGcst_omega0 = 0.0_RKIND
 
          call mpas_timer_stop("si btr residual")
-
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
@@ -1346,7 +1344,6 @@ module ocn_time_integration_si
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_z1', 1)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo iter")
@@ -1356,9 +1353,14 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si cross reduction iter")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -1420,7 +1422,6 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_zh1', 1)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo iter")
@@ -1545,25 +1546,6 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
 
-!           CGcst_allreduce5(1) = CGcst_r00r1
-!           CGcst_allreduce5(2) = CGcst_r00w1
-!           CGcst_allreduce5(3) = CGcst_r00s0
-!           CGcst_allreduce5(4) = CGcst_r00z0
-!           CGcst_allreduce5(5) = CGcst_r1r1
-   
-            ! Global sum across CPUs
-!           call mpas_timer_start("si reduction iter")
-!           call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce5, CGcst_allreduce_global5)
-!           call mpas_timer_stop("si reduction iter")
-   
-!           CGcst_r00r1_global = CGcst_allreduce_global5(1)
-!           CGcst_r00w1_global = CGcst_allreduce_global5(2)
-!           CGcst_r00s0_global = CGcst_allreduce_global5(3)
-!           CGcst_r00z0_global = CGcst_allreduce_global5(4)
-!                        resid = CGcst_allreduce_global5(5)
-   
-
-
 !-------------------------------------------------------------------------------
          CGvec_u0(:) = 0.0_RKIND 
          reduce(:) = 0.0_RKIND
@@ -1586,7 +1568,6 @@ module ocn_time_integration_si
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_w1', 1)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo iter")
@@ -1595,9 +1576,14 @@ module ocn_time_integration_si
 !-------------------------------------------------------------------------------
          call mpas_timer_start("si cross reduction iter")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -1657,7 +1643,6 @@ module ocn_time_integration_si
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_wh1', 1)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo iter")
@@ -1795,7 +1780,6 @@ module ocn_time_integration_si
          call mpas_timer_start("si halo iter")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', timeLevel=1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo iter")
@@ -1972,7 +1956,6 @@ module ocn_time_integration_si
             call mpas_timer_start("si halo r0")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo r0")
@@ -2023,7 +2006,6 @@ module ocn_time_integration_si
          call mpas_timer_start("si halo r0")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_rh0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo r0")
@@ -2107,16 +2089,6 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-         CGcst_allreduce2(1) = CGcst_r00r0
-         CGcst_allreduce2(2) = CGcst_r00w0
-
-         ! Global sum across CPUs
-!        call mpas_timer_start("si reduction r0")
-!        !call mpi_iallreduce(CGcst_allreduce,CGcst_allreduce_global,5,mpi_double,mpi_sum,dminfo%comm,mpi_ireq,mpi_ierr)
-!        call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
-!        call mpas_timer_stop("si reduction r0")
-
-
 !-------------------------------------------------------------------------------
          CGvec_u0(:) = 0.0_RKIND 
          reduce(:) = 0.0_RKIND 
@@ -2136,7 +2108,6 @@ module ocn_time_integration_si
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_w0', 1)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo r0")
@@ -2145,9 +2116,14 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si cross reduction r0")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -2213,7 +2189,6 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_wh0', 1)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo r0")
@@ -2434,7 +2409,6 @@ module ocn_time_integration_si
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_z1', 1)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo iter")
@@ -2444,9 +2418,14 @@ module ocn_time_integration_si
 
          call mpas_timer_start("si cross reduction iter")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -2511,7 +2490,6 @@ module ocn_time_integration_si
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_zh1', 1)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo iter")
@@ -2654,22 +2632,26 @@ module ocn_time_integration_si
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_w1', 1)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo iter")
          end if 
 
 !-------------------------------------------------------------------------------
          call mpas_timer_start("si cross reduction iter")
 
+         do i = 1,5
+            CGvec_u0(i) = reduce(i)
+            reduce(i) = 0.0
+         end do
+
          if ( nrow /= 0 ) then
             do i = 1,5
-               do j = srow,nrow
+               do j = 1,nrow
                   reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
                end do
             end do
@@ -2733,7 +2715,6 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_wh1', 1)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo iter")
@@ -2882,7 +2863,6 @@ module ocn_time_integration_si
          call mpas_timer_start("si halo iter")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', timeLevel=1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo iter")
@@ -2972,8 +2952,8 @@ module ocn_time_integration_si
             ! #Iteration  check
 !           if ( split_implicit_step == 2 ) then
 !           if ( rank == 0 ) then
-!           call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
-             print*, 'Iter',iter
+            call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
+!            print*, 'Iter',iter
 !           endif
 !           endif
 
@@ -2986,16 +2966,11 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'barotropicThicknessFlux')
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocity',2)
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocitySubcycle',1)
-!        call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'sshSubcycleCur',1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, finalBtrGroupName)
          call mpas_dmpar_exch_group_destroy(domain, finalBtrGroupName)
          call mpas_timer_stop("si halo btr vel")
-         call mpas_threading_barrier()
 
          call mpas_timer_stop("si btr vel update")
-
-         call mpas_threading_barrier()
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
@@ -5430,7 +5405,6 @@ module ocn_time_integration_si
             do i = 1,5
                reduce(i)       = real(i) * rank
                reduce_check(i) = real(i) * rank
-               !reduce(i) = real(i)
             end do
 
             ! Stage 1: Put values
@@ -5450,20 +5424,20 @@ module ocn_time_integration_si
 
 
             ! Stage 3: Summation for cross ranks
-            do i = 1,5
-               CGvec_r0(i) = reduce(i)
-               reduce(i) = 0.0
-            end do
+               do i = 1,5
+                  CGvec_r0(i) = reduce(i)
+                  reduce(i) = 0.0
+               end do
 
             if ( nrow /= 0 ) then
                do i = 1,5
-                  do j = 1row,nrow
+                  do j = 1,nrow
                      reduce(i) = reduce(i) + CGvec_r0(sumLoc(i,j))
                   end do
                end do
 
             ! Stage 2: Allreduce for mpi_cross_comm
-                  call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+               call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
 
             ! Stage 3: Put values that will be scattered
 
@@ -5475,17 +5449,17 @@ module ocn_time_integration_si
             endif
 
             ! Stage 3: Local halo exchange (Cross -> Local)
-               call mpas_dmpar_exch_group_create(domain, iterGroupName)
-               call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-               call mpas_threading_barrier()
-               call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-               call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+            call mpas_threading_barrier()
+            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
 
-               if ( nrow == 0 ) then
-                  do i = 1,5
-                     reduce_global(i) = CGvec_r0(getLoc(i))
-                  end do
-               end if
+            if ( nrow == 0 ) then
+               do i = 1,5
+                  reduce_global(i) = CGvec_r0(getLoc(i))
+               end do
+            end if
  
             ! For check
             call mpi_allreduce(reduce_check,reduce_global_check,5,MPI_DOUBLE,MPI_SUM,dminfo%comm,mpi_ierr)
@@ -5503,6 +5477,7 @@ module ocn_time_integration_si
       block => block % next
       end do  ! block
 
+!  print*, 'Test passed'
    call mpi_barrier(dminfo%comm,mpi_ierr)
 !  stop
 

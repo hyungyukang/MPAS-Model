@@ -64,7 +64,7 @@ module ocn_time_integration_si
 
    public :: ocn_time_integrator_si, ocn_time_integration_si_init
    public :: ocn_time_integrator_si_preconditioner
-   public :: my_allreduce_init
+!  public :: my_allreduce_init
 !  public :: my_allreduce
 
    character (len=*), parameter :: iterGroupName = 'iterFields'
@@ -251,17 +251,23 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(2) :: CGcst_allreduce2,CGcst_allreduce_global2
       real (kind=RKIND), dimension(3) :: CGcst_allreduce3,CGcst_allreduce_global3
       real (kind=RKIND), dimension(5) :: CGcst_allreduce5,CGcst_allreduce_global5
+      real (kind=RKIND), dimension(9) :: CGcst_allreduce9,CGcst_allreduce_global9
       real (kind=RKIND) :: CGcst_r00r0,CGcst_r00w0,CGcst_r00r1,CGcst_r00w1
       real (kind=RKIND) :: CGcst_r00r0_global,CGcst_r00w0_global,CGcst_r00r1_global,CGcst_r00w1_global
 
       real (kind=RKIND) :: CGcst_r0r0,CGcst_r1r1
       real (kind=RKIND) :: CGcst_r0r0_global,CGcst_r1r1_global
+      real (kind=RKIND) :: CGcst_r00s0       ,CGcst_r00z0       ,CGcst_r00t0       ,CGcst_r00v0
+      real (kind=RKIND) :: CGcst_r00s0_global,CGcst_r00z0_global,CGcst_r00t0_global,CGcst_r00v0_global
+      real (kind=RKIND) :: CGcst_r00q0       ,CGcst_r00y0       
+      real (kind=RKIND) :: CGcst_r00q0_global,CGcst_r00y0_global
 
-      real (kind=RKIND) :: CGcst_r00s0,CGcst_r00z0,CGcst_q0y0,CGcst_y0y0
-      real (kind=RKIND) :: CGcst_r00s0_global,CGcst_r00z0_global,CGcst_q0y0_global,CGcst_y0y0_global
+      real (kind=RKIND) :: CGcst_q0y0       ,CGcst_y0y0
+      real (kind=RKIND) :: CGcst_q0y0_global,CGcst_y0y0_global
 
       real (kind=RKIND) :: CGcst_alpha0,CGcst_alpha1,CGcst_beta0,CGcst_beta1,CGcst_omega0,CGcst_omega1
       real (kind=RKIND) :: sshCurArea,sshLagArea,sshTendA,sshTendB,sshTendC,temp1,temp2,resid,wgt
+      real (kind=RKIND) :: CGcst_gamma0,CGcst_gamma1,CGcst_rho0,CGcst_rho1
 
       ! Diagnostics Field Pointers
       type (field2DReal), pointer :: normalizedRelativeVorticityEdgeField, divergenceField, relativeVorticityField
@@ -924,7 +930,6 @@ module ocn_time_integration_si
             call mpas_timer_start("si halo r0")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo r0")
@@ -972,7 +977,6 @@ module ocn_time_integration_si
          call mpas_timer_start("si halo r0")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_rh0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo r0")
@@ -1053,17 +1057,6 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-!-------------------------------------------------------------------------------
-         CGvec_u0(:) = 0.0_RKIND 
-         reduce(:) = 0.0_RKIND 
-         reduce(1) = CGcst_r00r0
-         reduce(2) = CGcst_r00w0
-  
-         if ( srank == 0 ) then
-            do i = 1,5
-               CGvec_u0(putLoc(i)) = reduce(i)
-            end do
-         end if
 
          ! Preconditioning ------------------------------------------------------------------------!
 
@@ -1071,41 +1064,11 @@ module ocn_time_integration_si
             call mpas_timer_start("si halo r0")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_w0', 1)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo r0")
          end if 
-!-------------------------------------------------------------------------------
 
-         call mpas_timer_start("si cross reduction r0")
-
-         do i = 1,5
-            CGvec_u0(i) = reduce(i)
-            reduce(i) = 0.0
-         end do
-
-         if ( nrow /= 0 ) then
-            do i = 1,5
-               do j = 1,nrow
-                  reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
-               end do
-            end do
-
-         ! Stage 2: Allreduce for mpi_cross_comm
-            call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-
-         ! Stage 3: Put values that will be scattered
-            do j = srow, nrow
-               do i = 1,5
-                  CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-               end do
-            end do
-         endif
-
-         call mpas_timer_stop ("si cross reduction r0")
-!-------------------------------------------------------------------------------
          
          block => domain % blocklist
          do while (associated(block))
@@ -1146,24 +1109,14 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-!-------------------------------------------------------------------------------
 
          call mpas_timer_start("si halo r0")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_wh0', 1)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo r0")
 
-         if ( nrow == 0 ) then
-            do i = 1,5
-               reduce_global(i) = CGvec_u0(getLoc(i))
-            end do
-         end if
-
-!-------------------------------------------------------------------------------
 
          ! SpMV -----------------------------------------------------------------------------------!
 
@@ -1248,10 +1201,20 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-         CGcst_r00r0_global = reduce_global(1)
-         CGcst_r00w0_global = reduce_global(2)
+         CGcst_allreduce2(1) = CGcst_r00r0
+         CGcst_allreduce2(2) = CGcst_r00w0
+
+         ! Global sum across CPUs
+         call mpas_timer_start("si reduction r0")
+         call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+         call mpas_timer_stop ("si reduction r0")
+
+         CGcst_r00r0_global = CGcst_allreduce_global2(1)
+         CGcst_r00w0_global = CGcst_allreduce_global2(2)
 
          CGcst_alpha0 = CGcst_r00r0_global / CGcst_r00w0_global
+         CGcst_rho0   = CGcst_r00r0_global
+         CGcst_gamma0 = CGcst_r00w0_global
          CGcst_beta0  = 0.0_RKIND
          CGcst_omega0 = 0.0_RKIND
 
@@ -1315,31 +1278,71 @@ module ocn_time_integration_si
    
                ! Begin reduction --------------------------------------------------------------------!
    
+               CGcst_r0r0  = 0.0_RKIND
                CGcst_q0y0  = 0.0_RKIND
                CGcst_y0y0  = 0.0_RKIND
-               CGcst_r00r0 = 0.0_RKIND
+               CGcst_r00s0 = 0.0_RKIND
+               CGcst_r00z0 = 0.0_RKIND
+               CGcst_r00q0 = 0.0_RKIND
+               CGcst_r00y0 = 0.0_RKIND
+               CGcst_r00t0 = 0.0_RKIND
+               CGcst_r00v0 = 0.0_RKIND
    
                do iCell = 1,nCells
+                  CGcst_r0r0  = CGcst_r0r0  + CGvec_r0(iCell)  * CGvec_r0(iCell)               
                   CGcst_q0y0  = CGcst_q0y0  + CGvec_q0(iCell)  * CGvec_y0(iCell)               
                   CGcst_y0y0  = CGcst_y0y0  + CGvec_y0(iCell)  * CGvec_y0(iCell)               
-                  CGcst_r00r0 = CGcst_r00r0 + CGvec_r00(iCell) * CGvec_r0(iCell)
+                  CGcst_r00s0 = CGcst_r00s0 + CGvec_r00(iCell) * CGvec_s0(iCell)
+                  CGcst_r00z0 = CGcst_r00z0 + CGvec_r00(iCell) * CGvec_z0(iCell)
+                  CGcst_r00q0 = CGcst_r00q0 + CGvec_r00(iCell) * CGvec_q0(iCell)
+                  CGcst_r00y0 = CGcst_r00y0 + CGvec_r00(iCell) * CGvec_y0(iCell)
+                  CGcst_r00t0 = CGcst_r00t0 + CGvec_r00(iCell) * CGvec_t0(iCell)
+                  CGcst_r00v0 = CGcst_r00v0 + CGvec_r00(iCell) * CGvec_v0(iCell)
                end do
    
                block => block % next
             end do  ! block
-   
-!-------------------------------------------------------------------------------
-         CGvec_u0(:) = 0.0_RKIND 
-         reduce(:) = 0.0_RKIND
-         reduce(1) = CGcst_q0y0
-         reduce(2) = CGcst_y0y0
-         reduce(3) = CGcst_r00r0
 
-         if ( srank == 0 ) then
-            do i = 1,5
-               CGvec_u0(putLoc(i)) = reduce(i)
-            end do
-         end if
+!           CGcst_allreduce3(1) = CGcst_q0y0
+!           CGcst_allreduce3(2) = CGcst_y0y0
+!           CGcst_allreduce3(3) = CGcst_r00r0
+
+!           ! Global sum across CPUs
+!           call mpas_timer_start("si reduction iter")
+!           call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
+!           call mpas_timer_stop("si reduction iter")
+
+!           CGcst_q0y0_global  = CGcst_allreduce_global3(1)
+!           CGcst_y0y0_global  = CGcst_allreduce_global3(2)
+!           CGcst_r00r0_global = CGcst_allreduce_global3(3)
+
+!---------------------
+
+            CGcst_allreduce9(1) = CGcst_r0r0
+            CGcst_allreduce9(2) = CGcst_q0y0
+            CGcst_allreduce9(3) = CGcst_y0y0
+            CGcst_allreduce9(4) = CGcst_r00s0
+            CGcst_allreduce9(5) = CGcst_r00z0
+            CGcst_allreduce9(6) = CGcst_r00q0
+            CGcst_allreduce9(7) = CGcst_r00y0
+            CGcst_allreduce9(8) = CGcst_r00t0
+            CGcst_allreduce9(9) = CGcst_r00v0
+
+            ! Global sum across CPUs
+            call mpas_timer_start("si reduction iter")
+            call mpas_dmpar_sum_real_array(dminfo, 9, CGcst_allreduce9, CGcst_allreduce_global9)
+            call mpas_timer_stop("si reduction iter")
+
+            CGcst_r0r0_global  = CGcst_allreduce_global9(1)
+            CGcst_q0y0_global  = CGcst_allreduce_global9(2)
+            CGcst_y0y0_global  = CGcst_allreduce_global9(3)
+            CGcst_r00s0_global = CGcst_allreduce_global9(4)
+            CGcst_r00z0_global = CGcst_allreduce_global9(5)
+            CGcst_r00q0_global = CGcst_allreduce_global9(6)
+            CGcst_r00y0_global = CGcst_allreduce_global9(7)
+            CGcst_r00t0_global = CGcst_allreduce_global9(8)
+            CGcst_r00v0_global = CGcst_allreduce_global9(9)
+
 
          ! Preconditioning ------------------------------------------------------------------------!
 
@@ -1347,42 +1350,10 @@ module ocn_time_integration_si
             call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_z1', 1)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo iter")
          end if 
-
-!-------------------------------------------------------------------------------
-
-         call mpas_timer_start("si cross reduction iter")
-
-         do i = 1,5
-            CGvec_u0(i) = reduce(i)
-            reduce(i) = 0.0
-         end do
-
-         if ( nrow /= 0 ) then
-            do i = 1,5
-               do j = 1,nrow
-                  reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
-               end do
-            end do
-
-         ! Stage 2: Allreduce for mpi_cross_comm
-            call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-
-         ! Stage 3: Put values that will be scattered
-            do j = srow, nrow
-               do i = 1,5
-                  CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-               end do
-            end do
-         endif
-
-         call mpas_timer_stop ("si cross reduction iter")
-!-------------------------------------------------------------------------------
 
          block => domain % blocklist
          do while (associated(block))
@@ -1420,31 +1391,13 @@ module ocn_time_integration_si
 
             block => block % next
          end do  ! block
-   
-!-------------------------------------------------------------------------------
 
          call mpas_timer_start("si halo iter")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_zh1', 1)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo iter")
-   
-         ! Stage 3: Local halo exchange (Cross -> Local)
-         if ( nrow == 0 ) then
-            do i = 1,5
-               reduce_global(i) = CGvec_u0(getLoc(i))
-            end do
-         end if
-
-         CGcst_q0y0_global  = reduce_global(1)
-         CGcst_y0y0_global  = reduce_global(2)
-         CGcst_r00r0_global = reduce_global(3)
-
-!-------------------------------------------------------------------------------
-
    
             ! SpMV -----------------------------------------------------------------------------------!
 
@@ -1535,20 +1488,20 @@ module ocn_time_integration_si
    
                ! Begin reduction ------------------------------------------------------------------------!
       
-               CGcst_r00r1 = 0.0_RKIND
-               CGcst_r00w1 = 0.0_RKIND
-               CGcst_r00s0 = 0.0_RKIND
-               CGcst_r00z0 = 0.0_RKIND
-               CGcst_r1r1  = 0.0_RKIND
-      
-               do iCell = 1,nCells
-                  CGcst_r00r1 = CGcst_r00r1 + CGvec_r00(iCell) * CGvec_r1(iCell)               
-                  CGcst_r00w1 = CGcst_r00w1 + CGvec_r00(iCell) * CGvec_w1(iCell)               
-                  CGcst_r00s0 = CGcst_r00s0 + CGvec_r00(iCell) * CGvec_s1(iCell) ! s1
-                  CGcst_r00z0 = CGcst_r00z0 + CGvec_r00(iCell) * CGvec_z1(iCell) ! z1
-                  CGcst_r1r1  = CGcst_r1r1  + CGvec_r1(iCell)  * CGvec_r1(iCell) 
-               end do
-   
+!              CGcst_r00r1 = 0.0_RKIND
+!              CGcst_r00w1 = 0.0_RKIND
+!              CGcst_r00s0 = 0.0_RKIND
+!              CGcst_r00z0 = 0.0_RKIND
+!              CGcst_r1r1  = 0.0_RKIND
+!     
+!              do iCell = 1,nCells
+!                 CGcst_r00r1 = CGcst_r00r1 + CGvec_r00(iCell) * CGvec_r1(iCell)               
+!                 CGcst_r00w1 = CGcst_r00w1 + CGvec_r00(iCell) * CGvec_w1(iCell)               
+!                 CGcst_r00s0 = CGcst_r00s0 + CGvec_r00(iCell) * CGvec_s1(iCell) ! s1
+!                 CGcst_r00z0 = CGcst_r00z0 + CGvec_r00(iCell) * CGvec_z1(iCell) ! z1
+!                 CGcst_r1r1  = CGcst_r1r1  + CGvec_r1(iCell)  * CGvec_r1(iCell) 
+!              end do
+!  
                block => block % next
             end do  ! block
 
@@ -1557,76 +1510,29 @@ module ocn_time_integration_si
 !           CGcst_allreduce5(3) = CGcst_r00s0
 !           CGcst_allreduce5(4) = CGcst_r00z0
 !           CGcst_allreduce5(5) = CGcst_r1r1
-   
-            ! Global sum across CPUs
+!  
+!           ! Global sum across CPUs
 !           call mpas_timer_start("si reduction iter")
 !           call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce5, CGcst_allreduce_global5)
 !           call mpas_timer_stop("si reduction iter")
-   
+!  
 !           CGcst_r00r1_global = CGcst_allreduce_global5(1)
 !           CGcst_r00w1_global = CGcst_allreduce_global5(2)
 !           CGcst_r00s0_global = CGcst_allreduce_global5(3)
 !           CGcst_r00z0_global = CGcst_allreduce_global5(4)
 !                        resid = CGcst_allreduce_global5(5)
    
-
-
-!-------------------------------------------------------------------------------
-         CGvec_u0(:) = 0.0_RKIND 
-         reduce(:) = 0.0_RKIND
-         reduce(1) = CGcst_r00r1
-         reduce(2) = CGcst_r00w1
-         reduce(3) = CGcst_r00s0
-         reduce(4) = CGcst_r00z0
-         reduce(5) = CGcst_r1r1
-
-         if ( srank == 0 ) then
-            do i = 1,5
-               CGvec_u0(putLoc(i)) = reduce(i)
-            end do
-         end if
-
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
             call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_w1', 1)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo iter")
          end if 
 
-!-------------------------------------------------------------------------------
-         call mpas_timer_start("si cross reduction iter")
-
-         do i = 1,5
-            CGvec_u0(i) = reduce(i)
-            reduce(i) = 0.0
-         end do
-
-         if ( nrow /= 0 ) then
-            do i = 1,5
-               do j = 1,nrow
-                  reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
-               end do
-            end do
-
-         ! Stage 2: Allreduce for mpi_cross_comm
-            call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-
-         ! Stage 3: Put values that will be scattered
-            do j = srow, nrow
-               do i = 1,5
-                  CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-               end do
-            end do
-         end if
-
-         call mpas_timer_stop ("si cross reduction iter")
-!-------------------------------------------------------------------------------
             block => domain % blocklist
             do while (associated(block))
    
@@ -1663,32 +1569,13 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
    
-!-------------------------------------------------------------------------------
-
             call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_wh1', 1)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo iter")
 
-         ! Stage 3: Local halo exchange (Cross -> Local)
-            if ( nrow == 0 ) then
-               do i = 1,5
-                  reduce_global(i) = CGvec_u0(getLoc(i))
-               end do
-            end if
-
-            CGcst_r00r1_global = reduce_global(1)
-            CGcst_r00w1_global = reduce_global(2)
-            CGcst_r00s0_global = reduce_global(3)
-            CGcst_r00z0_global = reduce_global(4)
-                         resid = reduce_global(5)
-
-!-------------------------------------------------------------------------------
-   
             ! SpMV -----------------------------------------------------------------------------------!
    
             block => domain % blocklist
@@ -1771,10 +1658,18 @@ module ocn_time_integration_si
                end do ! iCell
           
                ! End reduction -----------------------------------------------------------------------!
+
+               CGcst_rho1   = CGcst_r00q0_global - CGcst_omega0 * CGcst_r00y0_global
+               CGcst_gamma1 = CGcst_r00y0_global - CGcst_omega0 * CGcst_r00t0_global  &
+                                                 + CGcst_omega0 * CGcst_alpha0 * CGcst_r00v0_global
    
-               CGcst_beta0 = (CGcst_alpha0/CGcst_omega0) * CGcst_r00r1_global / CGcst_r00r0_global
-               CGcst_alpha1 =  CGcst_r00r1_global / (  CGcst_r00w1_global + CGcst_beta0 * CGcst_r00s0_global  &
-                                                     - CGcst_beta0 * CGcst_omega0 * CGcst_r00z0_global       )
+               CGcst_beta0 = (CGcst_alpha0/CGcst_omega0) * (CGcst_rho1/CGcst_rho0)
+               CGcst_alpha1 =  CGcst_rho1 / (  CGcst_gamma1 + CGcst_beta0  * CGcst_r00s0_global   &
+                                             - CGcst_beta0  * CGcst_omega0 * CGcst_r00z0_global )
+
+!              CGcst_beta0 = (CGcst_alpha0/CGcst_omega0) * CGcst_r00r1_global / CGcst_r00r0_global
+!              CGcst_alpha1 =  CGcst_r00r1_global / (  CGcst_r00w1_global + CGcst_beta0 * CGcst_r00s0_global  &
+!                                                    - CGcst_beta0 * CGcst_omega0 * CGcst_r00z0_global       )
    
                do iCell = 1,nCells
                   CGvec_r0(iCell) = CGvec_r1(iCell)
@@ -1793,8 +1688,9 @@ module ocn_time_integration_si
                   sshSubcycleCur(iCell) = sshSubcycleNew(iCell)
                end do ! iCell
        	
-               CGcst_r00r0_global = CGcst_r00r1_global
                CGcst_alpha0       = CGcst_alpha1
+               CGcst_gamma0       = CGcst_gamma1
+               CGcst_rho0         = CGcst_rho1
    
                block => block % next
             end do  ! block
@@ -1807,7 +1703,6 @@ module ocn_time_integration_si
          call mpas_timer_start("si halo iter")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', timeLevel=1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo iter")
@@ -1984,7 +1879,6 @@ module ocn_time_integration_si
             call mpas_timer_start("si halo r0")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo r0")
@@ -2035,7 +1929,6 @@ module ocn_time_integration_si
          call mpas_timer_start("si halo r0")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_rh0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo r0")
@@ -2119,60 +2012,16 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-!-------------------------------------------------------------------------------
-         CGvec_u0(:) = 0.0_RKIND 
-         reduce(:) = 0.0_RKIND 
-         reduce(1) = CGcst_r00r0
-         reduce(2) = CGcst_r00w0
-
-         if ( srank == 0 ) then
-            do i = 1,5
-               CGvec_u0(putLoc(i)) = reduce(i)
-            end do
-         end if
-
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
             call mpas_timer_start("si halo r0")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_w0', 1)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo r0")
          end if 
-!-------------------------------------------------------------------------------
-
-         call mpas_timer_start("si cross reduction r0")
-
-         do i = 1,5
-            CGvec_u0(i) = reduce(i)
-            reduce(i) = 0.0
-         end do
-
-         if ( nrow /= 0 ) then
-            do i = 1,5
-               do j = 1,nrow
-                  reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
-               end do
-            end do
-
-         ! Stage 2: Allreduce for mpi_cross_comm
-            call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-
-         ! Stage 3: Put values that will be scattered
-            do j = srow, nrow
-               do i = 1,5
-                  CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-               end do
-            end do
-
-         end if
-
-         call mpas_timer_stop ("si cross reduction r0")
-!-------------------------------------------------------------------------------
 
          block => domain % blocklist
          do while (associated(block))
@@ -2214,24 +2063,12 @@ module ocn_time_integration_si
            block => block % next
          end do  ! block
 
-!-------------------------------------------------------------------------------
-
          call mpas_timer_start("si halo r0")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_wh0', 1)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo r0")
-
-         if ( nrow == 0 ) then
-            do i = 1,5
-               reduce_global(i) = CGvec_u0(getLoc(i))
-            end do
-         end if
-
-!-------------------------------------------------------------------------------
 
          ! SpMV -----------------------------------------------------------------------------------!
 
@@ -2313,16 +2150,20 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-!        call mpas_timer_start ("si wait")
-!        call mpi_wait(mpi_ireq,MPI_STATUS_IGNORE,mpi_ierr)
-!        call mpas_timer_stop ("si wait")
+         CGcst_allreduce2(1) = CGcst_r00r0
+         CGcst_allreduce2(2) = CGcst_r00w0
 
-!        CGcst_r00r0_global = CGcst_allreduce_global2(1)
-!        CGcst_r00w0_global = CGcst_allreduce_global2(2)
-         CGcst_r00r0_global = reduce_global(1)
-         CGcst_r00w0_global = reduce_global(2)
+         ! Global sum across CPU
+         call mpas_timer_start("si reduction r0")
+         call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
+         call mpas_timer_stop("si reduction r0")
+
+         CGcst_r00r0_global = CGcst_allreduce_global2(1)
+         CGcst_r00w0_global = CGcst_allreduce_global2(2)
 
          CGcst_alpha0 = CGcst_r00r0_global / CGcst_r00w0_global
+         CGcst_rho0   = CGcst_r00r0_global
+         CGcst_gamma0 = CGcst_r00w0_global
          CGcst_beta0  = 0.0_RKIND
          CGcst_omega0 = 0.0_RKIND
 
@@ -2395,14 +2236,27 @@ module ocn_time_integration_si
    
                ! Begin reduction ----------------------------------------------------------------------!
    
+               CGcst_r0r0  = 0.0_RKIND
                CGcst_q0y0  = 0.0_RKIND
                CGcst_y0y0  = 0.0_RKIND
-               CGcst_r00r0 = 0.0_RKIND
-   
+               CGcst_r00s0 = 0.0_RKIND
+               CGcst_r00z0 = 0.0_RKIND
+               CGcst_r00q0 = 0.0_RKIND
+               CGcst_r00y0 = 0.0_RKIND
+               CGcst_r00t0 = 0.0_RKIND
+               CGcst_r00v0 = 0.0_RKIND
+
+
                do iCell = 1,nCells
+                  CGcst_r0r0  = CGcst_r0r0  + CGvec_r0(iCell)  * CGvec_r0(iCell)
                   CGcst_q0y0  = CGcst_q0y0  + CGvec_q0(iCell)  * CGvec_y0(iCell)               
                   CGcst_y0y0  = CGcst_y0y0  + CGvec_y0(iCell)  * CGvec_y0(iCell)               
-                  CGcst_r00r0 = CGcst_r00r0 + CGvec_r00(iCell) * CGvec_r0(iCell)
+                  CGcst_r00s0 = CGcst_r00s0 + CGvec_r00(iCell) * CGvec_s0(iCell)
+                  CGcst_r00z0 = CGcst_r00z0 + CGvec_r00(iCell) * CGvec_z0(iCell)
+                  CGcst_r00q0 = CGcst_r00q0 + CGvec_r00(iCell) * CGvec_q0(iCell)
+                  CGcst_r00y0 = CGcst_r00y0 + CGvec_r00(iCell) * CGvec_y0(iCell)
+                  CGcst_r00t0 = CGcst_r00t0 + CGvec_r00(iCell) * CGvec_t0(iCell)
+                  CGcst_r00v0 = CGcst_r00v0 + CGvec_r00(iCell) * CGvec_v0(iCell)
                end do
    
                block => block % next
@@ -2411,73 +2265,54 @@ module ocn_time_integration_si
 !           CGcst_allreduce3(1) = CGcst_q0y0
 !           CGcst_allreduce3(2) = CGcst_y0y0
 !           CGcst_allreduce3(3) = CGcst_r00r0
-   
-            ! Global sum across CPUs
+!  
+!           ! Global sum across CPUs
 !           call mpas_timer_start("si reduction iter")
 !           call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
 !           call mpas_timer_stop("si reduction iter")
-   
+!  
 !           CGcst_q0y0_global  = CGcst_allreduce_global3(1)
 !           CGcst_y0y0_global  = CGcst_allreduce_global3(2)
 !           CGcst_r00r0_global = CGcst_allreduce_global3(3)
+
+!---------------------
+
+            CGcst_allreduce9(1) = CGcst_r0r0
+            CGcst_allreduce9(2) = CGcst_q0y0
+            CGcst_allreduce9(3) = CGcst_y0y0
+            CGcst_allreduce9(4) = CGcst_r00s0
+            CGcst_allreduce9(5) = CGcst_r00z0
+            CGcst_allreduce9(6) = CGcst_r00q0
+            CGcst_allreduce9(7) = CGcst_r00y0
+            CGcst_allreduce9(8) = CGcst_r00t0
+            CGcst_allreduce9(9) = CGcst_r00v0
+
+            ! Global sum across CPUs
+            call mpas_timer_start("si reduction iter")
+            call mpas_dmpar_sum_real_array(dminfo, 9, CGcst_allreduce9, CGcst_allreduce_global9)
+            call mpas_timer_stop("si reduction iter")
+
+            CGcst_r0r0_global  = CGcst_allreduce_global9(1)
+            CGcst_q0y0_global  = CGcst_allreduce_global9(2)
+            CGcst_y0y0_global  = CGcst_allreduce_global9(3)
+            CGcst_r00s0_global = CGcst_allreduce_global9(4)
+            CGcst_r00z0_global = CGcst_allreduce_global9(5)
+            CGcst_r00q0_global = CGcst_allreduce_global9(6)
+            CGcst_r00y0_global = CGcst_allreduce_global9(7)
+            CGcst_r00t0_global = CGcst_allreduce_global9(8)
+            CGcst_r00v0_global = CGcst_allreduce_global9(9)
    
-!-------------------------------------------------------------------------------
-         CGvec_u0(:) = 0.0_RKIND 
-         reduce(:) = 0.0_RKIND
-         reduce(1) = CGcst_q0y0
-         reduce(2) = CGcst_y0y0
-         reduce(3) = CGcst_r00r0
-
-         if ( srank == 0 ) then
-            do i = 1,5
-               CGvec_u0(putLoc(i)) = reduce(i)
-            end do
-         end if
-
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
             call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_z1', 1)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo iter")
          end if 
 
-!-------------------------------------------------------------------------------
-
-         call mpas_timer_start("si cross reduction iter")
-
-         do i = 1,5
-            CGvec_u0(i) = reduce(i)
-            reduce(i) = 0.0
-         end do
-
-         if ( nrow /= 0 ) then
-            do i = 1,5
-               do j = 1,nrow
-                  reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
-               end do
-            end do
-
-         ! Stage 2: Allreduce for mpi_cross_comm
-            call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-
-         ! Stage 3: Put values that will be scattered
-            do j = srow, nrow
-               do i = 1,5
-                  CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-               end do
-            end do
-
-         end if
-
-            call mpas_timer_stop ("si cross reduction iter")
-!-------------------------------------------------------------------------------
-   
             block => domain % blocklist
             do while (associated(block))
    
@@ -2517,31 +2352,12 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
    
-!-------------------------------------------------------------------------------
-
             call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_zh1', 1)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
             call mpas_timer_stop("si halo iter")
-   
-
-         ! Stage 3: Local halo exchange (Cross -> Local)
-            if ( nrow == 0 ) then
-               do i = 1,5
-                  reduce_global(i) = CGvec_u0(getLoc(i))
-               end do
-            end if
-
-            CGcst_q0y0_global  = reduce_global(1)
-            CGcst_y0y0_global  = reduce_global(2)
-            CGcst_r00r0_global = reduce_global(3)
-
-!-------------------------------------------------------------------------------
-
    
             ! SpMV -----------------------------------------------------------------------------------!
    
@@ -2634,78 +2450,48 @@ module ocn_time_integration_si
    
             ! Begin reduction ------------------------------------------------------------------------!
    
-            CGcst_r00r1 = 0.0_RKIND
-            CGcst_r00w1 = 0.0_RKIND
-            CGcst_r00s0 = 0.0_RKIND
-            CGcst_r00z0 = 0.0_RKIND
-            CGcst_r1r1  = 0.0_RKIND
-   
-            do iCell = 1,nCells
-               CGcst_r00r1 = CGcst_r00r1 + CGvec_r00(iCell) * CGvec_r1(iCell)               
-               CGcst_r00w1 = CGcst_r00w1 + CGvec_r00(iCell) * CGvec_w1(iCell)               
-               CGcst_r00s0 = CGcst_r00s0 + CGvec_r00(iCell) * CGvec_s1(iCell)
-               CGcst_r00z0 = CGcst_r00z0 + CGvec_r00(iCell) * CGvec_z1(iCell)
-               CGcst_r1r1  = CGcst_r1r1  + CGvec_r1(iCell)  * CGvec_r1(iCell) 
-            end do
-   
-!-------------------------------------------------------------------------------
-         CGvec_u0(:) = 0.0_RKIND 
-         reduce(:) = 0.0_RKIND
-         reduce(1) = CGcst_r00r1
-         reduce(2) = CGcst_r00w1
-         reduce(3) = CGcst_r00s0
-         reduce(4) = CGcst_r00z0
-         reduce(5) = CGcst_r1r1
+!           CGcst_r00r1 = 0.0_RKIND
+!           CGcst_r00w1 = 0.0_RKIND
+!           CGcst_r00s0 = 0.0_RKIND
+!           CGcst_r00z0 = 0.0_RKIND
+!           CGcst_r1r1  = 0.0_RKIND
+!  
+!           do iCell = 1,nCells
+!              CGcst_r00r1 = CGcst_r00r1 + CGvec_r00(iCell) * CGvec_r1(iCell)               
+!              CGcst_r00w1 = CGcst_r00w1 + CGvec_r00(iCell) * CGvec_w1(iCell)               
+!              CGcst_r00s0 = CGcst_r00s0 + CGvec_r00(iCell) * CGvec_s1(iCell)
+!              CGcst_r00z0 = CGcst_r00z0 + CGvec_r00(iCell) * CGvec_z1(iCell)
+!              CGcst_r1r1  = CGcst_r1r1  + CGvec_r1(iCell)  * CGvec_r1(iCell) 
+!           end do
 
-         if ( srank == 0 ) then
-            do i = 1,5
-               CGvec_u0(putLoc(i)) = reduce(i)
-            end do
-         end if
+!           CGcst_allreduce5(1) = CGcst_r00r1
+!           CGcst_allreduce5(2) = CGcst_r00w1
+!           CGcst_allreduce5(3) = CGcst_r00s0
+!           CGcst_allreduce5(4) = CGcst_r00z0
+!           CGcst_allreduce5(5) = CGcst_r1r1
 
+!           ! Global sum across CPUs
+!           call mpas_timer_start("si reduction iter")
+!           call mpas_dmpar_sum_real_array(dminfo, 5, CGcst_allreduce5, CGcst_allreduce_global5)
+!           call mpas_timer_stop("si reduction iter")
+
+!           CGcst_r00r1_global = CGcst_allreduce_global5(1)
+!           CGcst_r00w1_global = CGcst_allreduce_global5(2)
+!           CGcst_r00s0_global = CGcst_allreduce_global5(3)
+!           CGcst_r00z0_global = CGcst_allreduce_global5(4)
+!                        resid = CGcst_allreduce_global5(5)
+   
          ! Preconditioning ------------------------------------------------------------------------!
 
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
-            call mpas_timer_start("si halo r0")
+            call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_w1', 1)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-            call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo r0")
+            call mpas_timer_stop("si halo iter")
          end if 
 
-!-------------------------------------------------------------------------------
-         call mpas_timer_start("si cross reduction iter")
-
-         do i = 1,5
-            CGvec_u0(i) = reduce(i)
-            reduce(i) = 0.0
-         end do
-
-         if ( nrow /= 0 ) then
-            do i = 1,5
-               do j = 1,nrow
-                  reduce(i) = reduce(i) + CGvec_u0(sumLoc(i,j))
-               end do
-            end do
-
-         ! Stage 2: Allreduce for mpi_cross_comm
-            call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-
-         ! Stage 3: Put values that will be scattered
-            do j = srow, nrow
-               do i = 1,5
-                  CGvec_u0(scatLoc(i,j)) = reduce_global(i)
-               end do
-            end do
-
-         end if
-
-         call mpas_timer_stop ("si cross reduction iter")
-!-------------------------------------------------------------------------------
-   
             block => domain % blocklist
             do while (associated(block))
    
@@ -2744,29 +2530,12 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
    
-!-------------------------------------------------------------------------------
-
          call mpas_timer_start("si halo iter")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_wh1', 1)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_u0', 1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo iter")
-
-         ! Stage 3: Local halo exchange (Cross -> Local)
-            if ( nrow == 0 ) then
-               do i = 1,5
-                  reduce_global(i) = CGvec_u0(getLoc(i))
-               end do
-            end if
-
-            CGcst_r00r1_global = reduce_global(1)
-            CGcst_r00w1_global = reduce_global(2)
-            CGcst_r00s0_global = reduce_global(3)
-            CGcst_r00z0_global = reduce_global(4)
-                         resid = reduce_global(5)
 
 !-------------------------------------------------------------------------------
    
@@ -2854,10 +2623,18 @@ module ocn_time_integration_si
                call mpas_timer_stop("applyOp")
           
                ! End reduction -----------------------------------------------------------------------!
+
+               CGcst_rho1   = CGcst_r00q0_global - CGcst_omega0 * CGcst_r00y0_global
+               CGcst_gamma1 = CGcst_r00y0_global - CGcst_omega0 * CGcst_r00t0_global  &
+                                                 + CGcst_omega0 * CGcst_alpha0 * CGcst_r00v0_global
    
-               CGcst_beta0 = (CGcst_alpha0/CGcst_omega0) * CGcst_r00r1_global / CGcst_r00r0_global
-               CGcst_alpha1 =  CGcst_r00r1_global / (  CGcst_r00w1_global + CGcst_beta0 * CGcst_r00s0_global  &
-                                                     - CGcst_beta0 * CGcst_omega0 * CGcst_r00z0_global       )
+               CGcst_beta0 = (CGcst_alpha0/CGcst_omega0) * (CGcst_rho1/CGcst_rho0)
+               CGcst_alpha1 =  CGcst_rho1 / (  CGcst_gamma1 + CGcst_beta0  * CGcst_r00s0_global   &
+                                             - CGcst_beta0  * CGcst_omega0 * CGcst_r00z0_global )
+
+!              CGcst_beta0 = (CGcst_alpha0/CGcst_omega0) * CGcst_r00r1_global / CGcst_r00r0_global
+!              CGcst_alpha1 =  CGcst_r00r1_global / (  CGcst_r00w1_global + CGcst_beta0 * CGcst_r00s0_global  &
+!                                                    - CGcst_beta0 * CGcst_omega0 * CGcst_r00z0_global       )
    
                do iCell = 1,nCells
    
@@ -2877,8 +2654,10 @@ module ocn_time_integration_si
                   sshSubcycleCur(iCell) = sshSubcycleNew(iCell)
                end do ! iCell
    	    
-               CGcst_r00r0_global = CGcst_r00r1_global
+               resid              = CGcst_r0r0_global * dabs(CGcst_rho1/CGcst_rho0)
                CGcst_alpha0       = CGcst_alpha1
+               CGcst_gamma0       = CGcst_gamma1
+               CGcst_rho0         = CGcst_rho1   
    
                block => block % next
             end do  ! block
@@ -2899,7 +2678,6 @@ module ocn_time_integration_si
          call mpas_timer_start("si halo iter")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'sshSubcycle', timeLevel=1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo iter")
@@ -2988,10 +2766,10 @@ module ocn_time_integration_si
 
             ! #Iteration  check
 !           if ( split_implicit_step == 2 ) then
-!           if ( rank == 0 ) then
+            if ( rank == 0 ) then
 !           call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
              print*, 'Iter',iter
-!           endif
+            endif
 !           endif
 
             block => block % next
@@ -3003,16 +2781,11 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'barotropicThicknessFlux')
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocity',2)
          call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'normalBarotropicVelocitySubcycle',1)
-!        call mpas_dmpar_exch_group_add_field(domain, finalBtrGroupName, 'sshSubcycleCur',1)
-         call mpas_threading_barrier()
          call mpas_dmpar_exch_group_full_halo_exch(domain, finalBtrGroupName)
          call mpas_dmpar_exch_group_destroy(domain, finalBtrGroupName)
          call mpas_timer_stop("si halo btr vel")
-         call mpas_threading_barrier()
 
          call mpas_timer_stop("si btr vel update")
-
-         call mpas_threading_barrier()
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
@@ -3972,7 +3745,7 @@ module ocn_time_integration_si
 !
 !-------------------------------------------!
 
-         call my_allreduce_init(domain) 
+!        call my_allreduce_init(domain) 
 
          !--- Define local communicator
 !         call MPI_COMM_SPLIT_TYPE(dminfo % comm, MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL, mpi_local_comm, mpi_ierr)
@@ -4287,1243 +4060,1243 @@ module ocn_time_integration_si
 !--------------------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------------------
 
-   subroutine my_allreduce_init(domain)  !{{{
-      implicit none
-      type (domain_type), intent(inout) :: domain
-      type (dm_info) :: dminfo
-      type (block_type), pointer :: block
-
-      type (mpas_pool_type), pointer :: statePool
-      type (mpas_pool_type), pointer :: tracersPool
-      type (mpas_pool_type), pointer :: meshPool
-      type (mpas_pool_type), pointer :: verticalMeshPool
-      type (mpas_pool_type), pointer :: diagnosticsPool
-      type (mpas_pool_type), pointer :: tendPool
-      type (mpas_pool_type), pointer :: tracersTendPool
-
-      integer :: nCells, nEdges
-      integer, pointer :: nCellsPtr, nEdgesPtr
-      integer, dimension(:), pointer :: nCellsArray, nEdgesArray
- 
-      ! Mesh array pointers
-      integer, dimension(:)  , pointer :: maxLevelCell, maxLevelEdgeTop, nEdgesOnEdge, nEdgesOnCell
-      integer, dimension(:,:), pointer :: cellsOnEdge, edgeMask, edgesOnEdge
-      integer, dimension(:,:), pointer :: edgesOnCell, edgeSignOnCell
-      real (kind=RKIND), dimension(:)  , pointer :: dcEdge,bottomDepth
-      real (kind=RKIND), dimension(:)  , pointer :: dvEdge,areaCell
-      real (kind=RKIND), dimension(:), pointer :: CGvec_r0,CGvec_r1
-      real (kind=RKIND) :: tmp1,tmp2,sum1,sum2
-      integer :: i,j,k,mpi_ierr,mpi_ireq,mpi_jreq,mpi_kreq,mpi_nreq,rank,ncpus
-      integer :: i1,i2,j1,j2,j3,j4,itmp1,itmp2,is
-      integer :: nCells2,nCells2_n,isum1,isum2,iCell,ncmax,max_nrow
-      integer,dimension(:,:),allocatable :: global_crow,iatmp1,iatmp2,iatmp3,iatmp4
-      !integer,dimension(:),allocatable :: crow,ncrow,ibtmp1,ibtmp2
-      integer,dimension(:),allocatable :: ncrow,ibtmp1,ibtmp2
-      real (kind=RKIND), dimension(5) :: reduce,reduce_check,reduce_global,reduce_global_check
-      include 'mpif.h'
-      integer :: mpi_status(mpi_status_size)
-      integer :: rankRepId
-
-      dminfo = domain % dminfo
-      rank = dminfo % my_proc_id
-      ncpus = dminfo % nprocs
-
-      max_nrow = 15
-
-      block => domain % blocklist
-      do while (associated(block))
-
-
-         call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-         call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-   
-         call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
-         call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
-         call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-         call mpas_pool_get_subpool(block % structs, 'state', statePool)
-         call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-         call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-   
-         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
-         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
-   
-         nCells = nCellsArray( 1 )
-         nEdges = nEdgesArray( 2 )
-    
-         nCells2 = nCellsArray(2)
-         nCells2_n = nCellsArray(2) - nCellsArray(1)
-   
-         allocate(crow(1:max_nrow))
-         crow(:) = ncpus+1
-   
-         if ( rank == 0 ) then
-            allocate(global_crow(0:ncpus-1,1:max_nrow))
-            allocate(ncrow(0:ncpus-1))
-   
-            global_crow(:,:) = ncpus+1
-         end if
-   
-         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
-         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
-
-         CGvec_r0(:) = ncpus+1
-         CGvec_r0(1:nCells) = rank
-   
-         call mpas_dmpar_exch_group_create(domain, iterGroupName)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-         call mpas_threading_barrier()
-         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-           
-         CALL PIKSRT(nCells2_n,CGvec_r0(nCellsArray(1)+1:nCellsArray(2)))
-   
-         crow(:) = ncpus+1
-         crow(1) = rank
-         isum1 = 2
-         crow(isum1) = int(CGvec_r0(nCellsArray(1)+1))
-         do iCell = nCellsArray(1)+2,nCellsArray(2)
-            if ( CGvec_r0(iCell-1) /= CGvec_r0(iCell) ) then
-               isum1 = isum1 + 1
-               crow(isum1) = int(CGvec_r0(iCell))
-            endif
-         end do
-
-         !----------------------------------------------------------------------
-
-         ! Checking boundary cells ---
-         CGvec_r0(:) = ncpus+1 
-
-         do iCell = 1,nCells
-            CGvec_r0(iCell) = iCell
-            CGvec_r1(iCell) = rank
-         end do
-
-         call mpas_dmpar_exch_group_create(domain, iterGroupName)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
-         call mpas_threading_barrier()
-         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-
-         do i = 1,isum1
-            isum2 = 0
-
-            do iCell = nCellsArray(1)+1,nCellsArray(4)
-               if ( int(CGvec_r1(iCell)) == crow(i) ) then
-                  isum2 = isum2 + 1
-               endif
-            end do
-
-            if ( isum2 < 5 .and. isum2 > 0 ) then
-               crow(max_nrow) = crow(i)
-            endif
-
-         end do
-
-         !----------------------------------------------------------------------
-    
-         ! Send crow info ---
-         if ( rank > 0 ) then
-            call mpi_send(crow,max_nrow,mpi_int,0,rank,dminfo%comm,mpi_ierr)
-         else
-            do i = 1,ncpus-1
-               call mpi_recv(global_crow(i,:),max_nrow,mpi_int,i,i,dminfo%comm,mpi_status,mpi_ierr)
-            end do
-               global_crow(0,:) = crow(:)
-         endif
-
-   
-         ! Send ncrow info ---
-         if ( rank > 0 ) then
-            call mpi_send(isum1,1,mpi_int,0,rank,dminfo%comm,mpi_ierr)
-         else
-            do i = 1,ncpus-1
-               call mpi_recv(ncrow(i),1,mpi_int,i,i,dminfo%comm,mpi_status,mpi_ierr)
-            end do
-
-            ncrow(0) = isum1
-
-            ncmax = maxval(ncrow)
-            print*
-            print*,'Max #Connection', ncmax
-            print*
-
-         endif
-
-
-         ! Set the ranks that have less than 5 arrays ---
-         if ( rank == 0 ) then
-            do i = 0,ncpus-1
-               if ( global_crow(i,max_nrow) < ncpus+1 ) then
- 
-                  itmp1 = global_crow(i,max_nrow)
-
-                  global_crow(i,1:max_nrow-1) = ncpus+1
-                  global_crow(i,1) = i
-                  ncrow(i) = 1
-
-                  global_crow(itmp1,1:max_nrow-1) = ncpus+1
-                  global_crow(itmp1,1) = itmp1
-                  ncrow(itmp1) = 1
-
-               endif
-            end do
-
-
-         ! Remove the same rank number ---
-         do i = ncmax,0,-1
-            do i1 = 0,ncpus-2
-               if ( ncrow(i1) == i ) then
-
-                  do j1 = 1,ncrow(i1)
-      
-                     ! Up - down sweeps
-                     do i2 = i1+1,ncpus-1
-                     do j2 = 1,ncrow(i2)
-      
-                        if ( global_crow(i2,j2) == global_crow(i1,j1) ) then
-                           itmp1 = global_crow(i2,ncrow(i2))
-                           global_crow(i2,j2) = itmp1
-                           global_crow(i2,ncrow(i2)) = ncpus+1
-                           ncrow(i2) = ncrow(i2) - 1
-                        endif
-      
-                     end do ! j2
-                     end do ! i2
-
-                     ! Down - up sweeps
-                     do i2 = i1-1,0,-1
-                     do j2 = 1,ncrow(i2)
-      
-                        if ( global_crow(i2,j2) == global_crow(i1,j1) ) then
-                           itmp1 = global_crow(i2,ncrow(i2))
-                           global_crow(i2,j2) = itmp1
-                           global_crow(i2,ncrow(i2)) = ncpus+1
-                           ncrow(i2) = ncrow(i2) - 1
-                        endif
-      
-                     end do ! j2
-                     end do ! i2
-      
-
-                  end do ! j1
-
-               endif
-            end do ! i1
-         end do ! i
-
-
-         ! Remove ranks that have less than 5 arrays
-         do i = 0,ncpus-1
-            if ( global_crow(i,max_nrow) < ncpus+1 ) then
-
-               itmp1 = global_crow(i,max_nrow)
-
-               do i1 = 0,ncpus-1
-                  do j1 = 1,ncrow(i1)
-                     if ( global_crow(i1,j1) == itmp1 ) then
-                        itmp2 = global_crow(i1,ncrow(i1))
-
-                        if ( j1 == ncrow(i1) ) then
-                           global_crow(i1,j1) = ncpus+1
-                           global_crow(i1,max_nrow) = ncpus+1
-                        else
-                           global_crow(i1,j1) = itmp2
-                           global_crow(i1,ncrow(i1)) = ncpus+1
-                           global_crow(i1,max_nrow) = ncpus+1
-                        endif
-                           ncrow(i1) = ncrow(i1)-1
-
-                        if ( ncrow(itmp1) == 0 ) then
-                           global_crow(itmp1,1) = itmp1
-                           ncrow(itmp1) = ncrow(itmp1)+1
-                           global_crow(itmp1,max_nrow) = ncpus+1
-                        else
-                           if ( global_crow(itmp1,1) /= itmp1 ) then
-                              global_crow(itmp1,ncrow(itmp1)+1) = itmp1
-                              ncrow(itmp1) = ncrow(itmp1) + 1
-                              global_crow(itmp1,max_nrow) = ncpus+1
-                           endif
-                        endif
-
-                     endif
-                  end do
-               end do
-
-            endif ! global_crow
-         end do ! i
-
-
-            isum1 = 0
-            do i = 0,ncpus-1
-               if ( ncrow(i) == 0 ) then
-                  isum1 = isum1 + 1
-               else
-                  print('(17(i5,1x))'),i,ncrow(i),global_crow(i,:)
-               endif
-            end do
-
-            print*
-            print*,'Ratio (#CrossRank / #nCPUs)', real(isum1)/ncpus
-            print*
-            print*
-
-         endif
-
-         call mpi_barrier(dminfo%comm,mpi_ierr)
-
-         ! Send back cRow info to each rank ---
-         if ( rank == 0 ) then
-            do i = 1,ncpus-1
-               call mpi_send(global_crow(i,:),max_nrow,mpi_int,i,i,dminfo%comm,mpi_ierr)
-            end do
-            crow(:) = global_crow(0,:)
-         else
-            call mpi_recv(crow(:),max_nrow,mpi_int,0,rank,dminfo%comm,mpi_status,mpi_ierr)
-         endif
-
-         if ( rank == 0 ) then
-            do i = 1,ncpus-1
-               call mpi_send(ncrow(i),1,mpi_int,i,i,dminfo%comm,mpi_ierr)
-            end do
-            nrow = ncrow(0)
-         else
-            call mpi_recv(nrow,1,mpi_int,0,rank,dminfo%comm,mpi_status,mpi_ierr)
-         endif
-       
-         call mpi_barrier(dminfo%comm,mpi_ierr)
-
-
-         ! Reordering for the first rank
-         do j = 2,nrow
-            if ( crow(j) == rank ) then
-               itmp1 = crow(j)
-               crow(j) = crow(1)
-               crow(1) = itmp1
-            endif
-         end do
-
-   
-         ! Defining sending local ranks (srank = 0 ) for global summation
-         srank = 1
-         if ( nrow == 0 ) then
-            srank = 0
-         else
-            if ( crow(1) /= rank ) then
-               srank = 0 
-            endif
-         endif
-
-
-         ! Setup array indices for summation ---
-         CGvec_r0(:) = ncpus+1
-         CGvec_r0(1:nCells) = rank
-
-         CGvec_r1(:) = 0.0_RKIND
-         do iCell = 1,nCells
-            CGvec_r1(iCell) = iCell
-         end do
-
-         call mpas_dmpar_exch_group_create(domain, iterGroupName)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
-         call mpas_threading_barrier()
-         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-
-    
-         if ( nrow /= 0 ) then 
-
-            allocate(sumLoc(5,nrow))
-            allocate(iatmp1(nrow,5))
-            allocate(sumRank(nrow,5))
-            sumLoc(:,:) = 0
-            iatmp1(:,:) = 0
-            sumRank(:,:) = ncpus+1
-
-            do i = 2,nrow
-               isum1 = 0
-               do iCell = nCellsArray(1)+1,nCellsArray(4)
-                  if ( int(CGvec_r0(iCell)) == crow(i) ) then
-                     isum1 = isum1 + 1
-                     sumLoc(isum1,i) = iCell
-                     iatmp1(i,isum1) = CGvec_r1(iCell)
-                     sumRank(i,isum1) = rank
-                     if ( isum1 == 5 ) exit
-                  endif
-               end do
-            end do ! i
-
-            if ( crow(1) /= rank ) then
-               isum2 = 0
-               do iCell = nCellsArray(1)+1,nCellsArray(4)
-                  if ( int(CGvec_r0(iCell)) == crow(1) ) then
-                     isum2 = isum2 + 1
-                     sumLoc(isum2,1) = iCell
-                     iatmp1(1,isum2) = CGvec_r1(iCell)
-                     sumRank(1,isum2) = rank
-                     if ( isum2 == 5 ) exit
-                  endif
-               end do
-            elseif ( crow(1) == rank ) then
-               do i = 1,5
-                  sumLoc(i,1) = i
-                  iatmp1(1,i) = i
-                  sumRank(1,i) = rank
-               end do
-            endif 
-
-!           do i = 1,nrow
-!           print*, rank,sumLoc(:,i)
+!   subroutine my_allreduce_init(domain)  !{{{
+!      implicit none
+!      type (domain_type), intent(inout) :: domain
+!      type (dm_info) :: dminfo
+!      type (block_type), pointer :: block
+!
+!      type (mpas_pool_type), pointer :: statePool
+!      type (mpas_pool_type), pointer :: tracersPool
+!      type (mpas_pool_type), pointer :: meshPool
+!      type (mpas_pool_type), pointer :: verticalMeshPool
+!      type (mpas_pool_type), pointer :: diagnosticsPool
+!      type (mpas_pool_type), pointer :: tendPool
+!      type (mpas_pool_type), pointer :: tracersTendPool
+!
+!      integer :: nCells, nEdges
+!      integer, pointer :: nCellsPtr, nEdgesPtr
+!      integer, dimension(:), pointer :: nCellsArray, nEdgesArray
+! 
+!      ! Mesh array pointers
+!      integer, dimension(:)  , pointer :: maxLevelCell, maxLevelEdgeTop, nEdgesOnEdge, nEdgesOnCell
+!      integer, dimension(:,:), pointer :: cellsOnEdge, edgeMask, edgesOnEdge
+!      integer, dimension(:,:), pointer :: edgesOnCell, edgeSignOnCell
+!      real (kind=RKIND), dimension(:)  , pointer :: dcEdge,bottomDepth
+!      real (kind=RKIND), dimension(:)  , pointer :: dvEdge,areaCell
+!      real (kind=RKIND), dimension(:), pointer :: CGvec_r0,CGvec_r1
+!      real (kind=RKIND) :: tmp1,tmp2,sum1,sum2
+!      integer :: i,j,k,mpi_ierr,mpi_ireq,mpi_jreq,mpi_kreq,mpi_nreq,rank,ncpus
+!      integer :: i1,i2,j1,j2,j3,j4,itmp1,itmp2,is
+!      integer :: nCells2,nCells2_n,isum1,isum2,iCell,ncmax,max_nrow
+!      integer,dimension(:,:),allocatable :: global_crow,iatmp1,iatmp2,iatmp3,iatmp4
+!      !integer,dimension(:),allocatable :: crow,ncrow,ibtmp1,ibtmp2
+!      integer,dimension(:),allocatable :: ncrow,ibtmp1,ibtmp2
+!      real (kind=RKIND), dimension(5) :: reduce,reduce_check,reduce_global,reduce_global_check
+!      include 'mpif.h'
+!      integer :: mpi_status(mpi_status_size)
+!      integer :: rankRepId
+!
+!      dminfo = domain % dminfo
+!      rank = dminfo % my_proc_id
+!      ncpus = dminfo % nprocs
+!
+!      max_nrow = 15
+!
+!      block => domain % blocklist
+!      do while (associated(block))
+!
+!
+!         call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
+!         call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
+!   
+!         call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+!         call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+!         call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+!         call mpas_pool_get_subpool(block % structs, 'state', statePool)
+!         call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+!         call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+!   
+!         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
+!         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
+!   
+!         nCells = nCellsArray( 1 )
+!         nEdges = nEdgesArray( 2 )
+!    
+!         nCells2 = nCellsArray(2)
+!         nCells2_n = nCellsArray(2) - nCellsArray(1)
+!   
+!         allocate(crow(1:max_nrow))
+!         crow(:) = ncpus+1
+!   
+!         if ( rank == 0 ) then
+!            allocate(global_crow(0:ncpus-1,1:max_nrow))
+!            allocate(ncrow(0:ncpus-1))
+!   
+!            global_crow(:,:) = ncpus+1
+!         end if
+!   
+!         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r0', CGvec_r0)
+!         call mpas_pool_get_array(diagnosticsPool, 'CGvec_r1', CGvec_r1)
+!
+!         CGvec_r0(:) = ncpus+1
+!         CGvec_r0(1:nCells) = rank
+!   
+!         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+!         call mpas_threading_barrier()
+!         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!           
+!         CALL PIKSRT(nCells2_n,CGvec_r0(nCellsArray(1)+1:nCellsArray(2)))
+!   
+!         crow(:) = ncpus+1
+!         crow(1) = rank
+!         isum1 = 2
+!         crow(isum1) = int(CGvec_r0(nCellsArray(1)+1))
+!         do iCell = nCellsArray(1)+2,nCellsArray(2)
+!            if ( CGvec_r0(iCell-1) /= CGvec_r0(iCell) ) then
+!               isum1 = isum1 + 1
+!               crow(isum1) = int(CGvec_r0(iCell))
+!            endif
+!         end do
+!
+!         !----------------------------------------------------------------------
+!
+!         ! Checking boundary cells ---
+!         CGvec_r0(:) = ncpus+1 
+!
+!         do iCell = 1,nCells
+!            CGvec_r0(iCell) = iCell
+!            CGvec_r1(iCell) = rank
+!         end do
+!
+!         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+!         call mpas_threading_barrier()
+!         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!
+!         do i = 1,isum1
+!            isum2 = 0
+!
+!            do iCell = nCellsArray(1)+1,nCellsArray(4)
+!               if ( int(CGvec_r1(iCell)) == crow(i) ) then
+!                  isum2 = isum2 + 1
+!               endif
+!            end do
+!
+!            if ( isum2 < 5 .and. isum2 > 0 ) then
+!               crow(max_nrow) = crow(i)
+!            endif
+!
+!         end do
+!
+!         !----------------------------------------------------------------------
+!    
+!         ! Send crow info ---
+!         if ( rank > 0 ) then
+!            call mpi_send(crow,max_nrow,mpi_int,0,rank,dminfo%comm,mpi_ierr)
+!         else
+!            do i = 1,ncpus-1
+!               call mpi_recv(global_crow(i,:),max_nrow,mpi_int,i,i,dminfo%comm,mpi_status,mpi_ierr)
+!            end do
+!               global_crow(0,:) = crow(:)
+!         endif
+!
+!   
+!         ! Send ncrow info ---
+!         if ( rank > 0 ) then
+!            call mpi_send(isum1,1,mpi_int,0,rank,dminfo%comm,mpi_ierr)
+!         else
+!            do i = 1,ncpus-1
+!               call mpi_recv(ncrow(i),1,mpi_int,i,i,dminfo%comm,mpi_status,mpi_ierr)
+!            end do
+!
+!            ncrow(0) = isum1
+!
+!            ncmax = maxval(ncrow)
+!            print*
+!            print*,'Max #Connection', ncmax
+!            print*
+!
+!         endif
+!
+!
+!         ! Set the ranks that have less than 5 arrays ---
+!         if ( rank == 0 ) then
+!            do i = 0,ncpus-1
+!               if ( global_crow(i,max_nrow) < ncpus+1 ) then
+! 
+!                  itmp1 = global_crow(i,max_nrow)
+!
+!                  global_crow(i,1:max_nrow-1) = ncpus+1
+!                  global_crow(i,1) = i
+!                  ncrow(i) = 1
+!
+!                  global_crow(itmp1,1:max_nrow-1) = ncpus+1
+!                  global_crow(itmp1,1) = itmp1
+!                  ncrow(itmp1) = 1
+!
+!               endif
+!            end do
+!
+!
+!         ! Remove the same rank number ---
+!         do i = ncmax,0,-1
+!            do i1 = 0,ncpus-2
+!               if ( ncrow(i1) == i ) then
+!
+!                  do j1 = 1,ncrow(i1)
+!      
+!                     ! Up - down sweeps
+!                     do i2 = i1+1,ncpus-1
+!                     do j2 = 1,ncrow(i2)
+!      
+!                        if ( global_crow(i2,j2) == global_crow(i1,j1) ) then
+!                           itmp1 = global_crow(i2,ncrow(i2))
+!                           global_crow(i2,j2) = itmp1
+!                           global_crow(i2,ncrow(i2)) = ncpus+1
+!                           ncrow(i2) = ncrow(i2) - 1
+!                        endif
+!      
+!                     end do ! j2
+!                     end do ! i2
+!
+!                     ! Down - up sweeps
+!                     do i2 = i1-1,0,-1
+!                     do j2 = 1,ncrow(i2)
+!      
+!                        if ( global_crow(i2,j2) == global_crow(i1,j1) ) then
+!                           itmp1 = global_crow(i2,ncrow(i2))
+!                           global_crow(i2,j2) = itmp1
+!                           global_crow(i2,ncrow(i2)) = ncpus+1
+!                           ncrow(i2) = ncrow(i2) - 1
+!                        endif
+!      
+!                     end do ! j2
+!                     end do ! i2
+!      
+!
+!                  end do ! j1
+!
+!               endif
+!            end do ! i1
+!         end do ! i
+!
+!
+!         ! Remove ranks that have less than 5 arrays
+!         do i = 0,ncpus-1
+!            if ( global_crow(i,max_nrow) < ncpus+1 ) then
+!
+!               itmp1 = global_crow(i,max_nrow)
+!
+!               do i1 = 0,ncpus-1
+!                  do j1 = 1,ncrow(i1)
+!                     if ( global_crow(i1,j1) == itmp1 ) then
+!                        itmp2 = global_crow(i1,ncrow(i1))
+!
+!                        if ( j1 == ncrow(i1) ) then
+!                           global_crow(i1,j1) = ncpus+1
+!                           global_crow(i1,max_nrow) = ncpus+1
+!                        else
+!                           global_crow(i1,j1) = itmp2
+!                           global_crow(i1,ncrow(i1)) = ncpus+1
+!                           global_crow(i1,max_nrow) = ncpus+1
+!                        endif
+!                           ncrow(i1) = ncrow(i1)-1
+!
+!                        if ( ncrow(itmp1) == 0 ) then
+!                           global_crow(itmp1,1) = itmp1
+!                           ncrow(itmp1) = ncrow(itmp1)+1
+!                           global_crow(itmp1,max_nrow) = ncpus+1
+!                        else
+!                           if ( global_crow(itmp1,1) /= itmp1 ) then
+!                              global_crow(itmp1,ncrow(itmp1)+1) = itmp1
+!                              ncrow(itmp1) = ncrow(itmp1) + 1
+!                              global_crow(itmp1,max_nrow) = ncpus+1
+!                           endif
+!                        endif
+!
+!                     endif
+!                  end do
+!               end do
+!
+!            endif ! global_crow
+!         end do ! i
+!
+!
+!            isum1 = 0
+!            do i = 0,ncpus-1
+!               if ( ncrow(i) == 0 ) then
+!                  isum1 = isum1 + 1
+!               else
+!                  print('(17(i5,1x))'),i,ncrow(i),global_crow(i,:)
+!               endif
+!            end do
+!
+!            print*
+!            print*,'Ratio (#CrossRank / #nCPUs)', real(isum1)/ncpus
+!            print*
+!            print*
+!
+!         endif
+!
+!         call mpi_barrier(dminfo%comm,mpi_ierr)
+!
+!         ! Send back cRow info to each rank ---
+!         if ( rank == 0 ) then
+!            do i = 1,ncpus-1
+!               call mpi_send(global_crow(i,:),max_nrow,mpi_int,i,i,dminfo%comm,mpi_ierr)
+!            end do
+!            crow(:) = global_crow(0,:)
+!         else
+!            call mpi_recv(crow(:),max_nrow,mpi_int,0,rank,dminfo%comm,mpi_status,mpi_ierr)
+!         endif
+!
+!         if ( rank == 0 ) then
+!            do i = 1,ncpus-1
+!               call mpi_send(ncrow(i),1,mpi_int,i,i,dminfo%comm,mpi_ierr)
+!            end do
+!            nrow = ncrow(0)
+!         else
+!            call mpi_recv(nrow,1,mpi_int,0,rank,dminfo%comm,mpi_status,mpi_ierr)
+!         endif
+!       
+!         call mpi_barrier(dminfo%comm,mpi_ierr)
+!
+!
+!         ! Reordering for the first rank
+!         do j = 2,nrow
+!            if ( crow(j) == rank ) then
+!               itmp1 = crow(j)
+!               crow(j) = crow(1)
+!               crow(1) = itmp1
+!            endif
+!         end do
+!
+!   
+!         ! Defining sending local ranks (srank = 0 ) for global summation
+!         srank = 1
+!         if ( nrow == 0 ) then
+!            srank = 0
+!         else
+!            if ( crow(1) /= rank ) then
+!               srank = 0 
+!            endif
+!         endif
+!
+!
+!         ! Setup array indices for summation ---
+!         CGvec_r0(:) = ncpus+1
+!         CGvec_r0(1:nCells) = rank
+!
+!         CGvec_r1(:) = 0.0_RKIND
+!         do iCell = 1,nCells
+!            CGvec_r1(iCell) = iCell
+!         end do
+!
+!         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+!         call mpas_threading_barrier()
+!         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!
+!    
+!         if ( nrow /= 0 ) then 
+!
+!            allocate(sumLoc(5,nrow))
+!            allocate(iatmp1(nrow,5))
+!            allocate(sumRank(nrow,5))
+!            sumLoc(:,:) = 0
+!            iatmp1(:,:) = 0
+!            sumRank(:,:) = ncpus+1
+!
+!            do i = 2,nrow
+!               isum1 = 0
+!               do iCell = nCellsArray(1)+1,nCellsArray(4)
+!                  if ( int(CGvec_r0(iCell)) == crow(i) ) then
+!                     isum1 = isum1 + 1
+!                     sumLoc(isum1,i) = iCell
+!                     iatmp1(i,isum1) = CGvec_r1(iCell)
+!                     sumRank(i,isum1) = rank
+!                     if ( isum1 == 5 ) exit
+!                  endif
+!               end do
+!            end do ! i
+!
+!            if ( crow(1) /= rank ) then
+!               isum2 = 0
+!               do iCell = nCellsArray(1)+1,nCellsArray(4)
+!                  if ( int(CGvec_r0(iCell)) == crow(1) ) then
+!                     isum2 = isum2 + 1
+!                     sumLoc(isum2,1) = iCell
+!                     iatmp1(1,isum2) = CGvec_r1(iCell)
+!                     sumRank(1,isum2) = rank
+!                     if ( isum2 == 5 ) exit
+!                  endif
+!               end do
+!            elseif ( crow(1) == rank ) then
+!               do i = 1,5
+!                  sumLoc(i,1) = i
+!                  iatmp1(1,i) = i
+!                  sumRank(1,i) = rank
+!               end do
+!            endif 
+!
+!!           do i = 1,nrow
+!!           print*, rank,sumLoc(:,i)
+!!           end do
+!
+!            ! Send back array info to local ranks 
+!            do i = 2,nrow
+!               call mpi_send(iatmp1(i,:),5,mpi_int,crow(i),0,dminfo%comm,mpi_ierr)
+!               call mpi_send(sumRank(i,:),5,mpi_int,crow(i),1,dminfo%comm,mpi_ierr)
+!            end do
+!            if ( crow(1) /= rank ) then
+!               call mpi_send(iatmp1(1,:),5,mpi_int,crow(1),0,dminfo%comm,mpi_ierr)
+!               call mpi_send(sumRank(1,:),5,mpi_int,crow(1),1,dminfo%comm,mpi_ierr)
+!            endif
+!
+!            deallocate(iatmp1)
+! 
+!         endif ! nrow
+!!           call mpi_barrier(dminfo%comm,mpi_ierr)
+!!           stop
+!         
+!         if ( srank == 0 ) then
+!            allocate(putLoc(5))
+!            allocate(putRank(5))
+!            call mpi_recv(putLoc,5,mpi_int,MPI_ANY_SOURCE,0,dminfo%comm,mpi_status,mpi_ierr)
+!            call mpi_recv(putRank,5,mpi_int,MPI_ANY_SOURCE,1,dminfo%comm,mpi_status,mpi_ierr)
+!         endif
+!
+!         call mpi_barrier(dminfo%comm,mpi_ierr)
+!
+!         ! Defining scatter locations ---
+!         CGvec_r0(:) = ncpus+1
+!         CGvec_r1(:) = 0.0_RKIND
+!
+!         CGvec_r0(1:nCells) = rank
+!         do iCell = 1,nCells
+!            CGvec_r1(iCell) = iCell
+!         end do
+!
+!         call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+!         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
+!         call mpas_threading_barrier()
+!         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!
+!
+!         if ( srank == 0 ) then 
+!
+!           allocate(ibtmp1(5))
+!           allocate(ibtmp2(5))
+!           allocate(getLoc(5))
+!           ibtmp1(:) = 0
+!           ibtmp2(:) = ncpus+1
+!
+!           isum1 = 0
+!           do iCell = nCellsArray(1)+1,nCellsArray(4)
+!              if ( int(CGvec_r0(iCell)) == putRank(1) ) then
+!                 isum1 = isum1 + 1
+!                 ibtmp1(isum1) = CGvec_r1(iCell)
+!                 ibtmp2(isum1) = rank
+!                 getLoc(isum1) = iCell
+!                 if ( isum1 == 5 ) exit
+!              endif
 !           end do
-
-            ! Send back array info to local ranks 
-            do i = 2,nrow
-               call mpi_send(iatmp1(i,:),5,mpi_int,crow(i),0,dminfo%comm,mpi_ierr)
-               call mpi_send(sumRank(i,:),5,mpi_int,crow(i),1,dminfo%comm,mpi_ierr)
-            end do
-            if ( crow(1) /= rank ) then
-               call mpi_send(iatmp1(1,:),5,mpi_int,crow(1),0,dminfo%comm,mpi_ierr)
-               call mpi_send(sumRank(1,:),5,mpi_int,crow(1),1,dminfo%comm,mpi_ierr)
-            endif
-
-            deallocate(iatmp1)
- 
-         endif ! nrow
-!           call mpi_barrier(dminfo%comm,mpi_ierr)
-!           stop
-         
-         if ( srank == 0 ) then
-            allocate(putLoc(5))
-            allocate(putRank(5))
-            call mpi_recv(putLoc,5,mpi_int,MPI_ANY_SOURCE,0,dminfo%comm,mpi_status,mpi_ierr)
-            call mpi_recv(putRank,5,mpi_int,MPI_ANY_SOURCE,1,dminfo%comm,mpi_status,mpi_ierr)
-         endif
-
-         call mpi_barrier(dminfo%comm,mpi_ierr)
-
-         ! Defining scatter locations ---
-         CGvec_r0(:) = ncpus+1
-         CGvec_r1(:) = 0.0_RKIND
-
-         CGvec_r0(1:nCells) = rank
-         do iCell = 1,nCells
-            CGvec_r1(iCell) = iCell
-         end do
-
-         call mpas_dmpar_exch_group_create(domain, iterGroupName)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-         call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r1', 1)
-         call mpas_threading_barrier()
-         call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-         call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-
-
-         if ( srank == 0 ) then 
-
-           allocate(ibtmp1(5))
-           allocate(ibtmp2(5))
-           allocate(getLoc(5))
-           ibtmp1(:) = 0
-           ibtmp2(:) = ncpus+1
-
-           isum1 = 0
-           do iCell = nCellsArray(1)+1,nCellsArray(4)
-              if ( int(CGvec_r0(iCell)) == putRank(1) ) then
-                 isum1 = isum1 + 1
-                 ibtmp1(isum1) = CGvec_r1(iCell)
-                 ibtmp2(isum1) = rank
-                 getLoc(isum1) = iCell
-                 if ( isum1 == 5 ) exit
-              endif
-           end do
-
-           if ( isum1 < 5 ) then
-              print*,'less than 5', rank,putRank(1),isum1
-           endif 
-
-           ! Send back array info to local ranks 
-           call mpi_send(ibtmp1(:),5,mpi_int,putRank(1),0,dminfo%comm,mpi_ierr)
-           call mpi_send(ibtmp2(:),5,mpi_int,putRank(1),1,dminfo%comm,mpi_ierr)
-           call mpi_send(getLoc(:),5,mpi_int,putRank(1),2,dminfo%comm,mpi_ierr)
-
-
-           deallocate(ibtmp1,ibtmp2)
-
-         endif ! srank
-
-         
-        if ( nrow /= 0 ) then
-           allocate(iatmp1(5,nrow))
-           allocate(iatmp2(5,nrow))
-           allocate(scatRank(5,nrow))
-     
-           if ( nrow > 1 ) then
-              do i = 2,nrow
-                 call mpi_recv(  iatmp1(:,i),5,mpi_int,crow(i),0,dminfo%comm,mpi_status,mpi_ierr)
-                 call mpi_recv(scatRank(:,i),5,mpi_int,crow(i),1,dminfo%comm,mpi_status,mpi_ierr)
-                 call mpi_recv(  iatmp2(:,i),5,mpi_int,crow(i),2,dminfo%comm,mpi_status,mpi_ierr)
-              end do
-           endif
-   
-           if ( crow(1) /= rank ) then
-              call mpi_recv(  iatmp1(:,1),5,mpi_int,crow(1),0,dminfo%comm,mpi_status,mpi_ierr)
-              call mpi_recv(scatRank(:,1),5,mpi_int,crow(1),1,dminfo%comm,mpi_status,mpi_ierr)
-              call mpi_recv(  iatmp2(:,1),5,mpi_int,crow(1),2,dminfo%comm,mpi_status,mpi_ierr)
-           else
-              do i = 1,5
-                 iatmp1(i,1) = i
-                 scatRank(i,1) = rank
-                 iatmp2(i,1) = i
-              end do
-           end if
-              
-           allocate(scatLoc(5,nrow))
-           allocate(iatmp3(5,nrow))
-           allocate(iatmp4(5,nrow))
-
-           scatLoc(:,:) = 0
-           iatmp4(:,:) = 0
-
-           scatLoc(:,:) = iatmp1(:,:)
-            iatmp3(:,:) = iatmp2(:,:)
-
-
-         if ( srank == 1 ) then
-            srow = 2
-         else
-            srow = 1
-         endif
-
-
-         ! Shuffling to make the same index for different cores
-         ! Horizontal direction  
-         do i1 = 1,5
-         do j1 = srow,nrow-1
-            do j2 = j1+1,nrow
-               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
-                  iatmp4(i1,j1) = 1
-                  iatmp4(i1,j2) = 1
-               endif
-            end do
-         end do
-         end do
-
-           do j1 = srow,nrow-1
-              i1 = 1
-8407          continue
-           do while (i1 <= 5)
-
-              do j2 = j1+1,nrow
-              do i2 = 1,5
-
-                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
-         
-                    if ( i1 /= i2 ) then
-
-                      if ( iatmp4(i1,j2) == 0 ) then
-                         itmp1 = scatLoc(i1,j2)
-                         scatLoc(i1,j2) = scatLoc(i2,j2)
-                         scatLoc(i2,j2) = itmp1
-  
-                         iatmp4(i1,j1) = 1
-                         iatmp4(i1,j2) = 1
-  
-                         itmp1 =  iatmp3(i1,j2)
-                         iatmp3(i1,j2) = iatmp3(i2,j2) 
-                         iatmp3(i2,j2) = itmp1
-                      else if ( iatmp4(i2,j1) == 0 ) then
-                         itmp1 = scatLoc(i2,j1)
-                         scatLoc(i2,j1) = scatLoc(i1,j1)
-                         scatLoc(i1,j1) = itmp1
-  
-                         iatmp4(i2,j2) = 1
-                         iatmp4(i2,j1) = 1
-  
-                         itmp1 =  iatmp3(i2,j1)
-                         iatmp3(i2,j1) = iatmp3(i1,j1) 
-                         iatmp3(i1,j1) = itmp1
-                      else
-                         do i = 1,5
-                            if ( iatmp4(i,j1) == 0 .and. iatmp4(i,j2) == 0 ) then
-                               itmp1 = scatLoc(i,j1)
-                               scatLoc(i,j1) = scatLoc(i1,j1)
-                               scatLoc(i1,j1) = itmp1
-        
-                               iatmp4(i,j1) = 1
-                               iatmp4(i1,j1) = 0
-
-                               itmp1 =  iatmp3(i,j1)
-                               iatmp3(i,j1) = iatmp3(i1,j1) 
-                               iatmp3(i1,j1) = itmp1
-                               !----
-                               itmp1 = scatLoc(i,j2)
-                               scatLoc(i,j2) = scatLoc(i2,j2)
-                               scatLoc(i2,j2) = itmp1
-        
-                               iatmp4(i,j2) = 1
-                               iatmp4(i2,j2) = 0
-
-                               itmp1 =  iatmp3(i,j2)
-                               iatmp3(i,j2) = iatmp3(i2,j2) 
-                               iatmp3(i2,j2) = itmp1
-                               exit 
-                            endif
-                         end do
-
-
-                         if ( i >= 5 ) then
-                            do j = srow,nrow
-                               if ( scatLoc(i1,j) == scatLoc(i1,j2) ) then
-                                  j4 = j
-                               endif
-
-                               if ( scatLoc(i2,j) == scatLoc(i2,j1) ) then
-                                  j3 = j
-                               endif
-                            end do                              
-
-                            if ( iatmp4(i2,j4) == 0 ) then
-                               itmp1 = scatLoc(i2,j4)
-                               itmp2 = scatLoc(i2,j2)
-                               scatLoc(i2,j4) = scatLoc(i1,j4)
-                               scatLoc(i2,j2) = scatLoc(i1,j2)
-                               scatLoc(i1,j4) = itmp1
-                               scatLoc(i1,j2) = itmp2
-
-                               itmp1 = iatmp3(i2,j4)
-                               itmp2 = iatmp3(i2,j2)
-                               iatmp3(i2,j4) = iatmp3(i1,j4)
-                               iatmp3(i2,j2) = iatmp3(i1,j2)
-                               iatmp3(i1,j4) = itmp1
-                               iatmp3(i1,j2) = itmp2
-
-                               itmp1 = iatmp4(i2,j4)
-                               itmp2 = iatmp4(i2,j2)
-                               iatmp4(i2,j4) = iatmp4(i1,j4)
-                               iatmp4(i2,j2) = iatmp4(i1,j2)
-                               iatmp4(i1,j4) = itmp1
-                               iatmp4(i1,j2) = itmp2
-
-                            else if ( iatmp4(i1,j3) == 0 ) then
-                               itmp1 = scatLoc(i1,j3)
-                               itmp2 = scatLoc(i1,j1)
-                               scatLoc(i1,j3) = scatLoc(i2,j3)
-                               scatLoc(i1,j1) = scatLoc(i2,j1)
-                               scatLoc(i2,j3) = itmp1
-                               scatLoc(i2,j1) = itmp2
-
-                               itmp1 = iatmp3(i1,j3)
-                               itmp2 = iatmp3(i1,j1)
-                               iatmp3(i1,j3) = iatmp3(i2,j3)
-                               iatmp3(i1,j1) = iatmp3(i2,j1)
-                               iatmp3(i2,j3) = itmp1
-                               iatmp3(i2,j1) = itmp2
-
-                               itmp1 = iatmp4(i1,j3)
-                               itmp2 = iatmp4(i1,j1)
-                               iatmp4(i1,j3) = iatmp4(i2,j3)
-                               iatmp4(i1,j1) = iatmp4(i2,j1)
-                               iatmp4(i2,j3) = itmp1
-                               iatmp4(i2,j1) = itmp2
-                            else
-                               print*, "No space!!!",rank
-                            endif
-
-                         endif ! i >= 5
-
-                         exit
-
-                      end if ! iatmp4
-
-                    goto 8407
-
-                    else 
-
-                         iatmp4(i1,j1) = 1
-                         iatmp4(i2,j2) = 1
-
-                    endif ! i1/=i2
-
-
-
-                 end if
-                
-              end do
-              end do
-              i1 = i1 + 1
-           end do
-           end do
-
-!------------------------------------------------------------------------------------------
-
-           ! Vertical direction  
-           iatmp4(:,:) = 0
-
-         do i1 = 1,5
-         do j1 = srow,nrow-1
-            do j2 = j1+1,nrow
-               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
-                  iatmp4(i1,j1) = 1
-                  iatmp4(i1,j2) = 1
-               endif
-            end do
-         end do
-         end do
-
-           do i1 = 1,4
-              j1 = srow 
-8408          continue
-           do while (j1 <= nrow)
-
-              do i2 = i1+1,5
-              do j2 = srow,nrow
-                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
-
-                   if ( i1/=i2) then
-                      if ( iatmp4(i1,j2) == 0 ) then
-                         itmp1 = scatLoc(i1,j2)
-                         scatLoc(i1,j2) = scatLoc(i2,j2)
-                         scatLoc(i2,j2) = itmp1
-  
-                         iatmp4(i1,j1) = 1
-                         iatmp4(i1,j2) = 1
-  
-                         itmp1 =  iatmp3(i1,j2)
-                         iatmp3(i1,j2) = iatmp3(i2,j2) 
-                         iatmp3(i2,j2) = itmp1
-                      else if ( iatmp4(i2,j1) == 0 ) then
-                         itmp1 = scatLoc(i2,j1)
-                         scatLoc(i2,j1) = scatLoc(i1,j1)
-                         scatLoc(i1,j1) = itmp1
-  
-                         iatmp4(i2,j2) = 1
-                         iatmp4(i2,j1) = 1
-  
-                         itmp1 =  iatmp3(i2,j1)
-                         iatmp3(i2,j1) = iatmp3(i1,j1) 
-                         iatmp3(i1,j1) = itmp1
-                      else
-                         do i = 1,5
-                            if ( iatmp4(i,j1) == 0 .and. iatmp4(i,j2) == 0 ) then
-                               itmp1 = scatLoc(i,j1)
-                               scatLoc(i,j1) = scatLoc(i1,j1)
-                               scatLoc(i1,j1) = itmp1
-        
-                               iatmp4(i,j1) = 1
-                               iatmp4(i1,j1) = 0
-
-                               itmp1 =  iatmp3(i,j1)
-                               iatmp3(i,j1) = iatmp3(i1,j1) 
-                               iatmp3(i1,j1) = itmp1
-                               !----
-                               itmp1 = scatLoc(i,j2)
-                               scatLoc(i,j2) = scatLoc(i2,j2)
-                               scatLoc(i2,j2) = itmp1
-        
-                               iatmp4(i,j2) = 1
-                               iatmp4(i2,j2) = 0
-
-                               itmp1 =  iatmp3(i,j2)
-                               iatmp3(i,j2) = iatmp3(i2,j2) 
-                               iatmp3(i2,j2) = itmp1
-                               exit 
-                            endif
-                         end do
-
-
-                         if ( i >= 5 ) then
-                            do j = srow,nrow
-                               if ( scatLoc(i1,j) == scatLoc(i1,j2) ) then
-                                  j4 = j
-                               endif
-
-                               if ( scatLoc(i2,j) == scatLoc(i2,j1) ) then
-                                  j3 = j
-                               endif
-                            end do                              
-
-                            if ( iatmp4(i2,j4) == 0 ) then
-                               itmp1 = scatLoc(i2,j4)
-                               itmp2 = scatLoc(i2,j2)
-                               scatLoc(i2,j4) = scatLoc(i1,j4)
-                               scatLoc(i2,j2) = scatLoc(i1,j2)
-                               scatLoc(i1,j4) = itmp1
-                               scatLoc(i1,j2) = itmp2
-
-                               itmp1 = iatmp3(i2,j4)
-                               itmp2 = iatmp3(i2,j2)
-                               iatmp3(i2,j4) = iatmp3(i1,j4)
-                               iatmp3(i2,j2) = iatmp3(i1,j2)
-                               iatmp3(i1,j4) = itmp1
-                               iatmp3(i1,j2) = itmp2
-
-                            else if ( iatmp4(i1,j3) == 0 ) then
-                               itmp1 = scatLoc(i1,j3)
-                               itmp2 = scatLoc(i1,j1)
-                               scatLoc(i1,j3) = scatLoc(i2,j3)
-                               scatLoc(i1,j1) = scatLoc(i2,j1)
-                               scatLoc(i2,j3) = itmp1
-                               scatLoc(i2,j1) = itmp2
-
-                               itmp1 = iatmp3(i1,j3)
-                               itmp2 = iatmp3(i1,j1)
-                               iatmp3(i1,j3) = iatmp3(i2,j3)
-                               iatmp3(i1,j1) = iatmp3(i2,j1)
-                               iatmp3(i2,j3) = itmp1
-                               iatmp3(i2,j1) = itmp2
-                            else
-                               print*, "No space!!!",rank
-                            endif
-
-                         endif ! i >= 5
-
-                      exit
-
-                      end if ! iatmp4
-
-                    goto 8408
-
-                    else
-
-                         iatmp4(i1,j1) = 1
-                         iatmp4(i2,j2) = 1
-
-                    endif ! i1/=i2
-
-
-                 end if
-              end do
-              end do
-              j1 = j1 + 1
-           end do
-           end do
-
-!------------------------------------------------------------------------------------------
-
-           ! Inverse horizontal direction  
-           iatmp4(:,:) = 0
-
-         do i1 = 1,5
-         do j1 = srow,nrow-1
-            do j2 = j1+1,nrow
-               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
-                  iatmp4(i1,j1) = 1
-                  iatmp4(i1,j2) = 1
-               endif
-            end do
-         end do
-         end do
-
-           do j1 = nrow,srow+1,-1
-              i1 = 5
-8409          continue
-           do while (i1 >= 1)
-
-              do j2 = nrow-1,srow,-1
-              do i2 = 5,1,-1
-                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
-
-
-                   if ( i1 /= i2 ) then
-
-                      if ( iatmp4(i1,j2) == 0 ) then
-                         itmp1 = scatLoc(i1,j2)
-                         scatLoc(i1,j2) = scatLoc(i2,j2)
-                         scatLoc(i2,j2) = itmp1
-  
-                         iatmp4(i1,j1) = 1
-                         iatmp4(i1,j2) = 1
-  
-                         itmp1 =  iatmp3(i1,j2)
-                         iatmp3(i1,j2) = iatmp3(i2,j2) 
-                         iatmp3(i2,j2) = itmp1
-                      else if ( iatmp4(i2,j1) == 0 ) then
-                         itmp1 = scatLoc(i2,j1)
-                         scatLoc(i2,j1) = scatLoc(i1,j1)
-                         scatLoc(i1,j1) = itmp1
-  
-                         iatmp4(i2,j2) = 1
-                         iatmp4(i2,j1) = 1
-  
-                         itmp1 =  iatmp3(i2,j1)
-                         iatmp3(i2,j1) = iatmp3(i1,j1) 
-                         iatmp3(i1,j1) = itmp1
-                      else
-                         do i = 1,5
-                            if ( iatmp4(i,j1) == 0 .and. iatmp4(i,j2) == 0 ) then
-                               itmp1 = scatLoc(i,j1)
-                               scatLoc(i,j1) = scatLoc(i1,j1)
-                               scatLoc(i1,j1) = itmp1
-        
-                               iatmp4(i,j1) = 1
-                               iatmp4(i1,j1) = 0
-
-                               itmp1 =  iatmp3(i,j1)
-                               iatmp3(i,j1) = iatmp3(i1,j1) 
-                               iatmp3(i1,j1) = itmp1
-                               !----
-                               itmp1 = scatLoc(i,j2)
-                               scatLoc(i,j2) = scatLoc(i2,j2)
-                               scatLoc(i2,j2) = itmp1
-        
-                               iatmp4(i,j2) = 1
-                               iatmp4(i2,j2) = 0
-
-                               itmp1 =  iatmp3(i,j2)
-                               iatmp3(i,j2) = iatmp3(i2,j2) 
-                               iatmp3(i2,j2) = itmp1
-                               exit 
-                            endif
-                         end do
-                         exit
-
-
-
-                         if ( i >= 5 ) then
-                            do j = srow,nrow
-                               if ( scatLoc(i1,j) == scatLoc(i1,j2) ) then
-                                  j4 = j
-                               endif
-
-                               if ( scatLoc(i2,j) == scatLoc(i2,j1) ) then
-                                  j3 = j
-                               endif
-                            end do                              
-
-                            if ( iatmp4(i2,j4) == 0 ) then
-                               itmp1 = scatLoc(i2,j4)
-                               itmp2 = scatLoc(i2,j2)
-                               scatLoc(i2,j4) = scatLoc(i1,j4)
-                               scatLoc(i2,j2) = scatLoc(i1,j2)
-                               scatLoc(i1,j4) = itmp1
-                               scatLoc(i1,j2) = itmp2
-
-                               itmp1 = iatmp3(i2,j4)
-                               itmp2 = iatmp3(i2,j2)
-                               iatmp3(i2,j4) = iatmp3(i1,j4)
-                               iatmp3(i2,j2) = iatmp3(i1,j2)
-                               iatmp3(i1,j4) = itmp1
-                               iatmp3(i1,j2) = itmp2
-
-                            else if ( iatmp4(i1,j3) == 0 ) then
-                               itmp1 = scatLoc(i1,j3)
-                               itmp2 = scatLoc(i1,j1)
-                               scatLoc(i1,j3) = scatLoc(i2,j3)
-                               scatLoc(i1,j1) = scatLoc(i2,j1)
-                               scatLoc(i2,j3) = itmp1
-                               scatLoc(i2,j1) = itmp2
-
-                               itmp1 = iatmp3(i1,j3)
-                               itmp2 = iatmp3(i1,j1)
-                               iatmp3(i1,j3) = iatmp3(i2,j3)
-                               iatmp3(i1,j1) = iatmp3(i2,j1)
-                               iatmp3(i2,j3) = itmp1
-                               iatmp3(i2,j1) = itmp2
-                            else
-                               print*, "No space!!!",rank
-                            endif
-
-                         endif ! i >= 5
-
-                       exit
-
-                       end if ! iatmp4
-
-                    goto 8409
-
-                    else
-
-                         iatmp4(i1,j1) = 1
-                         iatmp4(i2,j2) = 1
-
-                    endif ! i1/=i2
-
-
-                 end if
-              end do
-              end do
-              i1 = i1 - 1
-           end do
-           end do
-
-!------------------------------------------------------------------------------------------
-
-           ! Inverse vertical direction  
-           iatmp4(:,:) = 0
-
-         do i1 = 1,5
-         do j1 = srow,nrow-1
-            do j2 = j1+1,nrow
-               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
-                  iatmp4(i1,j1) = 1
-                  iatmp4(i1,j2) = 1
-               endif
-            end do
-         end do
-         end do
-
-           do i1 = 5,2,-1
-              j1 = nrow
-8410          continue
-           do while (j1 >= srow)
-
-              do i2 = i1-1,1,-1
-              do j2 = nrow,srow,-1
-                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
-
-                   if ( i1 /= i2 ) then
-
-                      if ( iatmp4(i1,j2) == 0 ) then
-                         itmp1 = scatLoc(i1,j2)
-                         scatLoc(i1,j2) = scatLoc(i2,j2)
-                         scatLoc(i2,j2) = itmp1
-  
-                         iatmp4(i1,j1) = 1
-                         iatmp4(i1,j2) = 1
-  
-                         itmp1 =  iatmp3(i1,j2)
-                         iatmp3(i1,j2) = iatmp3(i2,j2) 
-                         iatmp3(i2,j2) = itmp1
-                      else if ( iatmp4(i2,j1) == 0 ) then
-                         itmp1 = scatLoc(i2,j1)
-                         scatLoc(i2,j1) = scatLoc(i1,j1)
-                         scatLoc(i1,j1) = itmp1
-  
-                         iatmp4(i2,j2) = 1
-                         iatmp4(i2,j1) = 1
-  
-                         itmp1 =  iatmp3(i2,j1)
-                         iatmp3(i2,j1) = iatmp3(i1,j1) 
-                         iatmp3(i1,j1) = itmp1
-                      else
-                         do i = 1,5
-                            if ( iatmp4(i,j1) == 0 .and. iatmp4(i,j2) == 0 ) then
-                               itmp1 = scatLoc(i,j1)
-                               scatLoc(i,j1) = scatLoc(i1,j1)
-                               scatLoc(i1,j1) = itmp1
-        
-                               iatmp4(i,j1) = 1
-                               iatmp4(i1,j1) = 0
-
-                               itmp1 =  iatmp3(i,j1)
-                               iatmp3(i,j1) = iatmp3(i1,j1) 
-                               iatmp3(i1,j1) = itmp1
-                               !----
-                               itmp1 = scatLoc(i,j2)
-                               scatLoc(i,j2) = scatLoc(i2,j2)
-                               scatLoc(i2,j2) = itmp1
-        
-                               iatmp4(i,j2) = 1
-                               iatmp4(i2,j2) = 0
-
-                               itmp1 =  iatmp3(i,j2)
-                               iatmp3(i,j2) = iatmp3(i2,j2) 
-                               iatmp3(i2,j2) = itmp1
-                               exit 
-                            endif
-                         end do
-
-                         if ( i >= 5 ) then
-                            do j = srow,nrow
-                               if ( scatLoc(i1,j) == scatLoc(i1,j2) ) then
-                                  j4 = j
-                               endif
-
-                               if ( scatLoc(i2,j) == scatLoc(i2,j1) ) then
-                                  j3 = j
-                               endif
-                            end do                              
-
-                            if ( iatmp4(i2,j4) == 0 ) then
-                               itmp1 = scatLoc(i2,j4)
-                               itmp2 = scatLoc(i2,j2)
-                               scatLoc(i2,j4) = scatLoc(i1,j4)
-                               scatLoc(i2,j2) = scatLoc(i1,j2)
-                               scatLoc(i1,j4) = itmp1
-                               scatLoc(i1,j2) = itmp2
-
-                               itmp1 = iatmp3(i2,j4)
-                               itmp2 = iatmp3(i2,j2)
-                               iatmp3(i2,j4) = iatmp3(i1,j4)
-                               iatmp3(i2,j2) = iatmp3(i1,j2)
-                               iatmp3(i1,j4) = itmp1
-                               iatmp3(i1,j2) = itmp2
-
-                            else if ( iatmp4(i1,j3) == 0 ) then
-                               itmp1 = scatLoc(i1,j3)
-                               itmp2 = scatLoc(i1,j1)
-                               scatLoc(i1,j3) = scatLoc(i2,j3)
-                               scatLoc(i1,j1) = scatLoc(i2,j1)
-                               scatLoc(i2,j3) = itmp1
-                               scatLoc(i2,j1) = itmp2
-
-                               itmp1 = iatmp3(i1,j3)
-                               itmp2 = iatmp3(i1,j1)
-                               iatmp3(i1,j3) = iatmp3(i2,j3)
-                               iatmp3(i1,j1) = iatmp3(i2,j1)
-                               iatmp3(i2,j3) = itmp1
-                               iatmp3(i2,j1) = itmp2
-                            else
-                               print*, "No space!!!",rank
-                            endif
-
-                         endif ! i >= 5
-
-                         exit
-
-
-                      end if ! iatmp4
-
-                    goto 8410
-
-                    else
-
-                         iatmp4(i1,j1) = 1
-                         iatmp4(i2,j2) = 1
-
-                    endif ! i1/=i2
-
-
-                 end if
-              end do
-              end do
-              j1 = j1 - 1
-           end do
-           end do
-
-!------------------------------------------------------------------------------------------
-
-            ! Send back array info to local ranks 
-            do i = 2,nrow
-               call mpi_send(iatmp3(:,i),5,mpi_int,crow(i),0,dminfo%comm,mpi_ierr)
-            end do
-            if ( crow(1) /= rank ) then
-               call mpi_send(iatmp3(:,1),5,mpi_int,crow(1),0,dminfo%comm,mpi_ierr)
-            endif
-
-!           if ( rank == 3525 ) then
-!              do i = 1,nrow
-!                 print*,'aaa',rank,crow(i),scatLoc(:,i)
-!              end do
-!              print*
-!              do i = 1,nrow
-!                 print*,'bbb',rank,crow(i),iatmp1(:,i)
+!
+!           if ( isum1 < 5 ) then
+!              print*,'less than 5', rank,putRank(1),isum1
+!           endif 
+!
+!           ! Send back array info to local ranks 
+!           call mpi_send(ibtmp1(:),5,mpi_int,putRank(1),0,dminfo%comm,mpi_ierr)
+!           call mpi_send(ibtmp2(:),5,mpi_int,putRank(1),1,dminfo%comm,mpi_ierr)
+!           call mpi_send(getLoc(:),5,mpi_int,putRank(1),2,dminfo%comm,mpi_ierr)
+!
+!
+!           deallocate(ibtmp1,ibtmp2)
+!
+!         endif ! srank
+!
+!         
+!        if ( nrow /= 0 ) then
+!           allocate(iatmp1(5,nrow))
+!           allocate(iatmp2(5,nrow))
+!           allocate(scatRank(5,nrow))
+!     
+!           if ( nrow > 1 ) then
+!              do i = 2,nrow
+!                 call mpi_recv(  iatmp1(:,i),5,mpi_int,crow(i),0,dminfo%comm,mpi_status,mpi_ierr)
+!                 call mpi_recv(scatRank(:,i),5,mpi_int,crow(i),1,dminfo%comm,mpi_status,mpi_ierr)
+!                 call mpi_recv(  iatmp2(:,i),5,mpi_int,crow(i),2,dminfo%comm,mpi_status,mpi_ierr)
 !              end do
 !           endif
+!   
+!           if ( crow(1) /= rank ) then
+!              call mpi_recv(  iatmp1(:,1),5,mpi_int,crow(1),0,dminfo%comm,mpi_status,mpi_ierr)
+!              call mpi_recv(scatRank(:,1),5,mpi_int,crow(1),1,dminfo%comm,mpi_status,mpi_ierr)
+!              call mpi_recv(  iatmp2(:,1),5,mpi_int,crow(1),2,dminfo%comm,mpi_status,mpi_ierr)
+!           else
+!              do i = 1,5
+!                 iatmp1(i,1) = i
+!                 scatRank(i,1) = rank
+!                 iatmp2(i,1) = i
+!              end do
+!           end if
+!              
+!           allocate(scatLoc(5,nrow))
+!           allocate(iatmp3(5,nrow))
+!           allocate(iatmp4(5,nrow))
+!
+!           scatLoc(:,:) = 0
+!           iatmp4(:,:) = 0
+!
+!           scatLoc(:,:) = iatmp1(:,:)
+!            iatmp3(:,:) = iatmp2(:,:)
+!
+!
+!         if ( srank == 1 ) then
+!            srow = 2
+!         else
+!            srow = 1
+!         endif
+!
+!
+!         ! Shuffling to make the same index for different cores
+!         ! Horizontal direction  
+!         do i1 = 1,5
+!         do j1 = srow,nrow-1
+!            do j2 = j1+1,nrow
+!               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
+!                  iatmp4(i1,j1) = 1
+!                  iatmp4(i1,j2) = 1
+!               endif
+!            end do
+!         end do
+!         end do
+!
+!           do j1 = srow,nrow-1
+!              i1 = 1
+!8407          continue
+!           do while (i1 <= 5)
+!
+!              do j2 = j1+1,nrow
+!              do i2 = 1,5
+!
+!                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+!         
+!                    if ( i1 /= i2 ) then
+!
+!                      if ( iatmp4(i1,j2) == 0 ) then
+!                         itmp1 = scatLoc(i1,j2)
+!                         scatLoc(i1,j2) = scatLoc(i2,j2)
+!                         scatLoc(i2,j2) = itmp1
+!  
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i1,j2) = 1
+!  
+!                         itmp1 =  iatmp3(i1,j2)
+!                         iatmp3(i1,j2) = iatmp3(i2,j2) 
+!                         iatmp3(i2,j2) = itmp1
+!                      else if ( iatmp4(i2,j1) == 0 ) then
+!                         itmp1 = scatLoc(i2,j1)
+!                         scatLoc(i2,j1) = scatLoc(i1,j1)
+!                         scatLoc(i1,j1) = itmp1
+!  
+!                         iatmp4(i2,j2) = 1
+!                         iatmp4(i2,j1) = 1
+!  
+!                         itmp1 =  iatmp3(i2,j1)
+!                         iatmp3(i2,j1) = iatmp3(i1,j1) 
+!                         iatmp3(i1,j1) = itmp1
+!                      else
+!                         do i = 1,5
+!                            if ( iatmp4(i,j1) == 0 .and. iatmp4(i,j2) == 0 ) then
+!                               itmp1 = scatLoc(i,j1)
+!                               scatLoc(i,j1) = scatLoc(i1,j1)
+!                               scatLoc(i1,j1) = itmp1
+!        
+!                               iatmp4(i,j1) = 1
+!                               iatmp4(i1,j1) = 0
+!
+!                               itmp1 =  iatmp3(i,j1)
+!                               iatmp3(i,j1) = iatmp3(i1,j1) 
+!                               iatmp3(i1,j1) = itmp1
+!                               !----
+!                               itmp1 = scatLoc(i,j2)
+!                               scatLoc(i,j2) = scatLoc(i2,j2)
+!                               scatLoc(i2,j2) = itmp1
+!        
+!                               iatmp4(i,j2) = 1
+!                               iatmp4(i2,j2) = 0
+!
+!                               itmp1 =  iatmp3(i,j2)
+!                               iatmp3(i,j2) = iatmp3(i2,j2) 
+!                               iatmp3(i2,j2) = itmp1
+!                               exit 
+!                            endif
+!                         end do
+!
+!
+!                         if ( i >= 5 ) then
+!                            do j = srow,nrow
+!                               if ( scatLoc(i1,j) == scatLoc(i1,j2) ) then
+!                                  j4 = j
+!                               endif
+!
+!                               if ( scatLoc(i2,j) == scatLoc(i2,j1) ) then
+!                                  j3 = j
+!                               endif
+!                            end do                              
+!
+!                            if ( iatmp4(i2,j4) == 0 ) then
+!                               itmp1 = scatLoc(i2,j4)
+!                               itmp2 = scatLoc(i2,j2)
+!                               scatLoc(i2,j4) = scatLoc(i1,j4)
+!                               scatLoc(i2,j2) = scatLoc(i1,j2)
+!                               scatLoc(i1,j4) = itmp1
+!                               scatLoc(i1,j2) = itmp2
+!
+!                               itmp1 = iatmp3(i2,j4)
+!                               itmp2 = iatmp3(i2,j2)
+!                               iatmp3(i2,j4) = iatmp3(i1,j4)
+!                               iatmp3(i2,j2) = iatmp3(i1,j2)
+!                               iatmp3(i1,j4) = itmp1
+!                               iatmp3(i1,j2) = itmp2
+!
+!                               itmp1 = iatmp4(i2,j4)
+!                               itmp2 = iatmp4(i2,j2)
+!                               iatmp4(i2,j4) = iatmp4(i1,j4)
+!                               iatmp4(i2,j2) = iatmp4(i1,j2)
+!                               iatmp4(i1,j4) = itmp1
+!                               iatmp4(i1,j2) = itmp2
+!
+!                            else if ( iatmp4(i1,j3) == 0 ) then
+!                               itmp1 = scatLoc(i1,j3)
+!                               itmp2 = scatLoc(i1,j1)
+!                               scatLoc(i1,j3) = scatLoc(i2,j3)
+!                               scatLoc(i1,j1) = scatLoc(i2,j1)
+!                               scatLoc(i2,j3) = itmp1
+!                               scatLoc(i2,j1) = itmp2
+!
+!                               itmp1 = iatmp3(i1,j3)
+!                               itmp2 = iatmp3(i1,j1)
+!                               iatmp3(i1,j3) = iatmp3(i2,j3)
+!                               iatmp3(i1,j1) = iatmp3(i2,j1)
+!                               iatmp3(i2,j3) = itmp1
+!                               iatmp3(i2,j1) = itmp2
+!
+!                               itmp1 = iatmp4(i1,j3)
+!                               itmp2 = iatmp4(i1,j1)
+!                               iatmp4(i1,j3) = iatmp4(i2,j3)
+!                               iatmp4(i1,j1) = iatmp4(i2,j1)
+!                               iatmp4(i2,j3) = itmp1
+!                               iatmp4(i2,j1) = itmp2
+!                            else
+!                               print*, "No space!!!",rank
+!                            endif
+!
+!                         endif ! i >= 5
+!
+!                         exit
+!
+!                      end if ! iatmp4
+!
+!                    goto 8407
+!
+!                    else 
+!
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i2,j2) = 1
+!
+!                    endif ! i1/=i2
+!
+!
+!
+!                 end if
+!                
+!              end do
+!              end do
+!              i1 = i1 + 1
+!           end do
+!           end do
+!
+!!------------------------------------------------------------------------------------------
+!
+!           ! Vertical direction  
+!           iatmp4(:,:) = 0
+!
+!         do i1 = 1,5
+!         do j1 = srow,nrow-1
+!            do j2 = j1+1,nrow
+!               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
+!                  iatmp4(i1,j1) = 1
+!                  iatmp4(i1,j2) = 1
+!               endif
+!            end do
+!         end do
+!         end do
+!
+!           do i1 = 1,4
+!              j1 = srow 
+!8408          continue
+!           do while (j1 <= nrow)
+!
+!              do i2 = i1+1,5
+!              do j2 = srow,nrow
+!                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+!
+!                   if ( i1/=i2) then
+!                      if ( iatmp4(i1,j2) == 0 ) then
+!                         itmp1 = scatLoc(i1,j2)
+!                         scatLoc(i1,j2) = scatLoc(i2,j2)
+!                         scatLoc(i2,j2) = itmp1
+!  
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i1,j2) = 1
+!  
+!                         itmp1 =  iatmp3(i1,j2)
+!                         iatmp3(i1,j2) = iatmp3(i2,j2) 
+!                         iatmp3(i2,j2) = itmp1
+!                      else if ( iatmp4(i2,j1) == 0 ) then
+!                         itmp1 = scatLoc(i2,j1)
+!                         scatLoc(i2,j1) = scatLoc(i1,j1)
+!                         scatLoc(i1,j1) = itmp1
+!  
+!                         iatmp4(i2,j2) = 1
+!                         iatmp4(i2,j1) = 1
+!  
+!                         itmp1 =  iatmp3(i2,j1)
+!                         iatmp3(i2,j1) = iatmp3(i1,j1) 
+!                         iatmp3(i1,j1) = itmp1
+!                      else
+!                         do i = 1,5
+!                            if ( iatmp4(i,j1) == 0 .and. iatmp4(i,j2) == 0 ) then
+!                               itmp1 = scatLoc(i,j1)
+!                               scatLoc(i,j1) = scatLoc(i1,j1)
+!                               scatLoc(i1,j1) = itmp1
+!        
+!                               iatmp4(i,j1) = 1
+!                               iatmp4(i1,j1) = 0
+!
+!                               itmp1 =  iatmp3(i,j1)
+!                               iatmp3(i,j1) = iatmp3(i1,j1) 
+!                               iatmp3(i1,j1) = itmp1
+!                               !----
+!                               itmp1 = scatLoc(i,j2)
+!                               scatLoc(i,j2) = scatLoc(i2,j2)
+!                               scatLoc(i2,j2) = itmp1
+!        
+!                               iatmp4(i,j2) = 1
+!                               iatmp4(i2,j2) = 0
+!
+!                               itmp1 =  iatmp3(i,j2)
+!                               iatmp3(i,j2) = iatmp3(i2,j2) 
+!                               iatmp3(i2,j2) = itmp1
+!                               exit 
+!                            endif
+!                         end do
+!
+!
+!                         if ( i >= 5 ) then
+!                            do j = srow,nrow
+!                               if ( scatLoc(i1,j) == scatLoc(i1,j2) ) then
+!                                  j4 = j
+!                               endif
+!
+!                               if ( scatLoc(i2,j) == scatLoc(i2,j1) ) then
+!                                  j3 = j
+!                               endif
+!                            end do                              
+!
+!                            if ( iatmp4(i2,j4) == 0 ) then
+!                               itmp1 = scatLoc(i2,j4)
+!                               itmp2 = scatLoc(i2,j2)
+!                               scatLoc(i2,j4) = scatLoc(i1,j4)
+!                               scatLoc(i2,j2) = scatLoc(i1,j2)
+!                               scatLoc(i1,j4) = itmp1
+!                               scatLoc(i1,j2) = itmp2
+!
+!                               itmp1 = iatmp3(i2,j4)
+!                               itmp2 = iatmp3(i2,j2)
+!                               iatmp3(i2,j4) = iatmp3(i1,j4)
+!                               iatmp3(i2,j2) = iatmp3(i1,j2)
+!                               iatmp3(i1,j4) = itmp1
+!                               iatmp3(i1,j2) = itmp2
+!
+!                            else if ( iatmp4(i1,j3) == 0 ) then
+!                               itmp1 = scatLoc(i1,j3)
+!                               itmp2 = scatLoc(i1,j1)
+!                               scatLoc(i1,j3) = scatLoc(i2,j3)
+!                               scatLoc(i1,j1) = scatLoc(i2,j1)
+!                               scatLoc(i2,j3) = itmp1
+!                               scatLoc(i2,j1) = itmp2
+!
+!                               itmp1 = iatmp3(i1,j3)
+!                               itmp2 = iatmp3(i1,j1)
+!                               iatmp3(i1,j3) = iatmp3(i2,j3)
+!                               iatmp3(i1,j1) = iatmp3(i2,j1)
+!                               iatmp3(i2,j3) = itmp1
+!                               iatmp3(i2,j1) = itmp2
+!                            else
+!                               print*, "No space!!!",rank
+!                            endif
+!
+!                         endif ! i >= 5
+!
+!                      exit
+!
+!                      end if ! iatmp4
+!
+!                    goto 8408
+!
+!                    else
+!
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i2,j2) = 1
+!
+!                    endif ! i1/=i2
+!
+!
+!                 end if
+!              end do
+!              end do
+!              j1 = j1 + 1
+!           end do
+!           end do
+!
+!!------------------------------------------------------------------------------------------
+!
+!           ! Inverse horizontal direction  
+!           iatmp4(:,:) = 0
+!
+!         do i1 = 1,5
+!         do j1 = srow,nrow-1
+!            do j2 = j1+1,nrow
+!               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
+!                  iatmp4(i1,j1) = 1
+!                  iatmp4(i1,j2) = 1
+!               endif
+!            end do
+!         end do
+!         end do
+!
+!           do j1 = nrow,srow+1,-1
+!              i1 = 5
+!8409          continue
+!           do while (i1 >= 1)
+!
+!              do j2 = nrow-1,srow,-1
+!              do i2 = 5,1,-1
+!                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+!
+!
+!                   if ( i1 /= i2 ) then
+!
+!                      if ( iatmp4(i1,j2) == 0 ) then
+!                         itmp1 = scatLoc(i1,j2)
+!                         scatLoc(i1,j2) = scatLoc(i2,j2)
+!                         scatLoc(i2,j2) = itmp1
+!  
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i1,j2) = 1
+!  
+!                         itmp1 =  iatmp3(i1,j2)
+!                         iatmp3(i1,j2) = iatmp3(i2,j2) 
+!                         iatmp3(i2,j2) = itmp1
+!                      else if ( iatmp4(i2,j1) == 0 ) then
+!                         itmp1 = scatLoc(i2,j1)
+!                         scatLoc(i2,j1) = scatLoc(i1,j1)
+!                         scatLoc(i1,j1) = itmp1
+!  
+!                         iatmp4(i2,j2) = 1
+!                         iatmp4(i2,j1) = 1
+!  
+!                         itmp1 =  iatmp3(i2,j1)
+!                         iatmp3(i2,j1) = iatmp3(i1,j1) 
+!                         iatmp3(i1,j1) = itmp1
+!                      else
+!                         do i = 1,5
+!                            if ( iatmp4(i,j1) == 0 .and. iatmp4(i,j2) == 0 ) then
+!                               itmp1 = scatLoc(i,j1)
+!                               scatLoc(i,j1) = scatLoc(i1,j1)
+!                               scatLoc(i1,j1) = itmp1
+!        
+!                               iatmp4(i,j1) = 1
+!                               iatmp4(i1,j1) = 0
+!
+!                               itmp1 =  iatmp3(i,j1)
+!                               iatmp3(i,j1) = iatmp3(i1,j1) 
+!                               iatmp3(i1,j1) = itmp1
+!                               !----
+!                               itmp1 = scatLoc(i,j2)
+!                               scatLoc(i,j2) = scatLoc(i2,j2)
+!                               scatLoc(i2,j2) = itmp1
+!        
+!                               iatmp4(i,j2) = 1
+!                               iatmp4(i2,j2) = 0
+!
+!                               itmp1 =  iatmp3(i,j2)
+!                               iatmp3(i,j2) = iatmp3(i2,j2) 
+!                               iatmp3(i2,j2) = itmp1
+!                               exit 
+!                            endif
+!                         end do
+!                         exit
+!
+!
+!
+!                         if ( i >= 5 ) then
+!                            do j = srow,nrow
+!                               if ( scatLoc(i1,j) == scatLoc(i1,j2) ) then
+!                                  j4 = j
+!                               endif
+!
+!                               if ( scatLoc(i2,j) == scatLoc(i2,j1) ) then
+!                                  j3 = j
+!                               endif
+!                            end do                              
+!
+!                            if ( iatmp4(i2,j4) == 0 ) then
+!                               itmp1 = scatLoc(i2,j4)
+!                               itmp2 = scatLoc(i2,j2)
+!                               scatLoc(i2,j4) = scatLoc(i1,j4)
+!                               scatLoc(i2,j2) = scatLoc(i1,j2)
+!                               scatLoc(i1,j4) = itmp1
+!                               scatLoc(i1,j2) = itmp2
+!
+!                               itmp1 = iatmp3(i2,j4)
+!                               itmp2 = iatmp3(i2,j2)
+!                               iatmp3(i2,j4) = iatmp3(i1,j4)
+!                               iatmp3(i2,j2) = iatmp3(i1,j2)
+!                               iatmp3(i1,j4) = itmp1
+!                               iatmp3(i1,j2) = itmp2
+!
+!                            else if ( iatmp4(i1,j3) == 0 ) then
+!                               itmp1 = scatLoc(i1,j3)
+!                               itmp2 = scatLoc(i1,j1)
+!                               scatLoc(i1,j3) = scatLoc(i2,j3)
+!                               scatLoc(i1,j1) = scatLoc(i2,j1)
+!                               scatLoc(i2,j3) = itmp1
+!                               scatLoc(i2,j1) = itmp2
+!
+!                               itmp1 = iatmp3(i1,j3)
+!                               itmp2 = iatmp3(i1,j1)
+!                               iatmp3(i1,j3) = iatmp3(i2,j3)
+!                               iatmp3(i1,j1) = iatmp3(i2,j1)
+!                               iatmp3(i2,j3) = itmp1
+!                               iatmp3(i2,j1) = itmp2
+!                            else
+!                               print*, "No space!!!",rank
+!                            endif
+!
+!                         endif ! i >= 5
+!
+!                       exit
+!
+!                       end if ! iatmp4
+!
+!                    goto 8409
+!
+!                    else
+!
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i2,j2) = 1
+!
+!                    endif ! i1/=i2
+!
+!
+!                 end if
+!              end do
+!              end do
+!              i1 = i1 - 1
+!           end do
+!           end do
+!
+!!------------------------------------------------------------------------------------------
+!
+!           ! Inverse vertical direction  
+!           iatmp4(:,:) = 0
+!
+!         do i1 = 1,5
+!         do j1 = srow,nrow-1
+!            do j2 = j1+1,nrow
+!               if ( scatLoc(i1,j1) == scatLoc(i1,j2) ) then
+!                  iatmp4(i1,j1) = 1
+!                  iatmp4(i1,j2) = 1
+!               endif
+!            end do
+!         end do
+!         end do
+!
+!           do i1 = 5,2,-1
+!              j1 = nrow
+!8410          continue
+!           do while (j1 >= srow)
+!
+!              do i2 = i1-1,1,-1
+!              do j2 = nrow,srow,-1
+!                 if ( scatLoc(i2,j2) == scatLoc(i1,j1) ) then
+!
+!                   if ( i1 /= i2 ) then
+!
+!                      if ( iatmp4(i1,j2) == 0 ) then
+!                         itmp1 = scatLoc(i1,j2)
+!                         scatLoc(i1,j2) = scatLoc(i2,j2)
+!                         scatLoc(i2,j2) = itmp1
+!  
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i1,j2) = 1
+!  
+!                         itmp1 =  iatmp3(i1,j2)
+!                         iatmp3(i1,j2) = iatmp3(i2,j2) 
+!                         iatmp3(i2,j2) = itmp1
+!                      else if ( iatmp4(i2,j1) == 0 ) then
+!                         itmp1 = scatLoc(i2,j1)
+!                         scatLoc(i2,j1) = scatLoc(i1,j1)
+!                         scatLoc(i1,j1) = itmp1
+!  
+!                         iatmp4(i2,j2) = 1
+!                         iatmp4(i2,j1) = 1
+!  
+!                         itmp1 =  iatmp3(i2,j1)
+!                         iatmp3(i2,j1) = iatmp3(i1,j1) 
+!                         iatmp3(i1,j1) = itmp1
+!                      else
+!                         do i = 1,5
+!                            if ( iatmp4(i,j1) == 0 .and. iatmp4(i,j2) == 0 ) then
+!                               itmp1 = scatLoc(i,j1)
+!                               scatLoc(i,j1) = scatLoc(i1,j1)
+!                               scatLoc(i1,j1) = itmp1
+!        
+!                               iatmp4(i,j1) = 1
+!                               iatmp4(i1,j1) = 0
+!
+!                               itmp1 =  iatmp3(i,j1)
+!                               iatmp3(i,j1) = iatmp3(i1,j1) 
+!                               iatmp3(i1,j1) = itmp1
+!                               !----
+!                               itmp1 = scatLoc(i,j2)
+!                               scatLoc(i,j2) = scatLoc(i2,j2)
+!                               scatLoc(i2,j2) = itmp1
+!        
+!                               iatmp4(i,j2) = 1
+!                               iatmp4(i2,j2) = 0
+!
+!                               itmp1 =  iatmp3(i,j2)
+!                               iatmp3(i,j2) = iatmp3(i2,j2) 
+!                               iatmp3(i2,j2) = itmp1
+!                               exit 
+!                            endif
+!                         end do
+!
+!                         if ( i >= 5 ) then
+!                            do j = srow,nrow
+!                               if ( scatLoc(i1,j) == scatLoc(i1,j2) ) then
+!                                  j4 = j
+!                               endif
+!
+!                               if ( scatLoc(i2,j) == scatLoc(i2,j1) ) then
+!                                  j3 = j
+!                               endif
+!                            end do                              
+!
+!                            if ( iatmp4(i2,j4) == 0 ) then
+!                               itmp1 = scatLoc(i2,j4)
+!                               itmp2 = scatLoc(i2,j2)
+!                               scatLoc(i2,j4) = scatLoc(i1,j4)
+!                               scatLoc(i2,j2) = scatLoc(i1,j2)
+!                               scatLoc(i1,j4) = itmp1
+!                               scatLoc(i1,j2) = itmp2
+!
+!                               itmp1 = iatmp3(i2,j4)
+!                               itmp2 = iatmp3(i2,j2)
+!                               iatmp3(i2,j4) = iatmp3(i1,j4)
+!                               iatmp3(i2,j2) = iatmp3(i1,j2)
+!                               iatmp3(i1,j4) = itmp1
+!                               iatmp3(i1,j2) = itmp2
+!
+!                            else if ( iatmp4(i1,j3) == 0 ) then
+!                               itmp1 = scatLoc(i1,j3)
+!                               itmp2 = scatLoc(i1,j1)
+!                               scatLoc(i1,j3) = scatLoc(i2,j3)
+!                               scatLoc(i1,j1) = scatLoc(i2,j1)
+!                               scatLoc(i2,j3) = itmp1
+!                               scatLoc(i2,j1) = itmp2
+!
+!                               itmp1 = iatmp3(i1,j3)
+!                               itmp2 = iatmp3(i1,j1)
+!                               iatmp3(i1,j3) = iatmp3(i2,j3)
+!                               iatmp3(i1,j1) = iatmp3(i2,j1)
+!                               iatmp3(i2,j3) = itmp1
+!                               iatmp3(i2,j1) = itmp2
+!                            else
+!                               print*, "No space!!!",rank
+!                            endif
+!
+!                         endif ! i >= 5
+!
+!                         exit
+!
+!
+!                      end if ! iatmp4
+!
+!                    goto 8410
+!
+!                    else
+!
+!                         iatmp4(i1,j1) = 1
+!                         iatmp4(i2,j2) = 1
+!
+!                    endif ! i1/=i2
+!
+!
+!                 end if
+!              end do
+!              end do
+!              j1 = j1 - 1
+!           end do
+!           end do
+!
+!!------------------------------------------------------------------------------------------
+!
+!            ! Send back array info to local ranks 
+!            do i = 2,nrow
+!               call mpi_send(iatmp3(:,i),5,mpi_int,crow(i),0,dminfo%comm,mpi_ierr)
+!            end do
+!            if ( crow(1) /= rank ) then
+!               call mpi_send(iatmp3(:,1),5,mpi_int,crow(1),0,dminfo%comm,mpi_ierr)
+!            endif
+!
+!!           if ( rank == 3525 ) then
+!!              do i = 1,nrow
+!!                 print*,'aaa',rank,crow(i),scatLoc(:,i)
+!!              end do
+!!              print*
+!!              do i = 1,nrow
+!!                 print*,'bbb',rank,crow(i),iatmp1(:,i)
+!!              end do
+!!           endif
+!
+!            deallocate(iatmp3)
+! 
+!         endif ! nrow
+!         
+!         if ( srank == 0 ) then
+!            call mpi_recv(getLoc,5,mpi_int,MPI_ANY_SOURCE,0,dminfo%comm,mpi_status,mpi_ierr)
+!         endif
+!
+!         
+!         call mpi_barrier(dminfo%comm,mpi_ierr)
+!         
+!
+!         ! Define cross communicator ---
+!         if ( nrow /= 0 ) then
+!            rankRepId = 0
+!         else
+!            rankRepId = MPI_UNDEFINED
+!         endif
+!
+!
+!         ! Representative rank coloring and  communicator localizing
+!         call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_cross_comm, mpi_ierr)
+!         if ( nrow /= 0 ) then
+!            call MPI_COMM_SIZE( mpi_cross_comm, cross_size, mpi_ierr)
+!            call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
+!         endif
+!
+!         call mpi_barrier(dminfo%comm,mpi_ierr)
+!
+!         ! Summation test ---
+!         CGvec_r0(:) = 0.0
+!
+!            do i = 1,5
+!               reduce(i)       = real(i) * rank
+!               reduce_check(i) = real(i) * rank
+!            end do
+!
+!            ! Stage 1: Put values
+!            if ( srank == 0 ) then
+!               do i = 1,5
+!                  CGvec_r0(putLoc(i)) = reduce(i)
+!               end do
+!            endif
+!
+!
+!            ! Stage 2: Local halo exchange (Local -> Cross)
+!            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+!            call mpas_threading_barrier()
+!            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!
+!
+!            ! Stage 3: Summation for cross ranks
+!               do i = 1,5
+!                  CGvec_r0(i) = reduce(i)
+!                  reduce(i) = 0.0
+!               end do
+!
+!            if ( nrow /= 0 ) then
+!               do i = 1,5
+!                  do j = 1,nrow
+!                     reduce(i) = reduce(i) + CGvec_r0(sumLoc(i,j))
+!                  end do
+!               end do
+!
+!            ! Stage 2: Allreduce for mpi_cross_comm
+!               call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
+!
+!            ! Stage 3: Put values that will be scattered
+!
+!               do j = srow, nrow
+!                  do i = 1,5
+!                     CGvec_r0(scatLoc(i,j)) = reduce_global(i)
+!                  end do
+!               end do
+!            endif
+!
+!            ! Stage 3: Local halo exchange (Cross -> Local)
+!            call mpas_dmpar_exch_group_create(domain, iterGroupName)
+!            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
+!            call mpas_threading_barrier()
+!            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
+!            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
+!
+!            if ( nrow == 0 ) then
+!               do i = 1,5
+!                  reduce_global(i) = CGvec_r0(getLoc(i))
+!               end do
+!            end if
+! 
+!            ! For check
+!            call mpi_allreduce(reduce_check,reduce_global_check,5,MPI_DOUBLE,MPI_SUM,dminfo%comm,mpi_ierr)
+!
+!            do i = 1,5
+!!              if ( reduce_global(i) /= real(ncpus*i) ) then
+!!                 print*, 'fail',rank,i
+!!              end if
+!               if ( dabs(reduce_global(i)-reduce_global_check(i)) > 1.d-13 ) then
+!                  print*, 'Test failed',rank,i
+!                  stop
+!               endif
+!            end do
+!
+!      block => block % next
+!      end do  ! block
+!
+!!  print*, 'Test passed'
+!   call mpi_barrier(dminfo%comm,mpi_ierr)
+!!  stop
 
-            deallocate(iatmp3)
- 
-         endif ! nrow
-         
-         if ( srank == 0 ) then
-            call mpi_recv(getLoc,5,mpi_int,MPI_ANY_SOURCE,0,dminfo%comm,mpi_status,mpi_ierr)
-         endif
-
-         
-         call mpi_barrier(dminfo%comm,mpi_ierr)
-         
-
-         ! Define cross communicator ---
-         if ( nrow /= 0 ) then
-            rankRepId = 0
-         else
-            rankRepId = MPI_UNDEFINED
-         endif
-
-
-         ! Representative rank coloring and  communicator localizing
-         call MPI_COMM_SPLIT(dminfo % comm, rankRepId, rank, mpi_cross_comm, mpi_ierr)
-         if ( nrow /= 0 ) then
-            call MPI_COMM_SIZE( mpi_cross_comm, cross_size, mpi_ierr)
-            call MPI_COMM_RANK( mpi_cross_comm, cross_rank, mpi_ierr)
-         endif
-
-         call mpi_barrier(dminfo%comm,mpi_ierr)
-
-         ! Summation test ---
-         CGvec_r0(:) = 0.0
-
-            do i = 1,5
-               reduce(i)       = real(i) * rank
-               reduce_check(i) = real(i) * rank
-            end do
-
-            ! Stage 1: Put values
-            if ( srank == 0 ) then
-               do i = 1,5
-                  CGvec_r0(putLoc(i)) = reduce(i)
-               end do
-            endif
-
-
-            ! Stage 2: Local halo exchange (Local -> Cross)
-            call mpas_dmpar_exch_group_create(domain, iterGroupName)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-            call mpas_threading_barrier()
-            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-
-
-            ! Stage 3: Summation for cross ranks
-               do i = 1,5
-                  CGvec_r0(i) = reduce(i)
-                  reduce(i) = 0.0
-               end do
-
-            if ( nrow /= 0 ) then
-               do i = 1,5
-                  do j = 1,nrow
-                     reduce(i) = reduce(i) + CGvec_r0(sumLoc(i,j))
-                  end do
-               end do
-
-            ! Stage 2: Allreduce for mpi_cross_comm
-               call mpi_allreduce(reduce,reduce_global,5,MPI_DOUBLE,MPI_SUM,mpi_cross_comm,mpi_ierr)
-
-            ! Stage 3: Put values that will be scattered
-
-               do j = srow, nrow
-                  do i = 1,5
-                     CGvec_r0(scatLoc(i,j)) = reduce_global(i)
-                  end do
-               end do
-            endif
-
-            ! Stage 3: Local halo exchange (Cross -> Local)
-            call mpas_dmpar_exch_group_create(domain, iterGroupName)
-            call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_r0', 1)
-            call mpas_threading_barrier()
-            call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
-            call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-
-            if ( nrow == 0 ) then
-               do i = 1,5
-                  reduce_global(i) = CGvec_r0(getLoc(i))
-               end do
-            end if
- 
-            ! For check
-            call mpi_allreduce(reduce_check,reduce_global_check,5,MPI_DOUBLE,MPI_SUM,dminfo%comm,mpi_ierr)
-
-            do i = 1,5
-!              if ( reduce_global(i) /= real(ncpus*i) ) then
-!                 print*, 'fail',rank,i
-!              end if
-               if ( dabs(reduce_global(i)-reduce_global_check(i)) > 1.d-13 ) then
-                  print*, 'Test failed',rank,i
-                  stop
-               endif
-            end do
-
-      block => block % next
-      end do  ! block
-
-!  print*, 'Test passed'
-   call mpi_barrier(dminfo%comm,mpi_ierr)
-!  stop
-
-   end subroutine my_allreduce_init !}}}
+!   end subroutine my_allreduce_init !}}}
 
 
 !   subroutine my_allreduce (n,cst,cst_global) !{{{
