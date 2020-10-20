@@ -401,6 +401,8 @@ module ocn_time_integration_si
          nCells = nCellsPtr
          nEdges = nEdgesPtr
 
+
+         print*, nCellsArray(:)
          ! Initialize * variables that are used to compute baroclinic tendencies below.
 
          !$omp do schedule(runtime) private(k)
@@ -1874,8 +1876,16 @@ module ocn_time_integration_si
                CGvec_r00(iCell) = CGvec_r0(iCell)
             end do ! iCell
  
+            do iCell = 1,nCells
+               print*, CGvec_r0(iCell)
+            end do
+            stop
+ 
             block => block % next
          end do  ! block
+
+
+
 
          ! Preconditioning ------------------------------------------------------------------------!
 
