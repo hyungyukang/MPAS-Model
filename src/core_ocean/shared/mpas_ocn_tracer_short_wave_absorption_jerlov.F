@@ -16,6 +16,7 @@ module ocn_tracer_short_wave_absorption_jerlov
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
+   use ocn_config
 
    implicit none
    private
@@ -126,7 +127,6 @@ contains
       integer, dimension(:), pointer :: maxLevelCell
 
       real (kind=RKIND) :: depth
-      real (kind=RKIND), pointer :: config_surface_buoyancy_depth
       real (kind=RKIND), dimension(:), pointer :: refBottomDepth
       real (kind=RKIND), dimension(:), allocatable :: weights
 
@@ -137,7 +137,6 @@ contains
 
       call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
       call mpas_pool_get_array(meshPool, 'refBottomDepth', refBottomDepth)
-      call mpas_pool_get_config(ocnConfigs, 'config_surface_buoyancy_depth', config_surface_buoyancy_depth)
 
       allocate(weights(nVertLevels+1))
       weights = 0.0_RKIND
@@ -145,7 +144,11 @@ contains
 
       nCells = nCellsArray( 3 )
 
-      !$omp do schedule(runtime)
+#ifndef CPRPGI
+      !$omp parallel
+      !$omp do schedule(runtime) private(depth, k, depLev) &
+      !$omp firstprivate(weights)
+#endif
       do iCell = 1, nCells
          depth = 0.0_RKIND
          do k = 1, maxLevelCell(iCell)
@@ -170,7 +173,10 @@ contains
          penetrativeTemperatureFluxOBL(iCell)=penetrativeTemperatureFlux(iCell)*weights(depLev)
 
       end do
+#ifndef CPRPGI
       !$omp end do
+      !$omp end parallel
+#endif
 
       deallocate(weights)
 
@@ -214,15 +220,11 @@ contains
 
       real (kind=RKIND), parameter :: depth_cutoff = -200.0_RKIND
 
-      integer, pointer :: config_jerlov_water_type
-
 !-----------------------------------------------------------------------
 !
 !  compute absorption fraction
 !
 !-----------------------------------------------------------------------
-
-      call mpas_pool_get_config(ocnConfigs, 'config_jerlov_water_type', config_jerlov_water_type)
 
       if (-depth < depth_cutoff) then
          weight = 0.0_RKIND

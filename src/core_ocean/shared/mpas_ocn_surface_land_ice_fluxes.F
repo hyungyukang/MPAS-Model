@@ -26,6 +26,7 @@ module ocn_surface_land_ice_fluxes
    use mpas_pool_routines
 
    use ocn_constants
+   use ocn_config
    use ocn_equation_of_state
 
    implicit none
@@ -59,7 +60,6 @@ module ocn_surface_land_ice_fluxes
    logical :: landIceFluxesOn, standaloneOn, isomipOn, jenkinsOn, hollandJenkinsOn
 
    real (kind=RKIND) :: cp_land_ice, rho_land_ice
-
 
 !***********************************************************************
 
@@ -185,6 +185,7 @@ contains
       call mpas_pool_get_array(diagnosticsPool, 'topDrag', topDrag)
       call mpas_pool_get_array(diagnosticsPool, 'topDragMagnitude', topDragMagnitude)
 
+      !$omp parallel
       !$omp do schedule(runtime)
       do iEdge = 1, nEdges
         surfaceStress(iEdge) = surfaceStress(iEdge) + topDrag(iEdge)
@@ -197,6 +198,7 @@ contains
         surfaceStressMagnitude(iCell) = surfaceStressMagnitude(iCell) + topDragMagnitude(iCell)
       end do
       !$omp end do
+      !$omp end parallel
 
       call mpas_timer_stop("top_drag")
 
@@ -264,11 +266,13 @@ contains
       call mpas_pool_get_array(forcingPool, 'landIceFreshwaterFlux', landIceFreshwaterFlux)
 
       ! Build surface fluxes at cell centers
+      !$omp parallel
       !$omp do schedule(runtime)
       do iCell = 1, nCells
         surfaceThicknessFlux(iCell) = surfaceThicknessFlux(iCell) + landIceFreshwaterFlux(iCell) / rho_sw
       end do
       !$omp end do
+      !$omp end parallel
 
       call mpas_timer_stop("land_ice_thick")
 
@@ -332,11 +336,13 @@ contains
       call mpas_pool_get_array(forcingPool, 'landIceHeatFlux', landIceHeatFlux)
 
       ! add to surface fluxes at cell centers
+      !$omp parallel
       !$omp do schedule(runtime)
       do iCell = 1, nCells
         tracersSurfaceFlux(1, iCell) = tracersSurfaceFlux(1, iCell) + landIceHeatFlux(iCell)/(rho_sw*cp_sw)
       end do
       !$omp end do
+      !$omp end parallel
 
    end subroutine ocn_surface_land_ice_fluxes_active_tracers!}}}
 
@@ -397,21 +403,13 @@ contains
       integer :: iCell, nCells
       integer, dimension(:), pointer :: nCellsArray
 
-      real (kind=RKIND), pointer :: config_land_ice_flux_ISOMIP_gammaT
-
-      logical, pointer :: config_land_ice_flux_useHollandJenkinsAdvDiff
-
-
       real (kind=RKIND) :: freshwaterFlux, heatFlux
 
       real (kind=RKIND), dimension(:), pointer :: landIcePressure, landIceFraction, &
                                                   landIceSurfaceTemperature, &
                                                   landIceFrictionVelocity, &
                                                   landIceFreshwaterFlux, &
-                                                  landIceHeatFlux, heatFluxToLandIce, &
-                                                  freezeInterfaceSalinity, freezeInterfaceTemperature, &
-                                                  freezeFreshwaterFlux, freezeHeatFlux, &
-                                                  freezeIceHeatFlux
+                                                  landIceHeatFlux, heatFluxToLandIce
       real (kind=RKIND), dimension(:), pointer :: accumulatedLandIceMassOld, &
                                                   accumulatedLandIceMassNew, &
                                                   accumulatedLandIceHeatOld, &
@@ -424,19 +422,23 @@ contains
                                                     landIceTracerTransferVelocities
       integer, pointer :: indexBLT, indexBLS, indexIT, indexIS, indexHeatTrans, indexSaltTrans
 
-      type (field1DReal), pointer :: boundaryLayerTemperatureField, boundaryLayerSalinityField, &
-                                     freezeInterfaceSalinityField, freezeInterfaceTemperatureField, &
-                                     freezeFreshwaterFluxField, freezeHeatFluxField, &
-                                     freezeIceHeatFluxField
+      ! Scratch Arrays
+      !---
+      ! freezeInterfaceSalinity: salinity at land ice-ocean interface where freezing is occurring
+      !                   units: PSU
+      real (kind=RKIND), dimension(:), allocatable :: freezeInterfaceSalinity
+      ! freezeInterfaceTemperature: temperature at land ice-ocean interface where freezing is occurring
+      !                      units: degrees C
+      real (kind=RKIND), dimension(:), allocatable :: freezeInterfaceTemperature
+      real (kind=RKIND), dimension(:), allocatable :: freezeFreshwaterFlux
+      real (kind=RKIND), dimension(:), allocatable :: freezeHeatFlux
+      real (kind=RKIND), dimension(:), allocatable :: freezeIceHeatFlux
+
       err = 0
 
       if ( .not. standaloneOn ) return
 
       call mpas_timer_start("land_ice_build_arrays")
-
-      call mpas_pool_get_config(ocnConfigs, 'config_land_ice_flux_ISOMIP_gammaT', config_land_ice_flux_ISOMIP_gammaT)
-      call mpas_pool_get_config(ocnConfigs, 'config_land_ice_flux_useHollandJenkinsAdvDiff', &
-                                config_land_ice_flux_useHollandJenkinsAdvDiff)
 
       call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
 
@@ -471,27 +473,18 @@ contains
       if(config_land_ice_flux_useHollandJenkinsAdvDiff) then
          call mpas_pool_get_array(forcingPool, 'landIceSurfaceTemperature', landIceSurfaceTemperature)
 
-         call mpas_pool_get_field(scratchPool, 'freezeInterfaceSalinityScratch', freezeInterfaceSalinityField)
-         call mpas_pool_get_field(scratchPool, 'freezeInterfaceTemperatureScratch', freezeInterfaceTemperatureField)
-         call mpas_pool_get_field(scratchPool, 'freezeFreshwaterFluxScratch', freezeFreshwaterFluxField)
-         call mpas_pool_get_field(scratchPool, 'freezeHeatFluxScratch', freezeHeatFluxField)
-         call mpas_pool_get_field(scratchPool, 'freezeIceHeatFluxScratch', freezeIceHeatFluxField)
-         call mpas_allocate_scratch_field(freezeInterfaceSalinityField, .true.)
-         call mpas_allocate_scratch_field(freezeInterfaceTemperatureField, .true.)
-         call mpas_allocate_scratch_field(freezeFreshwaterFluxField, .true.)
-         call mpas_allocate_scratch_field(freezeHeatFluxField, .true.)
-         call mpas_allocate_scratch_field(freezeIceHeatFluxField, .true.)
-         freezeInterfaceSalinity => freezeInterfaceSalinityField % array
-         freezeInterfaceTemperature => freezeInterfaceTemperatureField % array
-         freezeFreshwaterFlux => freezeFreshwaterFluxField % array
-         freezeHeatFlux => freezeHeatFluxField % array
-         freezeIceHeatFlux => freezeIceHeatFluxField % array
+         allocate(freezeInterfaceSalinity(nCells), &
+                  freezeInterfaceTemperature(nCells), &
+                  freezeFreshwaterFlux(nCells), &
+                  freezeHeatFlux(nCells), &
+                  freezeIceHeatFlux(nCells))
       end if
 
       nCells = nCellsArray( size(nCellsArray) )
 
       if(isomipOn) then
-         !$omp do schedule(runtime)
+         !$omp parallel
+         !$omp do schedule(runtime) private(freshwaterFlux, heatFlux)
          do iCell = 1, nCells
             if (landIceMask(iCell) == 0) cycle
 
@@ -521,6 +514,7 @@ contains
 
          end do
          !$omp end do
+         !$omp end parallel
       end if
 
       if(jenkinsOn .or. hollandJenkinsOn) then
@@ -611,11 +605,11 @@ contains
       end if
 
       if(config_land_ice_flux_useHollandJenkinsAdvDiff) then
-         call mpas_deallocate_scratch_field(freezeInterfaceSalinityField, .true.)
-         call mpas_deallocate_scratch_field(freezeInterfaceTemperatureField, .true.)
-         call mpas_deallocate_scratch_field(freezeFreshwaterFluxField, .true.)
-         call mpas_deallocate_scratch_field(freezeHeatFluxField, .true.)
-         call mpas_deallocate_scratch_field(freezeIceHeatFluxField, .true.)
+         deallocate(freezeInterfaceSalinity, &
+                    freezeInterfaceTemperature, &
+                    freezeFreshwaterFlux, &
+                    freezeHeatFlux, &
+                    freezeIceHeatFlux)
       end if
 
       ! accumulate land-ice mass and heat
@@ -647,28 +641,16 @@ contains
 
       integer, intent(out) :: err !< Output: error flag
 
-      character (len=StrKIND), pointer :: config_land_ice_flux_formulation, config_land_ice_flux_mode
-
-      real (kind=RKIND), pointer :: config_land_ice_flux_cp_ice, &
-                                    config_land_ice_flux_rho_ice
-
-
       err = 0
       isomipOn = .false.
       jenkinsOn = .false.
       hollandJenkinsOn = .false.
 
-      call mpas_pool_get_config(ocnConfigs, 'config_land_ice_flux_mode', config_land_ice_flux_mode)
       landIceFluxesOn = (trim(config_land_ice_flux_mode) == 'standalone')  &
            .or. (trim(config_land_ice_flux_mode) == 'coupled')
       if(.not. landIceFluxesOn) return
 
       standaloneOn = trim(config_land_ice_flux_mode) == 'standalone'
-
-      call mpas_pool_get_config(ocnConfigs, 'config_land_ice_flux_formulation', config_land_ice_flux_formulation)
-
-      call mpas_pool_get_config(ocnConfigs, 'config_land_ice_flux_cp_ice', config_land_ice_flux_cp_ice)
-      call mpas_pool_get_config(ocnConfigs, 'config_land_ice_flux_rho_ice', config_land_ice_flux_rho_ice)
 
       if ( trim(config_land_ice_flux_formulation) == 'ISOMIP' ) then
          isomipOn = .true.
@@ -783,7 +765,8 @@ contains
     err = 0
     Tlatent = latent_heat_fusion_mks/cp_sw
 
-    !$omp do schedule(runtime)
+    !$omp parallel
+    !$omp do schedule(runtime) private(T0, dTf_dS, transferVelocityRatio, a, b, c)
     do iCell = 1, nCells
       if (mask(iCell) == 0) cycle
 
@@ -827,6 +810,7 @@ contains
       outIceHeatFlux(iCell) = -cp_land_ice*outFreshwaterFlux(iCell)*outInterfaceTemperature(iCell)
     end do
     !$omp end do
+    !$omp end parallel
 
   !--------------------------------------------------------------------
 
@@ -928,7 +912,9 @@ contains
 
     err = 0
     cpRatio = cp_land_ice/cp_sw
-    !$omp do schedule(runtime) reduction(+:err)
+    !$omp parallel
+    !$omp do schedule(runtime) &
+    !$omp private(T0, dTf_dS, transferVelocityRatio, Tlatent, eta, TlatentStar, a, b, c, err)
     do iCell = 1, nCells
       if (mask(iCell) == 0) cycle
 
@@ -970,6 +956,7 @@ contains
       outIceHeatFlux(iCell) = -cp_land_ice*outFreshwaterFlux(iCell)*iceTemperature(iCell)
     end do
     !$omp end do
+    !$omp end parallel
 
   !--------------------------------------------------------------------
 

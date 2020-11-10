@@ -26,6 +26,7 @@ module ocn_init_vertical_grids
    use mpas_timer
 
    use ocn_constants
+   use ocn_config
 
    implicit none
    private
@@ -89,12 +90,7 @@ contains
       else if ( trim(gridType) == '100layerE3SMv1' ) then
          call ocn_generate_100layerE3SMv1_vertical_grid(interfaceLocations)
       else if ( trim(gridType) == '1dCVTgenerator' ) then
-         if (.not. present(configPool)) then
-            call mpas_log_write("MPAS-ocean: requesting a 1d CVT vertical grid generation " &
-                                      // "without passing the corresponding parameters. Exiting...", MPAS_LOG_CRIT)
-         else
-            call ocn_generate_1dCVT_vertical_grid(configPool, interfaceLocations)
-         end if
+         call ocn_generate_1dCVT_vertical_grid(interfaceLocations)
       else
          call mpas_log_write( ' WARNING: '//trim(gridType)//' is an invalid vertical grid choice. No vertical ' &
                            // 'grid will be generated.')
@@ -453,42 +449,26 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_generate_1dCVT_vertical_grid(configPool, interfaceLocations)!{{{
+   subroutine ocn_generate_1dCVT_vertical_grid(interfaceLocations)!{{{
 
-      type (mpas_pool_type), intent(in) :: configPool
       real (kind=RKIND), dimension(:), intent(out) :: interfaceLocations
 
       integer :: k
       integer :: nInterfaces, nVertLevels
-      real (kind=RKIND) :: stretch1
-      real (kind=RKIND) :: stretch2
-      real (kind=RKIND) :: dzSeed
 
       real (kind=RKIND) :: stretch
       real (kind=RKIND) :: dz
       real (kind=RKIND) :: maxInterfaceLocation
 
-      real (kind=RKIND), pointer :: config_1dCVTgenerator_stretch1
-      real (kind=RKIND), pointer :: config_1dCVTgenerator_stretch2
-      real (kind=RKIND), pointer :: config_1dCVTgenerator_dzSeed
-
-      call mpas_pool_get_config(configPool, 'config_1dCVTgenerator_stretch1', config_1dCVTgenerator_stretch1)
-      call mpas_pool_get_config(configPool, 'config_1dCVTgenerator_stretch2', config_1dCVTgenerator_stretch2)
-      call mpas_pool_get_config(configPool, 'config_1dCVTgenerator_dzSeed', config_1dCVTgenerator_dzSeed)
-
-      stretch1 = config_1dCVTgenerator_stretch1
-      stretch2 = config_1dCVTgenerator_stretch2
-      dzSeed = config_1dCVTgenerator_dzSeed
-
       nInterfaces = size(interfaceLocations, dim=1)
       nVertLevels = nInterfaces - 1
 
       ! compute profile starting at top and stretch dz as we move down
-      dz = dzSeed
+      dz = config_1dCVTgenerator_dzSeed
       interfaceLocations(1) = 0.0_RKIND
       interfaceLocations(2) = dz
       do k=2,nVertLevels
-         stretch = stretch1 + (stretch2-stretch1)*k/nVertLevels
+         stretch = config_1dCVTgenerator_stretch1 + (config_1dCVTgenerator_stretch2-config_1dCVTgenerator_stretch1)*k/nVertLevels
          dz = stretch*dz
          interfaceLocations(k+1) = interfaceLocations(k) + dz
       enddo
@@ -595,14 +575,7 @@ contains
       real (kind=RKIND), dimension(maxLevelCell), intent(in) :: refBottomDepth
       integer, intent(out) :: iErr
       integer :: k
-
-      logical, pointer :: config_alter_ICs_for_pbcs
       real (kind=RKIND) :: minBottomDepth, minBottomDepthMid
-      real (kind=RKIND), pointer :: config_min_pbc_fraction
-      character (len=StrKIND), pointer :: config_pbc_alteration_type
-      call mpas_pool_get_config(ocnConfigs, 'config_alter_ICs_for_pbcs', config_alter_ICs_for_pbcs)
-      call mpas_pool_get_config(ocnConfigs, 'config_pbc_alteration_type', config_pbc_alteration_type)
-      call mpas_pool_get_config(ocnConfigs, 'config_min_pbc_fraction', config_min_pbc_fraction)
 
       iErr = 0
 
@@ -786,20 +759,22 @@ contains
       type (field2DReal), pointer :: zInterfaceField, goalStretchField, goalWeightField, &
                                      verticalStretchField
       type (field1DReal), pointer :: zTopField, zBotField, zBotNewField
+      type (field1DInteger), pointer :: maxLevelCellField
       type (field1DInteger), pointer :: smoothingMaskField, smoothingMaskNewField
 
       real (kind=RKIND), dimension(:,:), pointer :: zMid, layerThickness, restingThickness, zInterface, &
                                                     verticalStretch, goalStretch, goalWeight, rx1Edge
-      real (kind=RKIND), dimension(:), pointer :: ssh, bottomDepth, refBottomDepth, zTop, zBot, zBotNew, landIceFraction, &
+      integer, dimension(:), pointer :: landIceMask
+      real (kind=RKIND), dimension(:), pointer :: ssh, bottomDepth, refBottomDepth, zTop, zBot, zBotNew, &
                                         refLayerThickness
 
       real (kind=RKIND), pointer :: globalRx1Max, globalVerticalStretchMax, globalVerticalStretchMin
 
-      integer, pointer :: nCells, nVertLevels, nEdges
+      integer, pointer :: nCells, nVertLevels, nEdges, nCellsSolve
       integer, dimension(:), pointer :: maxLevelCell, cullCell, nEdgesOnCell, smoothingMask, smoothingMaskNew
       integer, dimension(:,:), pointer :: cellsOnEdge, cellsOnCell, edgesOnCell
 
-      integer :: iCell, iEdge, coc, c1, c2, k, maxLevelEdge, iSmooth, iterIndex
+      integer :: iCell, iEdge, coc, c1, c2, k, maxLevelEdge, iSmooth, iterIndex, maxLevelNeighbors
 
       real (kind=RKIND) :: dzEdgeK, dzEdgeKp1, dzEdgeMean, dzVertGoal, &
                            zMean, weight, rx1Goal, dzVertMean, &
@@ -807,8 +782,6 @@ contains
                            localStretchMax, localStretchMin
 
       logical :: moveInterface
-
-      real (kind=RKIND), parameter :: eps=1e-6_RKIND
 
       iErr = 0
 
@@ -855,7 +828,7 @@ contains
         call mpas_pool_get_array(meshPool, 'cullCell', cullCell)
         call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
 
-        call mpas_pool_get_array(forcingPool, 'landIceFraction', landIceFraction)
+        call mpas_pool_get_array(forcingPool, 'landIceMask', landIceMask)
         call mpas_pool_get_array(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMask, 1)
 
         maxLevelCell(nCells+1) = -1
@@ -870,7 +843,7 @@ contains
 
         ! initialize the smoothing mask to valid cells under land ice
         smoothingMask(:) = 0
-        where((maxLevelCell(:) > 0) .and. (landIceFraction(:) > eps))
+        where((maxLevelCell(:) > 0) .and. (landIceMask(:) == 1))
           smoothingMask(:) = 1
         end where
 
@@ -1206,6 +1179,28 @@ contains
           call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
           call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
           call mpas_pool_get_array(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMask, 1)
+          call mpas_pool_get_dimension(meshPool, 'nCellsSolve', nCellsSolve)
+          call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
+          call mpas_pool_get_array(meshPool, 'cellsOnCell', cellsOnCell)
+
+          ! Fill bathymetry holes, i.e. single cells that are deeper than all neighbors.
+          ! These cells can collect tracer extrema and are not able to use
+          ! horizontal diffusion or advection to clear them out. Reduce pits to
+          ! make them level with the next deepest neighbor cell.
+
+          maxLevelCell(nCells+1) = -1
+
+          do iCell = 1, nCellsSolve
+             maxLevelNeighbors = 0
+             do iEdge = 1, nEdgesOnCell(iCell)
+                coc = cellsOnCell(iEdge, iCell)
+                maxLevelNeighbors = max(maxLevelNeighbors, maxLevelCell(coc))
+             end do
+
+             if (maxLevelCell(iCell) > maxLevelNeighbors) then
+                maxLevelCell(iCell) = maxLevelNeighbors
+             end if
+          end do
 
           where((smoothingMask(:) == 1) .and. (maxLevelCell(:) == nVertLevels+1))
             ! we never found the bottom, so it must be the last level
@@ -1215,10 +1210,13 @@ contains
           block_ptr => block_ptr % next
         end do
 
+       call mpas_pool_get_subpool(domain % blocklist % structs, 'mesh', meshPool)
+       call mpas_pool_get_field(meshPool, 'maxLevelCell', maxLevelCellField)
+       call mpas_dmpar_exch_halo_field(maxLevelCellField)
+
         localMaxRx1Edge = -1e30_RKIND
         localStretchMin = 1e30_RKIND
         localStretchMax = -1e30_RKIND
-
 
         block_ptr => domain % blocklist
         do while(associated(block_ptr))

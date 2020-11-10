@@ -28,6 +28,7 @@ module ocn_vel_pressure_grad
    use mpas_log
 
    use ocn_constants
+   use ocn_config
 
    implicit none
    private
@@ -54,8 +55,8 @@ module ocn_vel_pressure_grad
    !
    !--------------------------------------------------------------------
 
-   character (len=StrKIND), pointer :: config_pressure_gradient_type
-   real (kind=RKIND), pointer :: config_common_level_weight
+!   character (len=StrKIND), pointer :: config_pressure_gradient_type
+!   real (kind=RKIND), pointer :: config_common_level_weight
    logical :: pgradOn
    real (kind=RKIND) :: density0Inv, gdensity0Inv, inv12
 
@@ -162,6 +163,7 @@ contains
          ! pressure for sea surface height
          ! - g grad ssh
 
+         !$omp parallel
          !$omp do schedule(runtime) private(cell1, cell2, invdcEdge, k)
          do iEdge=1,nEdges
             cell1 = cellsOnEdge(1,iEdge)
@@ -173,12 +175,14 @@ contains
             end do
          end do
          !$omp end do
+         !$omp end parallel
 
       elseif (config_pressure_gradient_type.eq.'pressure_and_zmid') then
 
          ! pressure for generalized coordinates
          ! -1/density_0 (grad p_k + density g grad z_k^{mid})
 
+         !$omp parallel
          !$omp do schedule(runtime) private(cell1, cell2, invdcEdge, k)
          do iEdge=1,nEdges
             cell1 = cellsOnEdge(1,iEdge)
@@ -192,12 +196,14 @@ contains
             end do
          end do
          !$omp end do
+         !$omp end parallel
 
       elseif (config_pressure_gradient_type.eq.'MontgomeryPotential') then
 
          ! For pure isopycnal coordinates, this is just grad(M),
          ! the gradient of Montgomery Potential
 
+         !$omp parallel
          !$omp do schedule(runtime) private(cell1, cell2, invdcEdge, k)
          do iEdge=1,nEdges
             cell1 = cellsOnEdge(1,iEdge)
@@ -210,6 +216,7 @@ contains
             end do
          end do
          !$omp end do
+         !$omp end parallel
 
       elseif (config_pressure_gradient_type.eq.'MontgomeryPotential_and_density') then
 
@@ -219,6 +226,7 @@ contains
          ! Where rho is the potential density.
          ! See Bleck (2002) equation 1, and last equation in Appendix A.
 
+         !$omp parallel
          !$omp do schedule(runtime) private(cell1, cell2, invdcEdge, k)
          do iEdge=1,nEdges
             cell1 = cellsOnEdge(1,iEdge)
@@ -233,12 +241,14 @@ contains
             end do
          end do
          !$omp end do
+         !$omp end parallel
 
       elseif (config_pressure_gradient_type.eq.'Jacobian_from_density') then
 
          allocate(JacobianDxDs(nVertLevels))
 
-         !$omp do schedule(runtime)
+         !$omp parallel
+         !$omp do schedule(runtime) private(cell1, cell2, invdcEdge, k, pGrad, JacobianDxDs)
          do iEdge=1,nEdges
             cell1 = cellsOnEdge(1,iEdge)
             cell2 = cellsOnEdge(2,iEdge)
@@ -268,6 +278,7 @@ contains
             end do
          end do
          !$omp end do
+         !$omp end parallel
 
          deallocate(JacobianDxDs)
 
@@ -276,7 +287,10 @@ contains
          allocate(JacobianDxDs(nVertLevels),JacobianTz(nVertLevels),JacobianSz(nVertLevels), T1(nVertLevels))
          allocate(T2(nVertLevels), S1(nVertLevels), S2(nVertLevels))
 
-         !$omp do schedule(runtime)
+         !$omp parallel
+         !$omp do schedule(runtime) &
+         !$omp private(cell1, cell2, invdcEdge, kMax, T1, T2, S1, S2, k, alpha, beta, &
+         !$omp         pGrad, JacobianDxDs, JacobianTz, JacobianSz)
          do iEdge=1,nEdges
             cell1 = cellsOnEdge(1,iEdge)
             cell2 = cellsOnEdge(2,iEdge)
@@ -329,6 +343,7 @@ contains
             end do
          end do
          !$omp end do
+         !$omp end parallel
 
          deallocate(JacobianDxDs,JacobianTz,JacobianSz, T1, T2, S1, S2)
 
@@ -661,13 +676,8 @@ contains
       ! call individual init routines for each parameterization
       !
       !-----------------------------------------------------------------
-      logical, pointer :: config_disable_vel_pgrad
 
       err = 0
-
-      call mpas_pool_get_config(ocnConfigs, 'config_pressure_gradient_type', config_pressure_gradient_type)
-      call mpas_pool_get_config(ocnConfigs, 'config_common_level_weight', config_common_level_weight)
-      call mpas_pool_get_config(ocnConfigs, 'config_disable_vel_pgrad', config_disable_vel_pgrad)
 
       pgradOn = .true.
 

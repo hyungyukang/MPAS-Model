@@ -79,7 +79,7 @@
 		</var_struct>
 	</var_struct>
 
-	<var_struct name="forcing" time_levs="1">
+   	<var_struct name="forcing" time_levs="1">
 		<var_struct name="tracersSurfaceFlux" time_levs="1">
 			<var_array name="debugTracersSurfaceFlux" type="real" dimensions="nCells Time" packages="debugTracersPKG">
 				<var name="tracer1SurfaceFlux" array_group="debugTracerFluxGRP" units="tracer1 m s^{-1}"

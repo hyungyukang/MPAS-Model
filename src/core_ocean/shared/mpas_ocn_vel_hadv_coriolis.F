@@ -25,6 +25,7 @@ module ocn_vel_hadv_coriolis
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
+   use ocn_config
 
    implicit none
    private
@@ -148,7 +149,9 @@ contains
 
       allocate( qArr(nVertLevels) )
 
-      !$omp do schedule(runtime)
+      !$omp parallel
+      !$omp do schedule(runtime) &
+      !$omp private(cell1, cell2, invLength, k, qArr, j, eoe, edgeWeight, workVorticity)
       do iEdge = 1, nEdges
          cell1 = cellsOnEdge(1,iEdge)
          cell2 = cellsOnEdge(2,iEdge)
@@ -179,6 +182,7 @@ contains
 
       end do
       !$omp end do
+      !$omp end parallel
 
       deallocate( qArr )
 
@@ -211,13 +215,7 @@ contains
 
       integer, intent(out) :: err !< Output: error flag
 
-      logical, pointer :: config_disable_vel_coriolis
-      character (len=StrKIND), pointer :: config_time_integrator
-
       err = 0
-
-      call mpas_pool_get_config(ocnConfigs, 'config_disable_vel_coriolis', config_disable_vel_coriolis)
-      call mpas_pool_get_config(ocnConfigs, 'config_time_integrator', config_time_integrator)
 
       hadvAndCoriolisOn = .true.
 

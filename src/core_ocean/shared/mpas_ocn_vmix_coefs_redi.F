@@ -1,6 +1,6 @@
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !
-!  ocn_vmix_coefs_const
+!  ocn_vmix_coefs_redi
 !
 !> \brief MPAS ocean vertical mixing coefficients
 !> \author Doug Jacobsen
@@ -10,7 +10,6 @@
 !>  This module contains the routines for compounding
 !>  the Redi vertical mixing coefficients.
 !>
-!
 !-----------------------------------------------------------------------
 
 module ocn_vmix_coefs_redi
@@ -20,6 +19,7 @@ module ocn_vmix_coefs_redi
    use mpas_timer
 
    use ocn_constants
+   use ocn_config
 
    implicit none
    private
@@ -49,7 +49,6 @@ module ocn_vmix_coefs_redi
    !--------------------------------------------------------------------
 
    logical :: rediDiffOn
-   logical, pointer :: config_use_Redi
 
 !***********************************************************************
 
@@ -179,8 +178,13 @@ contains
       real (kind=RKIND), dimension(:,:), intent(in) :: &
          k33
 
-      integer :: iCell, nCells
-      integer, pointer :: nCellsSolve
+      real (kind=RKIND) :: rediKappaCell
+      real (kind=RKIND),dimension(:),pointer :: dvEdge, dcEdge, areaCell
+
+      integer :: i, iCell, nCells, iEdge
+
+      integer, dimension(:), pointer :: nEdgesOnCell, nCellsArray
+      integer, dimension(:,:), pointer :: edgesOnCell
 
       integer, intent(out) :: err !< Output: error flag
 
@@ -196,15 +200,29 @@ contains
 
       call mpas_timer_start('tracer redi coef')
 
-      call mpas_pool_get_dimension(meshPool, 'nCellsSolve', nCellsSolve)
+      call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
+      call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
+      call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
+      call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
+      call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
+      call mpas_pool_get_array(meshPool, 'dcEdge', dcEdge)
 
-      nCells = nCellsSolve
+      nCells = nCellsArray(1)
 
-      !$omp do schedule(runtime)
+      !$omp parallel
+      !$omp do schedule(runtime) private(i, rediKappaCell, iEdge)
       do iCell = 1, nCells
-         vertDiffTopOfCell(:, iCell) = vertDiffTopOfCell(:, iCell) + RediKappa(iCell) * k33(:, iCell)
+         rediKappaCell = 0.0_RKIND
+         do i = 1, nEdgesOnCell(iCell)
+            iEdge = edgesOnCell(i, iCell)
+            rediKappaCell = rediKappaCell + 0.25_RKIND*RediKappa(iEdge) * dvEdge(iEdge) * dcEdge(iEdge)
+         enddo
+
+         vertDiffTopOfCell(:, iCell) = vertDiffTopOfCell(:, iCell) + rediKappaCell * k33(:, iCell) &
+                        / areaCell(iCell)
       end do
       !$omp end do
+      !$omp end parallel
 
       call mpas_timer_stop('tracer redi coef')
 
@@ -243,8 +261,6 @@ contains
       integer, intent(out) :: err !< Output: error flag
 
       err = 0
-
-      call mpas_pool_get_config(ocnConfigs, 'config_use_Redi',config_use_Redi)
 
       if (config_use_Redi) then
          rediDiffOn = .True.

@@ -25,6 +25,7 @@ module ocn_vel_hmix_leith
    use mpas_pool_routines
    use mpas_constants
    use ocn_constants
+   use ocn_config
 
    implicit none
    private
@@ -130,10 +131,8 @@ contains
       integer, dimension(:,:), pointer :: cellsOnEdge, verticesOnEdge, edgeMask
 
       real (kind=RKIND) :: u_diffusion, invLength_dc, invLength_dv, visc2
-      real (kind=RKIND), dimension(:), pointer :: meshScaling, &
+      real (kind=RKIND), dimension(:), pointer :: meshScalingDel2, &
               dcEdge, dvEdge
-
-      real (kind=RKIND), pointer :: config_leith_parameter, config_leith_dx, config_leith_visc2_max
 
       !-----------------------------------------------------------------
       !
@@ -147,22 +146,19 @@ contains
 
       call mpas_timer_start("vel leith")
 
-      call mpas_pool_get_config(ocnConfigs, 'config_Leith_parameter', config_leith_parameter)
-      call mpas_pool_get_config(ocnConfigs, 'config_Leith_dx', config_leith_dx)
-      call mpas_pool_get_config(ocnConfigs, 'config_Leith_visc2_max', config_leith_visc2_max)
-
       call mpas_pool_get_dimension(meshPool, 'nEdgesArray', nEdgesArray)
 
       call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
       call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
       call mpas_pool_get_array(meshPool, 'verticesOnEdge', verticesOnEdge)
-      call mpas_pool_get_array(meshPool, 'meshScaling', meshScaling)
+      call mpas_pool_get_array(meshPool, 'meshScalingDel2', meshScalingDel2)
       call mpas_pool_get_array(meshPool, 'edgeMask', edgeMask)
       call mpas_pool_get_array(meshPool, 'dcEdge', dcEdge)
       call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
 
       nEdges = nEdgesArray( 1 )
 
+      !$omp parallel
       !$omp do schedule(runtime) private(cell1, cell2, vertex1, vertex2, invLength_dc, invLength_dv, k, u_diffusion, visc2)
       do iEdge = 1, nEdges
          cell1 = cellsOnEdge(1,iEdge)
@@ -185,7 +181,7 @@ contains
             ! Here the first line is (\delta x)^3
             ! the second line is |\nabla \omega|
             ! and u_diffusion is \nabla^2 u (see formula for $\bf{D}$ above).
-            visc2 = ( config_leith_parameter * config_leith_dx * meshScaling(iEdge) / pii)**3 &
+            visc2 = ( config_leith_parameter * config_leith_dx * meshScalingDel2(iEdge) / pii)**3 &
                      * abs( relativeVorticity(k,vertex2) - relativeVorticity(k,vertex1) ) * invLength_dc * sqrt(3.0_RKIND)
             visc2 = min(visc2, config_leith_visc2_max)
 
@@ -196,6 +192,7 @@ contains
          end do
       end do
       !$omp end do
+      !$omp end parallel
 
       call mpas_timer_stop("vel leith")
 
@@ -226,11 +223,8 @@ contains
    ! set some local module variables based on input config choices
    !
    !--------------------------------------------------------------------
-   logical, pointer :: config_use_Leith_del2
 
    err = 0
-
-   call mpas_pool_get_config(ocnConfigs, 'config_use_Leith_del2', config_use_Leith_del2)
 
    hmixLeithOn = .false.
 

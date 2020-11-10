@@ -28,6 +28,7 @@ module ocn_init_ssh_and_landIcePressure
    use mpas_constants
 
    use ocn_constants
+   use ocn_config
    use ocn_init_interpolation
    use ocn_init_vertical_grids
 
@@ -158,20 +159,15 @@ contains
      type (field1DInteger), pointer :: origMaxLevelCellField
      integer, pointer :: nCells, nVertLevels
 
-     character (len=StrKIND), pointer :: config_iterative_init_variable
-
      integer :: iCell
 
      iErr = 0
-
-     call mpas_pool_get_config(ocnConfigs, 'config_iterative_init_variable', config_iterative_init_variable)
 
      ! compute density (needed regardless of config_iterative_init_variable)
 
      block_ptr => domain % blocklist
      do while(associated(block_ptr))
        call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
-       call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
        call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
        call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
 
@@ -180,7 +176,7 @@ contains
        call mpas_pool_get_array(diagnosticsPool, 'density', density)
 
        call ocn_equation_of_state_density(statePool, diagnosticsPool, meshPool, &
-           scratchPool, nCells, 0, 'relative', density, iErr, &
+           nCells, 0, 'relative', density, iErr, &
            timeLevelIn=1)
 
        if(iErr .ne. 0) then
@@ -198,7 +194,6 @@ contains
        block_ptr => domain % blocklist
        do while(associated(block_ptr))
          call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
-         call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
          call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
          call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
          call mpas_pool_get_subpool(block_ptr % structs, 'forcing', forcingPool)
@@ -220,7 +215,7 @@ contains
          call mpas_pool_get_array(diagnosticsPool, 'modifySSHMask', modifySSHMask)
 
          call ocn_equation_of_state_density(statePool, diagnosticsPool, meshPool, &
-             scratchPool, nCells, 0, 'relative', density, iErr, &
+             nCells, 0, 'relative', density, iErr, &
              timeLevelIn=1)
 
          if(iErr .ne. 0) then
@@ -295,7 +290,7 @@ contains
 
 
        call ocn_equation_of_state_density(statePool, diagnosticsPool, meshPool, &
-           scratchPool, nCells, 0, 'relative', density, iErr, &
+           nCells, 0, 'relative', density, iErr, &
            timeLevelIn=1)
 
        if(iErr .ne. 0) then
@@ -428,10 +423,6 @@ contains
 
      type (mpas_pool_type), pointer :: meshPool, statePool, diagnosticsPool, verticalMeshPool
 
-     logical, pointer :: config_use_rx1_constraint
-
-     character (len=StrKIND), pointer :: config_iterative_init_variable
-
      ! Define dimension pointers
      integer, pointer :: nCells, nVertLevels
 
@@ -448,8 +439,6 @@ contains
 
      iErr = 0
 
-     call mpas_pool_get_config(ocnConfigs, 'config_iterative_init_variable', config_iterative_init_variable)
-
      if(config_iterative_init_variable .ne. 'ssh' &
         .and. config_iterative_init_variable .ne. 'landIcePressure_from_top_density' &
         .and. config_iterative_init_variable .ne. 'landIcePressure') then
@@ -457,7 +446,6 @@ contains
        call mpas_log_write( 'invalid value for config_iterative_init_variable'// trim(config_iterative_init_variable), MPAS_LOG_CRIT)
        return
      end if
-     call mpas_pool_get_config(ocnConfigs, 'config_use_rx1_constraint', config_use_rx1_constraint)
 
      ! one reason for using config_iterative_init_variable == 'landIcePressure_from_top_density' is that we can immediately compute
      ! the vertical grid displaced by the ssh

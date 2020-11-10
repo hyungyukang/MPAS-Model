@@ -40,6 +40,7 @@ module ocn_forward_mode
    use ocn_tendency
    use ocn_diagnostics
    use ocn_test
+   use ocn_mesh
 
    use ocn_thick_hadv
    use ocn_thick_vadv
@@ -56,7 +57,7 @@ module ocn_forward_mode
    use ocn_surface_land_ice_fluxes
    use ocn_frazil_forcing
    use ocn_tidal_forcing
-   use ocn_tidal_potential_forcing
+   use ocn_vel_tidal_potential
 
    use ocn_tracer_hmix
    use ocn_tracer_hmix_redi
@@ -128,6 +129,7 @@ module ocn_forward_mode
       type (MPAS_TimeInterval_type) :: timeStep
       type (MPAS_TimeInterval_type) :: alarmTimeStep
 
+<<<<<<< HEAD
       logical, pointer :: config_do_restart, config_read_nearest_restart, config_filter_btr_mode, config_conduct_tests
       character (len=StrKIND), pointer :: config_vert_coord_movement, config_pressure_gradient_type
       character (len=StrKIND), pointer :: config_surface_salinity_monthly_restoring_compute_interval
@@ -135,6 +137,8 @@ module ocn_forward_mode
 
       real (kind=RKIND), pointer :: config_maxMeshDensity
       logical, pointer :: config_use_surface_salinity_monthly_restoring
+=======
+>>>>>>> upstream/ocean/develop
       ierr = 0
 
       !
@@ -150,17 +154,6 @@ module ocn_forward_mode
       ! Setup ocean config pool
       call ocn_config_init(domain % configs)
 
-      call mpas_pool_get_config(domain % configs, 'config_do_restart', config_do_restart)
-      call mpas_pool_get_config(domain % configs, 'config_read_nearest_restart', config_read_nearest_restart)
-      call mpas_pool_get_config(domain % configs, 'config_vert_coord_movement', config_vert_coord_movement)
-      call mpas_pool_get_config(domain % configs, 'config_pressure_gradient_type', config_pressure_gradient_type)
-      call mpas_pool_get_config(domain % configs, 'config_filter_btr_mode', config_filter_btr_mode)
-      call mpas_pool_get_config(domain % configs, 'config_maxMeshDensity', config_maxMeshDensity)
-      call mpas_pool_get_config(domain % configs, 'config_conduct_tests', config_conduct_tests)
-      call mpas_pool_get_config(domain % configs, 'config_use_surface_salinity_monthly_restoring', &
-                                config_use_surface_salinity_monthly_restoring)
-      call mpas_pool_get_config(domain % configs, 'config_surface_salinity_monthly_restoring_compute_interval', &
-              config_surface_salinity_monthly_restoring_compute_interval)
       !
       ! Read input data for model
       !
@@ -228,7 +221,7 @@ module ocn_forward_mode
       ierr = ior(ierr, err_tmp)
       call ocn_tidal_forcing_init(err_tmp)
       ierr = ior(ierr, err_tmp)
-      call ocn_tidal_potential_forcing_init(domain,err_tmp)
+      call ocn_vel_tidal_potential_init(domain,err_tmp)
       ierr = ior(ierr, err_tmp)
 
       call ocn_tracer_hmix_init(err_tmp)
@@ -260,13 +253,10 @@ module ocn_forward_mode
 
       call ocn_tendency_init(err_tmp)
       ierr = ior(ierr,err_tmp)
-      call ocn_diagnostics_init(err_tmp)
+      call ocn_diagnostics_init(domain, err_tmp)
       ierr = ior(ierr,err_tmp)
 
       call ocn_forcing_init(err_tmp)
-      ierr = ior(ierr,err_tmp)
-
-      call ocn_high_freq_thickness_hmix_del2_init(err_tmp)
       ierr = ior(ierr,err_tmp)
 
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'nVertLevels', nVertLevels)
@@ -330,6 +320,10 @@ module ocn_forward_mode
       !
       ! Initialize core
       !
+
+      ! fill the ocean mesh structure
+      call ocn_meshCreate(domain)
+
       timeStep = mpas_get_clock_timestep(domain % clock, ierr=err_tmp)
       call mpas_get_timeInterval(timeStep, dt=dt)
 
@@ -351,6 +345,14 @@ module ocn_forward_mode
             simulationStartTime = startTimeStamp
          end if
 
+         block => block % next
+      end do
+
+      block => domain % blocklist
+      do while (associated(block))
+         call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+         call mpas_pool_get_array(diagnosticsPool, 'xtime', xtime)
+
          ! compute time since start of simulation, in days
          call mpas_pool_get_array(diagnosticsPool, 'daysSinceStartOfSim',daysSinceStartOfSim)
          call mpas_set_time(xtime_timeType, dateTimeString=xtime)
@@ -360,6 +362,9 @@ module ocn_forward_mode
 
          block => block % next
       end do
+
+      ! Update any mesh fields that may have been modified during init
+      call ocn_meshUpdateFields(domain)
 
       if (config_conduct_tests) then
          call mpas_timer_start("test suite")
@@ -508,31 +513,9 @@ module ocn_forward_mode
       type (mpas_pool_type), pointer :: diagnosticsPool
       type (mpas_pool_type), pointer :: scratchPool
 
-
       type (MPAS_timeInterval_type) :: timeStep
-      character(len=StrKIND), pointer :: config_restart_timestamp_name, config_sw_absorption_type
-
-      logical, pointer :: config_write_output_on_startup
-      logical, pointer :: config_use_ecosysTracers
-      logical, pointer :: config_use_activeTracers_surface_restoring
-      logical, pointer :: config_use_surface_salinity_monthly_restoring
-      logical, pointer :: config_use_time_varying_atmospheric_forcing
-      logical, pointer :: config_use_time_varying_land_ice_forcing
 
       ierr = 0
-
-      call mpas_pool_get_config(domain % configs, 'config_write_output_on_startup', config_write_output_on_startup)
-      call mpas_pool_get_config(domain % configs, 'config_restart_timestamp_name', config_restart_timestamp_name)
-      call mpas_pool_get_config(domain % configs, 'config_sw_absorption_type', config_sw_absorption_type)
-      call mpas_pool_get_config(domain % configs, 'config_use_ecosysTracers', config_use_ecosysTracers)
-      call mpas_pool_get_config(domain % configs, 'config_use_activeTracers_surface_restoring',  &
-                                                   config_use_activeTracers_surface_restoring)
-      call mpas_pool_get_config(domain % configs, 'config_use_surface_salinity_monthly_restoring',  &
-                                                   config_use_surface_salinity_monthly_restoring)
-      call MPAS_pool_get_config(domain % configs, 'config_use_time_varying_atmospheric_forcing', &
-                                                   config_use_time_varying_atmospheric_forcing)
-      call MPAS_pool_get_config(domain % configs, 'config_use_time_varying_land_ice_forcing', &
-                                                   config_use_time_varying_land_ice_forcing)
 
       ! Eventually, dt should be domain specific
       timeStep = mpas_get_clock_timestep(domain % clock, ierr=ierr)
@@ -543,7 +526,6 @@ module ocn_forward_mode
 #ifdef MPAS_DEBUG
       call mpas_log_write('Initial time ' // trim(timeStamp))
 #endif
-
       call ocn_analysis_compute_startup(domain, err)
 
       if (config_write_output_on_startup) then
@@ -617,8 +599,12 @@ module ocn_forward_mode
            call mpas_timer_stop("land_ice_build_arrays")
 
            call ocn_frazil_forcing_build_arrays(domain, meshPool, forcingPool, diagnosticsPool, statePool, err)
-           
            call ocn_tidal_forcing_build_array(domain, meshPool, forcingPool, diagnosticsPool, statePool, err)
+
+           ! Compute normalGMBolusVelocity, relativeSlope and RediDiffVertCoef if respective flags are turned on
+           if (config_use_Redi.or.config_use_GM) then
+               call ocn_gm_compute_Bolus_velocity(statePool, diagnosticsPool, meshPool, scratchPool, timeLevelIn=1)
+           end if
 
            block_ptr => block_ptr % next
          end do
@@ -628,11 +614,7 @@ module ocn_forward_mode
 #ifdef MPAS_DEBUG
          call mpas_log_write( '   Computing forward time step')
 #endif
-         !$omp parallel default(firstprivate) shared(domain, dt, timeStamp)
-
          call ocn_timestep(domain, dt, timeStamp)
-
-         !$omp end parallel
 
          call mpas_timer_stop("time integration")
 
@@ -747,6 +729,9 @@ module ocn_forward_mode
       type (domain_type), intent(inout) :: domain
 
       integer :: ierr
+
+      ! destroy the ocean mesh structure
+      call ocn_meshDestroy(ierr)
 
       call mpas_dmpar_exch_group_destroy_reusable_buffers(domain, 'subcycleFields')
 
