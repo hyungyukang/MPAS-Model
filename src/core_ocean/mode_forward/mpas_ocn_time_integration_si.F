@@ -402,7 +402,7 @@ module ocn_time_integration_si
          nEdges = nEdgesPtr
 
 
-         print*, nCellsArray(:)
+!        print*, nCellsArray(:)
          ! Initialize * variables that are used to compute baroclinic tendencies below.
 
          !$omp do schedule(runtime) private(k)
@@ -1876,11 +1876,6 @@ module ocn_time_integration_si
                CGvec_r00(iCell) = CGvec_r0(iCell)
             end do ! iCell
  
-            do iCell = 1,nCells
-               print*, CGvec_r0(iCell)
-            end do
-            stop
- 
             block => block % next
          end do  ! block
 
@@ -2777,10 +2772,10 @@ module ocn_time_integration_si
 
             ! #Iteration  check
 !           if ( split_implicit_step == 2 ) then
-            if ( rank == 0 ) then
+!           if ( rank == 0 ) then
 !           call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
-             print*, 'Iter',iter
-            endif
+!            print*, 'Iter',iter
+!           endif
 !           endif
 
             block => block % next
