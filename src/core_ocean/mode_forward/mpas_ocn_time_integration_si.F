@@ -675,7 +675,6 @@ module ocn_time_integration_si
             call mpas_pool_get_array(statePool, 'ssh', sshCur, 1)
             call mpas_pool_get_array(statePool, 'ssh', sshNew, 2)
             call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleCur, 1)
-            call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
             call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', normalBarotropicVelocityCur, 1)
             call mpas_pool_get_array(statePool, 'normalBarotropicVelocitySubcycle', normalBarotropicVelocitySubcycleCur, 1)
 
@@ -683,11 +682,13 @@ module ocn_time_integration_si
             nEdges = nEdgesArray(edgeHaloComputeCounter)
 
             if (config_filter_btr_mode) then
+               !$omp parallel
                !$omp do schedule(runtime)
                do iEdge = 1, nEdges
                   barotropicForcing(iEdge) = 0.0_RKIND
                end do
                !$omp end do
+               !$omp end parallel
             endif
 
             if ( split_implicit_step == 1 ) then
@@ -706,6 +707,8 @@ module ocn_time_integration_si
                endif
             endif ! split_implicit_step
 
+            !$omp parallel
+            !$omp do schedule(runtime) private(CoriolisTerm, i, eo
             do iEdge = 1, nEdges
                ! Compute the barotropic Coriolis term, -f*uPerp
                CoriolisTerm = 0.d0
@@ -716,6 +719,8 @@ module ocn_time_integration_si
                end do ! i
                   barotropicCoriolisTerm(iEdge) = CoriolisTerm
             end do ! iEdge
+            !$omp end do
+            !$omp end parallel
 
             block => block % next
          end do  ! block
@@ -756,7 +761,6 @@ module ocn_time_integration_si
          endif !config_use_tidal_potential_forcing
 
          call mpas_timer_stop('btr vel si init')
-
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !
@@ -816,7 +820,7 @@ module ocn_time_integration_si
                   sshEdgeCur = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
 
                   ! method 1, matches method 0 without pbcs, works with pbcs.
-                  thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
+                  thicknessSumCur = si_ismf * sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
 
                   ! nabla (ssh^0)
                   sshDiffCur = (  sshCur(cell2) - sshCur(cell1)) / dcEdge(iEdge)
@@ -825,9 +829,9 @@ module ocn_time_integration_si
                   fluxb2 = thicknessSumCur * (alpha2*gravity*sshDiffCur + (-barotropicCoriolisTerm(iEdge)-barotropicForcing(iEdge)))
                   fluxAx = thicknessSumCur * sshDiffCur
 
-                  sshTendb1 = sshTendb1 + edgeSignOnCell(i, iCell) * fluxb1 * dvEdge(iEdge) !/ areaCell(iCell)
-                  sshTendb2 = sshTendb2 + edgeSignOnCell(i, iCell) * fluxb2 * dvEdge(iEdge) !/ areaCell(iCell)
-                  sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge) !/ areaCell(iCell)
+                  sshTendb1 = sshTendb1 + edgeSignOnCell(i, iCell) * fluxb1 * dvEdge(iEdge)
+                  sshTendb2 = sshTendb2 + edgeSignOnCell(i, iCell) * fluxb2 * dvEdge(iEdge)
+                  sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
                end do ! i
 
                sshTendb1  = R1_alpha1s_g_dt(split_implicit_step) * sshTendb1
@@ -942,12 +946,12 @@ module ocn_time_integration_si
                   sshEdgeCur = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
 
                   ! method 1, matches method 0 without pbcs, works with pbcs.
-                  thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
+                  thicknessSumCur = si_ismf * sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
 
                   ! nabla (ssh^0)
                   sshDiffCur = (CGvec_rh0(cell2)- CGvec_rh0(cell1)) / dcEdge(iEdge)
                       fluxAx = thicknessSumCur * sshDiffCur
-                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge) !/ areaCell(iCell)
+                   sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
 
                end do ! i
 
@@ -1073,16 +1077,13 @@ module ocn_time_integration_si
                   sshEdgeCur = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
 
                   ! method 1, matches method 0 without pbcs, works with pbcs.
-                  thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
+                  thicknessSumCur = si_ismf * sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
 
                   ! nabla (ssh^0)
                   sshDiffCur = (CGvec_wh0(cell2)- CGvec_wh0(cell1)) / dcEdge(iEdge)
 
-                  !--------------------------------------------------------------!
                      fluxAx = thicknessSumCur * sshDiffCur
-
-                  sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge) !/ areaCell(iCell)
-                  !--------------------------------------------------------------!
+                  sshTendAx = sshTendAx + edgeSignOnCell(i, iCell) * fluxAx * dvEdge(iEdge)
 
                end do ! i
 
@@ -1110,7 +1111,8 @@ module ocn_time_integration_si
          call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
          call mpas_timer_stop ("si reduction r0")
 
-         if ( config_btr_si_thread_match_mode .and. ncpus > 1) then
+         !if ( config_btr_si_partition_match_mode .and. ncpus > 1) then
+         if ( config_btr_si_partition_match_mode) then
             CGcst_allreduce_temp2(:)   = 0.0_RKIND
             CGcst_allreduce_itemp2(:)  = 0.0_RKIND
             CGcst_allreduce_itemp2(:)  = exponent(CGcst_allreduce_global2(:))
@@ -1283,7 +1285,7 @@ module ocn_time_integration_si
                      sshEdgeLag = 0.5_RKIND * (sshCur(cell1) + sshCur(cell2))
    
                      ! method 1, matches method 0 without pbcs, works with pbcs.
-                     thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1), bottomDepth(cell2))
+                     thicknessSumLag = si_ismf * sshEdgeLag + min(bottomDepth(cell1), bottomDepth(cell2))
    
                      ! nabla (ssh^0)
                      sshDiffNew = (CGvec_zh1(cell2)-CGvec_zh1(cell1)) / dcEdge(iEdge)
@@ -1368,7 +1370,8 @@ module ocn_time_integration_si
             call mpas_dmpar_sum_real_array(dminfo, 9, CGcst_allreduce9, CGcst_allreduce_global9)
             call mpas_timer_stop("si reduction iter")
 
-            if ( config_btr_si_thread_match_mode .and. ncpus > 1) then
+            !if ( config_btr_si_partition_match_mode .and. ncpus > 1) then
+            if ( config_btr_si_partition_match_mode) then
                CGcst_allreduce_temp9(:)    = 0.0_RKIND
                CGcst_allreduce_itemp9(:)   = 0.0_RKIND
                CGcst_allreduce_itemp9(:) = exponent(CGcst_allreduce_global9(:))
@@ -2039,7 +2042,8 @@ module ocn_time_integration_si
          call mpas_dmpar_sum_real_array(dminfo, 2, CGcst_allreduce2, CGcst_allreduce_global2)
          call mpas_timer_stop("si reduction r0")
 
-         if ( config_btr_si_thread_match_mode .and. ncpus > 1) then
+         !if ( config_btr_si_partition_match_mode .and. ncpus > 1) then
+         if ( config_btr_si_partition_match_mode) then
             CGcst_allreduce_temp2(:)   = 0.0_RKIND
             CGcst_allreduce_itemp2(:)  = 0.0_RKIND
             CGcst_allreduce_itemp2(:)  = exponent(CGcst_allreduce_global2(:))
@@ -2302,7 +2306,7 @@ module ocn_time_integration_si
             call mpas_dmpar_sum_real_array(dminfo, 9, CGcst_allreduce9, CGcst_allreduce_global9)
             call mpas_timer_stop("si reduction iter")
 
-            if ( config_btr_si_thread_match_mode .and. ncpus > 1) then
+            if ( config_btr_si_partition_match_mode .and. ncpus > 1) then
                CGcst_allreduce_temp9(:)   = 0.0_RKIND
                CGcst_allreduce_itemp9(:)  = 0.0_RKIND
                CGcst_allreduce_itemp9(:)  = exponent(CGcst_allreduce_global9(:))
@@ -3312,7 +3316,7 @@ module ocn_time_integration_si
          call ocn_time_average_coupled_accumulate(diagnosticsPool, statePool, forcingPool, 2)
 
          if (config_use_GM) then
-            call ocn_reconstruct_gm_vectors(diagnosticsPool, meshPool)
+            call ocn_reconstruct_gm_vectors( meshPool)
          end if
 
          block => block % next
@@ -3510,7 +3514,7 @@ module ocn_time_integration_si
             mean_num_cells = total_num_cells/ncpus
    
             ! Tolerance for main iteration
-            if ( config_btr_si_thread_match_mode ) then
+            if ( config_btr_si_partition_match_mode ) then
                config_btr_si_tolerance = 1.d-8
             endif
             crit_main  = config_btr_si_tolerance * area_mean
@@ -3686,7 +3690,7 @@ module ocn_time_integration_si
             endif
          endif
 
-         if ( config_btr_si_thread_match_mode ) then
+         if ( config_btr_si_partition_match_mode ) then
             call mpas_log_write('       Thread-match mode is turned on.')
             call mpas_log_write('       The preconditioner is configured as jacobi.')
             call mpas_log_write('       The bit-for-bit allreduce is used.')
