@@ -62,7 +62,13 @@ module ocn_time_integration_split
 
    character (len=*), parameter :: subcycleGroupName = 'subcycleFields'
    character (len=*), parameter :: finalBtrGroupName = 'finalBtrFields'
-   integer :: nBtrSubcycles
+   integer :: nBtrSubcycles,istep
+   real (kind=RKIND), dimension(:), pointer :: sshTendOld
+   real (kind=RKIND), dimension(:,:), pointer :: highFreqThicknessTendOld
+   real (kind=RKIND), dimension(:,:), pointer :: lowFreqDivergenceTendOld
+   real (kind=RKIND), dimension(:,:), pointer :: normalVelocityTendOld, layerThicknessTendOld
+   real (kind=RKIND), dimension(:,:,:), pointer :: tracersGroupTendOld, activeTracersTendOld
+
 
    contains
 
@@ -231,6 +237,10 @@ module ocn_time_integration_split
       integer :: temp_mask
       real (kind=RKIND) :: tracer2_value, lat
 
+      integer :: ni,nj,nk
+      integer,dimension(2) :: n2
+      integer,dimension(3) :: n3
+
       call mpas_timer_start("se timestep")
 
       call mpas_pool_get_config(domain % configs, 'config_n_bcl_iter_beg', config_n_bcl_iter_beg)
@@ -271,6 +281,9 @@ module ocn_time_integration_split
       call mpas_pool_get_config(domain % configs, 'config_compute_active_tracer_budgets', config_compute_active_tracer_budgets)
       call mpas_pool_get_config(domain % configs, 'config_reset_debugTracers_near_surface', config_reset_debugTracers_near_surface)
       call mpas_pool_get_config(domain % configs, 'config_reset_debugTracers_top_nLayers', config_reset_debugTracers_top_nLayers)
+
+      istep = istep + 1 
+
       allocate(n_bcl_iter(config_n_ts_iter))
 
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -522,6 +535,9 @@ module ocn_time_integration_split
            call mpas_pool_get_array(diagnosticsPool, 'layerThicknessEdge', layerThicknessEdge)
            call mpas_pool_get_array(diagnosticsPool, 'vertAleTransportTop', vertAleTransportTop)
 
+
+               call mpas_pool_get_array(tendPool, 'normalVelocity', normalVelocityTend)
+
            ! compute vertAleTransportTop.  Use u (rather than normalTransportVelocity) for momentum advection.
            ! Use the most recent time level available.
            if (associated(highFreqThicknessNew)) then
@@ -535,6 +551,7 @@ module ocn_time_integration_split
             endif
 
            call ocn_tend_vel(tendPool, statePool, forcingPool, diagnosticsPool, meshPool, scratchPool, stage1_tend_time, dt)
+
 
            block => block % next
          end do
@@ -583,10 +600,70 @@ module ocn_time_integration_split
                ! Only need to loop over the 1 halo, since there is a halo exchange immediately after this computation.
                nEdges = nEdgesArray( 1 )
 
+            if ( istep == 1 .and. split_explicit_step == 1 ) then
+               n2 = shape(normalVelocityTend)
+               allocate(normalVelocityTendOld(n2(1),n2(2)))
+            endif
+
                ! Put f*normalBaroclinicVelocity^{perp} in normalVelocityNew as a work variable
                call ocn_fuperp(statePool, meshPool, 2)
 
                allocate(uTemp(nVertLevels))
+
+            if ( istep == 1 .and. split_explicit_step == 1 ) then
+               do iEdge = 1, nEdges
+                  cell1 = cellsOnEdge(1,iEdge)
+                  cell2 = cellsOnEdge(2,iEdge)
+
+                  uTemp = 0.0_RKIND  ! could put this after with uTemp(maxleveledgetop+1:nvertlevels)=0
+                  do k = 1, maxLevelEdgeTop(iEdge)
+                      normalVelocityTendOld(k,iEdge) =  normalVelocityTend(k,iEdge) &
+                         + normalVelocityNew(k,iEdge) &  ! this is f*normalBaroclinicVelocity^{perp}
+                         + split * gravity * (  sshNew(cell2) - sshNew(cell1) ) &
+                          / dcEdge(iEdge) 
+                  enddo
+                enddo
+            endif
+
+            if ( istep == 1 ) then
+               !$omp parallel
+               !$omp do schedule(runtime) &
+               !$omp private(cell1, cell2, uTemp, k, normalThicknessFluxSum, thicknessSum)
+               do iEdge = 1, nEdges
+                  cell1 = cellsOnEdge(1,iEdge)
+                  cell2 = cellsOnEdge(2,iEdge)
+
+                  uTemp = 0.0_RKIND  ! could put this after with uTemp(maxleveledgetop+1:nvertlevels)=0
+                  do k = 1, maxLevelEdgeTop(iEdge)
+
+                      uTemp(k) = normalBaroclinicVelocityCur(k,iEdge) &
+                         + dt * (normalVelocityTend(k,iEdge) &
+                         + normalVelocityNew(k,iEdge) &  ! this is f*normalBaroclinicVelocity^{perp}
+                         + split * gravity * (  sshNew(cell2) - sshNew(cell1) ) &
+                          / dcEdge(iEdge) )
+                  enddo
+
+                  normalThicknessFluxSum = layerThicknessEdge(1,iEdge) * uTemp(1)
+                  thicknessSum  = layerThicknessEdge(1,iEdge)
+
+                  do k = 2, maxLevelEdgeTop(iEdge)
+                     normalThicknessFluxSum = normalThicknessFluxSum + layerThicknessEdge(k,iEdge) * uTemp(k)
+                     thicknessSum  =  thicknessSum + layerThicknessEdge(k,iEdge)
+                  enddo
+                  barotropicForcing(iEdge) = split * normalThicknessFluxSum / thicknessSum / dt
+
+
+                  do k = 1, maxLevelEdgeTop(iEdge)
+                     normalBaroclinicVelocityNew(k,iEdge) = 0.5_RKIND*( &
+                       normalBaroclinicVelocityCur(k,iEdge) + uTemp(k) - dt * barotropicForcing(iEdge))
+
+                  enddo
+
+               enddo ! iEdge
+               !$omp end do
+               !$omp end parallel
+
+            else
 
                !$omp parallel
                !$omp do schedule(runtime) &
@@ -598,14 +675,18 @@ module ocn_time_integration_split
                   uTemp = 0.0_RKIND  ! could put this after with uTemp(maxleveledgetop+1:nvertlevels)=0
                   do k = 1, maxLevelEdgeTop(iEdge)
 
-                     ! normalBaroclinicVelocityNew = normalBaroclinicVelocityOld + dt*(-f*normalBaroclinicVelocityPerp
-                     !                             + T(u*,w*,p*) + g*grad(SSH*) )
-                     ! Here uNew is a work variable containing -fEdge(iEdge)*normalBaroclinicVelocityPerp(k,iEdge)
+
                       uTemp(k) = normalBaroclinicVelocityCur(k,iEdge) &
-                         + dt * (normalVelocityTend(k,iEdge) &
+                         + 1.5*dt * (normalVelocityTend(k,iEdge) &
                          + normalVelocityNew(k,iEdge) &  ! this is f*normalBaroclinicVelocity^{perp}
                          + split * gravity * (  sshNew(cell2) - sshNew(cell1) ) &
-                          / dcEdge(iEdge) )
+                          / dcEdge(iEdge) ) &
+                         - 0.5*dt * (normalVelocityTendOld(k,iEdge))
+
+                      normalVelocityTendOld(k,iEdge) =  (normalVelocityTend(k,iEdge) &
+                          + normalVelocityNew(k,iEdge) &  ! this is f*normalBaroclinicVelocity^{perp}
+                          + split * gravity * (  sshNew(cell2) - sshNew(cell1) ) &
+                           / dcEdge(iEdge) )
                   enddo
 
                   ! thicknessSum is initialized outside the loop because on land boundaries
@@ -634,6 +715,8 @@ module ocn_time_integration_split
                enddo ! iEdge
                !$omp end do
                !$omp end parallel
+
+             endif
 
                deallocate(uTemp)
 
@@ -1514,6 +1597,8 @@ module ocn_time_integration_split
             call mpas_pool_get_array(diagnosticsPool, 'normalTransportVelocity', normalTransportVelocity)
             call mpas_pool_get_array(diagnosticsPool, 'vertAleTransportTop', vertAleTransportTop)
 
+
+
             ! compute vertAleTransportTop.  Use normalTransportVelocity for advection of layerThickness and tracers.
             ! Use time level 1 values of layerThickness and layerThicknessEdge because
             ! layerThickness has not yet been computed for time level 2.
@@ -1530,6 +1615,8 @@ module ocn_time_integration_split
             call mpas_timer_stop('thick vert trans vel top')
 
             call ocn_tend_thick(tendPool, forcingPool, diagnosticsPool, meshPool)
+
+
 
             block => block % next
          end do
@@ -1554,8 +1641,21 @@ module ocn_time_integration_split
             call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
             call mpas_pool_get_subpool(block % structs, 'scratch', scratchPool)
             call mpas_pool_get_subpool(block % structs, 'shortwave', swForcingPool)
+
+            if ( istep > 1 ) then
+               call mpas_pool_get_array(tracersTendPool, 'activeTracersTend', activeTracersTend)
+               activeTracersTendOld(:,:,:) = activeTracersTend(:,:,:)
+            endif
+
             call ocn_tend_tracer(tendPool, statePool, forcingPool, diagnosticsPool, meshPool, swForcingPool, scratchPool, &
                     dt, activeTracersOnly, 2)
+
+            if ( istep == 1 .and. split_explicit_step == 1 ) then
+            call mpas_pool_get_array(tracersTendPool, 'activeTracersTend', activeTracersTend)
+               n3 = shape(activeTracersTend)
+               allocate(activeTracersTendOld(n3(1),n3(2),n3(3)))
+               activeTracersTendOld(:,:,:) = activeTracersTend(:,:,:)
+            endif
 
             block => block % next
          end do
@@ -1715,6 +1815,14 @@ module ocn_time_integration_split
             !
             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             elseif (split_explicit_step == config_n_ts_iter) then
+            if ( istep == 1 ) then
+               !call mpas_pool_get_array(tendPool, 'layerThickness', layerThicknessTend)
+               n2 = shape(layerThicknessTend)
+               allocate(layerThicknessTendOld(n2(1),n2(2)))
+               layerThicknessTendOld(:,:) = layerThicknessTend(:,:)
+            endif
+
+               if ( istep == 1 ) then
 
                !$omp parallel
                !$omp do schedule(runtime) private(k)
@@ -1726,6 +1834,25 @@ module ocn_time_integration_split
                end do
                !$omp end do
                !$omp end parallel
+
+               else
+
+               !$omp parallel
+               !$omp do schedule(runtime) private(k)
+               do iCell = 1, nCells
+                  do k = 1, maxLevelCell(iCell)
+                     ! this is h_{n+1}
+                     layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) &
+                                                + dt * 1.5*layerThicknessTend(k,iCell) &
+                                                - dt * 0.5*layerThicknessTendOld(k,iCell)
+                  end do
+               end do
+               !$omp end do
+               !$omp end parallel
+
+               layerThicknessTendOld(:,:) = layerThicknessTend(:,:)
+
+               endif
 
                if (config_compute_active_tracer_budgets) then
                   call mpas_pool_get_array(diagnosticsPool,'activeTracerHorizontalAdvectionTendency', &
@@ -1796,6 +1923,11 @@ module ocn_time_integration_split
                         modifiedGroupName = trim(groupItr % memberName) // 'Tend'
                         call mpas_pool_get_array(tracersTendPool, modifiedGroupName, tracersGroupTend)
 
+!           if ( istep == 1 .and. split_explicit_step == 1 ) then
+!              n3 = shape(tracersGroupTend)
+!              allocate(tracersGroupTendOld(n3(1),n3(2),n3(3)))
+!              tracersGroupTendOld(:,:,:) = tracersGroupTend(:,:,:)
+
                         !$omp parallel
                         !$omp do schedule(runtime) private(k)
                         do iCell = 1, nCells
@@ -1806,6 +1938,23 @@ module ocn_time_integration_split
                         end do
                         !$omp end do
                         !$omp end parallel
+!           endif
+
+!           if ( istep > 1 ) then
+!                       !$omp parallel
+!                       !$omp do schedule(runtime) private(k)
+!                       do iCell = 1, nCells
+!                          do k = 1, maxLevelCell(iCell)
+!                             tracersGroupNew(:,k,iCell) = (tracersGroupCur(:,k,iCell) * layerThicknessCur(k,iCell) &
+!                                                        + 1.5*dt*tracersGroupTend(:,k,iCell)-0.5*dt*tracersGroupTendOld(:,k,iCell) ) / layerThicknessNew(k,iCell)
+!                          end do
+!                       end do
+!                       !$omp end do
+!                       !$omp end parallel
+
+!                       tracersGroupTendOld(:,:,:) = tracersGroupTend(:,:,:)
+!           end if
+
 
                         ! limit salinity in separate loop
                         if ( trim(groupItr % memberName) == 'activeTracers' ) then
@@ -1892,6 +2041,13 @@ module ocn_time_integration_split
                   end do
                   !$omp end do
                   !$omp end parallel
+
+            if ( istep == 1 .and. split_explicit_step == 1 ) then
+               n2 = shape(lowFreqDivergenceTend)
+               allocate(lowFreqDivergenceTendOld(n2(1),n2(2)))
+               lowFreqDivergenceTendOld(:,:) = lowFreqDivergenceTend(:,:)
+            endif
+
                end if
 
                ! Recompute final u to go on to next step.
@@ -2285,6 +2441,8 @@ module ocn_time_integration_split
          block => block % next
          end do
       end if
+
+      istep = 0
 
    end subroutine ocn_time_integration_split_init!}}}
 
