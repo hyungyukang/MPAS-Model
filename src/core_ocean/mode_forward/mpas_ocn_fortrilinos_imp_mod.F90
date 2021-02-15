@@ -1,9 +1,9 @@
 module ocn_fortrilinos_imp_mod
 !---------------------------
-#include "ForTrilinosInterface_config.hpp"
+#include "ForTrilinos_config.h"
 #include "ForTrilinos.h"
   use,intrinsic :: iso_c_binding
-  use fortrilinos
+  use fortrilinos_hl
   use forteuchos
   use fortpetra
   use fortest
@@ -318,11 +318,11 @@ module ocn_fortrilinos_imp_mod
   call krylov_list_m%set('Maximum Iterations', 500)
 
   ! Trilinos solver handle:  'o' for outer iteration, 'm' for main iteration
-  solver_handle_o = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
-  solver_handle_m = TrilinosSolver() !; FORTRILINOS_CHECK_IERR()
+  solver_handle_o = TrilinosSolver(comm) !; FORTRILINOS_CHECK_IERR()
+  solver_handle_m = TrilinosSolver(comm) !; FORTRILINOS_CHECK_IERR()
 
-  call solver_handle_o%init(comm) !; FORTRILINOS_CHECK_IERR()
-  call solver_handle_m%init(comm) !; FORTRILINOS_CHECK_IERR()
+! call solver_handle_o%init(comm) !; FORTRILINOS_CHECK_IERR()
+! call solver_handle_m%init(comm) !; FORTRILINOS_CHECK_IERR()
 
 
  ! Construction of preconditioner through setup_solver

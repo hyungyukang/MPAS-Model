@@ -446,11 +446,12 @@ llvm:
 
 
 PIO = /global/u2/h/hgkang/my_programs/Scorpio
-FORTRILINOS_ROOT    = /global/cscratch1/sd/hgkang/my_programs/Trilinos
+FORTRILINOS_ROOT    = /global/cscratch1/sd/hgkang/my_programs/Trilinos/ForTrilinos
 
 FORTRILINOS_BUILD   = $(FORTRILINOS_ROOT)/build
-FORTRILINOS_INSTALL = $(FORTRILINOS_ROOT)/build/Trilinos_install
-FORTRILINOS_INCLUDES = -I$(FORTRILINOS_INSTALL)/include -I/$(FORTRILINOS_INSTALL)/lib  -I/$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src -I/$(FORTRILINOS_ROOT)/build/ForTrilinos/src/interface -I$(FORTRILINOS_BUILD)/packages/nox/src
+FORTRILINOS_INSTALL = $(FORTRILINOS_BUILD)/ForTrilinos_install
+#FORTRILINOS_INCLUDES = -I$(FORTRILINOS_INSTALL)/include -I/$(FORTRILINOS_INSTALL)/lib  -I/$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src -I/$(FORTRILINOS_ROOT)/build/ForTrilinos/src/interface -I$(FORTRILINOS_BUILD)/packages/nox/src
+FORTRILINOS_INCLUDES = -I$(FORTRILINOS_INSTALL)/include -L$(FORTRILINOS_INSTALL)/lib64 -I$(FORTRILINOS_BUILD)/test
 
 CPPINCLUDES = 
 FCINCLUDES = 
@@ -537,9 +538,9 @@ RANLIB = ranlib
 
 
 ifeq "$(FORTRILINOS)" "true"
-        FORTRILINOS_LIBS += -Wl,-rpath,$(FORTRILINOS_BUILD)/ForTrilinos/src/interface/src:$(FORTRILINOS_BUILD)/packages/ifpack2:$(FORTRILINOS_BUILD)/ForTrilinos/src/tpetra/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/teuchos/src:$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src:$(FORTRILINOS_BUILD)/packages/nox/src:$(FORTRILINOS_INSTALL)/lib
-        FORTRILINOS_LIBS += -dynamic -L$(FORTRILINOS_INSTALL)/lib
-        FORTRILINOS_LIBS += -lfortrilinos -lforteuchos -lfortpetra -lnox -lforerror -lforutils -lstratimikos -lstratimikosbelos
+        FORTRILINOS_LIBS += -Wl,-rpath,$(FORTRILINOS_INSTALL)/lib64
+        FORTRILINOS_LIBS += -dynamic -L$(FORTRILINOS_INSTALL)/lib64
+        FORTRILINOS_LIBS += -lfortrilinos_hl -lforteuchos -lfortpetra -lforerror -lforbelos
 endif
 
 
