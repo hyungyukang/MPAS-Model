@@ -3121,8 +3121,8 @@ module ocn_time_integration_si
                   do k = 1, maxLevelCell(iCell)
                      ! this is h_{n+1}
                      layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) &
-                                                + dt * 1.5*layerThicknessTend(k,iCell) &
-                                                - dt * 0.5*layerThicknessTendOld(k,iCell)
+                                                + dt * 1.25*layerThicknessTend(k,iCell) &
+                                                - dt * 0.25*layerThicknessTendOld(k,iCell)
                   end do
                end do
                !$omp end do
@@ -3196,10 +3196,10 @@ module ocn_time_integration_si
                         modifiedGroupName = trim(groupItr % memberName) // 'Tend'
                         call mpas_pool_get_array(tracersTendPool, modifiedGroupName, tracersGroupTend)
 
-            if ( istep == 1 .and. split_implicit_step == 1 ) then
-               n3 = shape(tracersGroupTend)
-               allocate(tracersGroupTendOld(n3(1),n3(2),n3(3)))
-               tracersGroupTendOld(:,:,:) = tracersGroupTend(:,:,:)
+!           if ( istep == 1 .and. split_implicit_step == 1 ) then
+!              n3 = shape(tracersGroupTend)
+!              allocate(tracersGroupTendOld(n3(1),n3(2),n3(3)))
+!              tracersGroupTendOld(:,:,:) = tracersGroupTend(:,:,:)
 
                         !$omp parallel
                         !$omp do schedule(runtime) private(k)
@@ -3207,26 +3207,28 @@ module ocn_time_integration_si
                            do k = 1, maxLevelCell(iCell)
                               tracersGroupNew(:,k,iCell) = (tracersGroupCur(:,k,iCell) * layerThicknessCur(k,iCell) + dt &
                                                          * tracersGroupTend(:,k,iCell) ) / layerThicknessNew(k,iCell)
+!                             tracersGroupTendOld(:,k,iCell) = tracersGroupTend(:,k,iCell) / layerThicknessNew(k,iCell)
                            end do
                         end do
                         !$omp end do
                         !$omp end parallel
-            endif
+!           endif
 
-            if ( istep > 1 ) then
-                        !$omp parallel
-                        !$omp do schedule(runtime) private(k)
-                        do iCell = 1, nCells
-                           do k = 1, maxLevelCell(iCell)
-                              tracersGroupNew(:,k,iCell) = (tracersGroupCur(:,k,iCell) * layerThicknessCur(k,iCell) &
-                                                         + 1.5*dt*tracersGroupTend(:,k,iCell)-0.5*dt*tracersGroupTendOld(:,k,iCell) ) / layerThicknessNew(k,iCell)
-                           end do
-                        end do
-                        !$omp end do
-                        !$omp end parallel
-
-                        tracersGroupTendOld(:,:,:) = tracersGroupTend(:,:,:)
-            end if
+!           if ( istep > 1 ) then
+!                       !$omp parallel
+!                       !$omp do schedule(runtime) private(k)
+!                       do iCell = 1, nCells
+!                          do k = 1, maxLevelCell(iCell)
+!                             !tracersGroupNew(:,k,iCell) = (tracersGroupCur(:,k,iCell) * layerThicknessCur(k,iCell) &
+!                             !                           + 1.5*dt*tracersGroupTend(:,k,iCell)-0.5*dt*tracersGroupTendOld(:,k,iCell) ) / layerThicknessNew(k,iCell)
+!                             tracersGroupNew(:,k,iCell) = (tracersGroupCur(:,k,iCell) * layerThicknessCur(k,iCell) ) / layerThicknessNew(k,iCell) &
+!                                                        + 1.5*dt*tracersGroupTend(:,k,iCell)/layerThicknessNew(k,iCell)-0.5*dt*tracersGroupTendOld(:,k,iCell) 
+!                             tracersGroupTendOld(:,k,iCell) = tracersGroupTend(:,k,iCell) / layerThicknessNew(k,iCell)
+!                          end do
+!                       end do
+!                       !$omp end do
+!                       !$omp end parallel
+!           end if
 
                         ! limit salinity in separate loop
                         if ( trim(groupItr % memberName) == 'activeTracers' ) then

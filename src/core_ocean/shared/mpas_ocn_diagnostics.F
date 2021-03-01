@@ -155,6 +155,7 @@ contains
 
       coef_3rd_order = config_coef_3rd_order
 
+      call mpas_pool_get_dimension(tracersPool, 'index_temperature', indexTemperature)
       !
       ! set the velocity and height at dummy address
       !    used -1e34 so error clearly occurs if these values are used.
