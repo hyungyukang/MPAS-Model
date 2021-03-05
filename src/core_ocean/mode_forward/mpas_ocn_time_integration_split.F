@@ -1719,10 +1719,9 @@ module ocn_time_integration_split
             !$omp end do
             !$omp end parallel
 
+            layerThicknessNew(:,:) = 0.5*(layerThicknessCur(:,:)+layerThicknessNew(:,:))
             call mpas_dmpar_field_halo_exch(domain, 'layerThickness', timeLevel=2)
 
-            layerThicknessNew(:,:) = 0.5*(layerThicknessCur(:,:)+layerThicknessNew(:,:))
-          
 !-----------------------------------
 !-----------------------------------
 !           !$omp parallel
@@ -1843,8 +1842,7 @@ module ocn_time_integration_split
             do iCell = 1, nCells
                do k = 1, maxLevelCell(iCell)
                   ! this is h_{n+1}
-                  layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) &
-                                             + dt *layerThicknessTend(k,iCell)
+                  layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell) + dt *layerThicknessTend(k,iCell)
                end do
             end do
             !$omp end do
@@ -2041,11 +2039,11 @@ module ocn_time_integration_split
                   !$omp end do
                   !$omp end parallel
 
-            if ( istep == 1 .and. split_explicit_step == 1 ) then
-               n2 = shape(lowFreqDivergenceTend)
-               allocate(lowFreqDivergenceTendOld(n2(1),n2(2)))
-               lowFreqDivergenceTendOld(:,:) = lowFreqDivergenceTend(:,:)
-            endif
+                  if ( istep == 1 .and. split_explicit_step == 1 ) then
+                     n2 = shape(lowFreqDivergenceTend)
+                     allocate(lowFreqDivergenceTendOld(n2(1),n2(2)))
+                     lowFreqDivergenceTendOld(:,:) = lowFreqDivergenceTend(:,:)
+                  endif
 
                end if
 
