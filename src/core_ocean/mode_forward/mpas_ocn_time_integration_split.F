@@ -1626,41 +1626,41 @@ module ocn_time_integration_split
          call mpas_timer_stop("se halo thickness")
 
 !------------------------------------------------------------------------------------------------
-!        call mpas_timer_start('se tracer tend', .false.)
-!        block => domain % blocklist
-!        do while (associated(block))
-!           call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
-!           call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
-!           call mpas_pool_get_subpool(block % structs, 'state', statePool)
-!           call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-!           call mpas_pool_get_subpool(block % structs, 'forcing', forcingPool)
-!           call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-!           call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-!           call mpas_pool_get_subpool(block % structs, 'scratch', scratchPool)
-!           call mpas_pool_get_subpool(block % structs, 'shortwave', swForcingPool)
+         call mpas_timer_start('se tracer tend', .false.)
+         block => domain % blocklist
+         do while (associated(block))
+            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+            call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+            call mpas_pool_get_subpool(block % structs, 'state', statePool)
+            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+            call mpas_pool_get_subpool(block % structs, 'forcing', forcingPool)
+            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block % structs, 'scratch', scratchPool)
+            call mpas_pool_get_subpool(block % structs, 'shortwave', swForcingPool)
 
-!           call ocn_tend_tracer(tendPool, statePool, forcingPool, diagnosticsPool, meshPool, swForcingPool, scratchPool, &
-!                   dt, activeTracersOnly, 2)
+            call ocn_tend_tracer(tendPool, statePool, forcingPool, diagnosticsPool, meshPool, swForcingPool, scratchPool, &
+                    dt, activeTracersOnly, 2)
 
-!           block => block % next
-!        end do
-!        call mpas_timer_stop('se tracer tend')
+            block => block % next
+         end do
+         call mpas_timer_stop('se tracer tend')
 
-!        ! update halo for tracer tendencies
-!        call mpas_timer_start("se halo tracers")
-!        call mpas_pool_get_subpool(domain % blocklist % structs, 'tend', tendPool)
-!        call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+         ! update halo for tracer tendencies
+         call mpas_timer_start("se halo tracers")
+         call mpas_pool_get_subpool(domain % blocklist % structs, 'tend', tendPool)
+         call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
 
-!        call mpas_pool_begin_iteration(tracersTendPool)
-!        do while ( mpas_pool_get_next_member(tracersTendPool, groupItr) )
-!           if ( groupItr % memberType == MPAS_POOL_FIELD ) then
-!              ! Only compute tendencies for active tracers if activeTracersOnly flag is true.
-!              if ( .not.activeTracersOnly .or. trim(groupItr % memberName)=='activeTracersTend') then
-!                 call mpas_dmpar_field_halo_exch(domain, groupItr % memberName)
-!              end if
-!           end if
-!        end do
-!        call mpas_timer_stop("se halo tracers")
+         call mpas_pool_begin_iteration(tracersTendPool)
+         do while ( mpas_pool_get_next_member(tracersTendPool, groupItr) )
+            if ( groupItr % memberType == MPAS_POOL_FIELD ) then
+               ! Only compute tendencies for active tracers if activeTracersOnly flag is true.
+               if ( .not.activeTracersOnly .or. trim(groupItr % memberName)=='activeTracersTend') then
+                  call mpas_dmpar_field_halo_exch(domain, groupItr % memberName)
+               end if
+            end if
+         end do
+         call mpas_timer_stop("se halo tracers")
 !------------------------------------------------------------------------------------------------
 
          call mpas_timer_start('se loop fini')
@@ -1975,41 +1975,41 @@ module ocn_time_integration_split
 !!////////////////////////////////////
 
 
-         call mpas_timer_start('se tracer tend', .false.)
-         block => domain % blocklist
-         do while (associated(block))
-            call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
-            call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
-            call mpas_pool_get_subpool(block % structs, 'state', statePool)
-            call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-            call mpas_pool_get_subpool(block % structs, 'forcing', forcingPool)
-            call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-            call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-            call mpas_pool_get_subpool(block % structs, 'scratch', scratchPool)
-            call mpas_pool_get_subpool(block % structs, 'shortwave', swForcingPool)
+!        call mpas_timer_start('se tracer tend', .false.)
+!        block => domain % blocklist
+!        do while (associated(block))
+!           call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+!           call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+!           call mpas_pool_get_subpool(block % structs, 'state', statePool)
+!           call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
+!           call mpas_pool_get_subpool(block % structs, 'forcing', forcingPool)
+!           call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
+!           call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+!           call mpas_pool_get_subpool(block % structs, 'scratch', scratchPool)
+!           call mpas_pool_get_subpool(block % structs, 'shortwave', swForcingPool)
 
-            call ocn_tend_tracer(tendPool, statePool, forcingPool, diagnosticsPool, meshPool, swForcingPool, scratchPool, &
-                    dt, activeTracersOnly, 2)
+!           call ocn_tend_tracer(tendPool, statePool, forcingPool, diagnosticsPool, meshPool, swForcingPool, scratchPool, &
+!                   dt, activeTracersOnly, 2)
 
-            block => block % next
-         end do
-         call mpas_timer_stop('se tracer tend')
+!           block => block % next
+!        end do
+!        call mpas_timer_stop('se tracer tend')
 
-         ! update halo for tracer tendencies
-         call mpas_timer_start("se halo tracers")
-         call mpas_pool_get_subpool(domain % blocklist % structs, 'tend', tendPool)
-         call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
+!        ! update halo for tracer tendencies
+!        call mpas_timer_start("se halo tracers")
+!        call mpas_pool_get_subpool(domain % blocklist % structs, 'tend', tendPool)
+!        call mpas_pool_get_subpool(tendPool, 'tracersTend', tracersTendPool)
 
-         call mpas_pool_begin_iteration(tracersTendPool)
-         do while ( mpas_pool_get_next_member(tracersTendPool, groupItr) )
-            if ( groupItr % memberType == MPAS_POOL_FIELD ) then
-               ! Only compute tendencies for active tracers if activeTracersOnly flag is true.
-               if ( .not.activeTracersOnly .or. trim(groupItr % memberName)=='activeTracersTend') then
-                  call mpas_dmpar_field_halo_exch(domain, groupItr % memberName)
-               end if
-            end if
-         end do
-         call mpas_timer_stop("se halo tracers")
+!        call mpas_pool_begin_iteration(tracersTendPool)
+!        do while ( mpas_pool_get_next_member(tracersTendPool, groupItr) )
+!           if ( groupItr % memberType == MPAS_POOL_FIELD ) then
+!              ! Only compute tendencies for active tracers if activeTracersOnly flag is true.
+!              if ( .not.activeTracersOnly .or. trim(groupItr % memberName)=='activeTracersTend') then
+!                 call mpas_dmpar_field_halo_exch(domain, groupItr % memberName)
+!              end if
+!           end if
+!        end do
+!        call mpas_timer_stop("se halo tracers")
 
 !--------------------------------------
 !--------------------------------------
