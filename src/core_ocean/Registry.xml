@@ -2443,6 +2443,10 @@
 			 description="layer thickness averaged from cell center to edges"
 			 packages="forwardMode;analysisMode"
 		/>
+		<var name="layerThicknessEdgeOld" type="real" dimensions="nVertLevels nEdges Time" units="m"
+			 description="layer thickness averaged from cell center to edges"
+			 packages="forwardMode;analysisMode"
+		/>
 		<var name="layerThicknessVertex" type="real" dimensions="nVertLevels nVertices Time" units="m"
 			 description="layer thickness averaged from cell center to vertices"
 			 packages="forwardMode;analysisMode"
