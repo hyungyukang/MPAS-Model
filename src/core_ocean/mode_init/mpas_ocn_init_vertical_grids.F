@@ -27,6 +27,7 @@ module ocn_init_vertical_grids
 
    use ocn_constants
    use ocn_config
+   use ocn_diagnostics_variables
 
    implicit none
    private
@@ -48,6 +49,7 @@ module ocn_init_vertical_grids
              ocn_compute_layerThickness_zMid_from_bottomDepth, &
              ocn_alter_bottomDepth_for_pbcs, &
              ocn_compute_Haney_number, &
+             ocn_init_vertical_grid, &
              ocn_init_vertical_grid_with_max_rx1
 
    !--------------------------------------------------------------------
@@ -625,11 +627,8 @@ contains
 
       type (block_type), pointer :: block_ptr
 
-      type (mpas_pool_type), pointer :: meshPool, diagnosticsPool, statePool
-      real (kind=RKIND), dimension(:,:), pointer :: zMid
-      real (kind=RKIND), dimension(:,:), pointer :: rx1Edge, rx1Cell
-      real (kind=RKIND), dimension(:), pointer :: rx1MaxEdge, rx1MaxCell, ssh, rx1MaxLevel
-      real (kind=RKIND), pointer :: globalRx1Max
+      type (mpas_pool_type), pointer :: meshPool, statePool
+      real (kind=RKIND), dimension(:), pointer :: ssh, rx1MaxLevel
 
       integer, pointer :: nCells, nVertLevels, nEdges
       integer, dimension(:), pointer :: maxLevelCell
@@ -653,7 +652,6 @@ contains
       block_ptr => domain % blocklist
       do while(associated(block_ptr))
         call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
-        call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
 
         call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
@@ -663,13 +661,7 @@ contains
         call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
         call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
 
-        call mpas_pool_get_array(diagnosticsPool, 'zMid', zMid, 1)
         call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
-
-        call mpas_pool_get_array(diagnosticsPool, 'rx1Edge', rx1Edge, 1)
-        call mpas_pool_get_array(diagnosticsPool, 'rx1Cell', rx1Cell, 1)
-        call mpas_pool_get_array(diagnosticsPool, 'rx1MaxEdge', rx1MaxEdge, 1)
-        call mpas_pool_get_array(diagnosticsPool, 'rx1MaxCell', rx1MaxCell, 1)
 
         rx1Edge(:,:) = 0.0_RKIND
         rx1Cell(:,:) = 0.0_RKIND
@@ -710,8 +702,6 @@ contains
 
         block_ptr => block_ptr % next
       end do
-      call mpas_pool_get_subpool(domain % blocklist % structs, 'diagnostics', diagnosticsPool)
-      call mpas_pool_get_array(diagnosticsPool, 'globalRx1Max', globalRx1Max, 1)
       do k = 1,nVertLevels
          call mpas_dmpar_max_real(domain % dminfo, rx1MaxLevel(k), globalRx1Max)
          call mpas_log_write ('  max of rx1 in level $i :  $r', intArgs=(/ k /),  realArgs=(/ globalRx1Max /))
@@ -723,6 +713,124 @@ contains
       deallocate(rx1MaxLevel)
 
     end subroutine ocn_compute_Haney_number
+
+!***********************************************************************
+!
+!  routine ocn_init_vertical_grid
+!
+!> \brief   Initialize z-star vertical grid based on SSH
+!> \author  Xylar Asay-Davis
+!> \date    8/8/2016
+!> \details
+!>  This routine sets up the vertical grid (layerThickness, zMid and
+!>  restingThickness) needed for computing land-ice pressure from SSH.
+!>  bottomDepth, refBottomDepth, maxLevelCell must have been computed by the
+!>  test case before calling this routine.  For tests with ice-shelf cavities,
+!>  ssh must be computed before calling this routine. If the test case is
+!>  using a z-star coordinate, this routine will take care of setting up
+!>  partial bottom cells by calling ocn_alter_bottomDepth_for_pbcs(). If using
+!>  the Haney-number-constrained coordinate, another approach is used to handle
+!>  maintaining a minimum layer thickness.
+!-----------------------------------------------------------------------
+
+   subroutine ocn_init_vertical_grid(domain, iErr)!{{{
+
+   !--------------------------------------------------------------------
+
+     type (domain_type), intent(inout) :: domain
+     integer, intent(out) :: iErr
+
+     type (block_type), pointer :: block_ptr
+
+     type (mpas_pool_type), pointer :: meshPool, statePool, verticalMeshPool
+
+     ! Define dimension pointers
+     integer, pointer :: nCells, nVertLevels
+
+     ! Define variable pointers
+     integer, dimension(:), pointer :: maxLevelCell
+     real (kind=RKIND), dimension(:), pointer :: refBottomDepth, bottomDepth, ssh
+     real (kind=RKIND), dimension(:,:), pointer :: layerThickness, restingThickness
+
+     integer :: iCell
+
+   !--------------------------------------------------------------------
+
+     iErr = 0
+
+     if(config_use_rx1_constraint) then
+       ! We already know the ssh and landIcePressure we want to use.
+       ! Compute the layer thicknesses and zMid based on topography and ssh.
+       ! Use rx1 constraint to recompute the vertical grid.
+       call ocn_init_vertical_grid_with_max_rx1(domain, iErr)
+
+       if(iErr .ne. 0) then
+         call mpas_log_write( 'ocn_init_vertical_grid_with_max_rx1 failed.', MPAS_LOG_CRIT)
+         return
+       end if
+
+     else
+
+       ! we're initializing to z-star
+
+       ! alter pbcs
+       block_ptr => domain % blocklist
+       do while(associated(block_ptr))
+         call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
+         call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
+
+         call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
+
+         call mpas_pool_get_array(meshPool, 'refBottomDepth', refBottomDepth)
+         call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
+         call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
+
+         do iCell = 1, nCells
+           call ocn_alter_bottomDepth_for_pbcs(bottomDepth(iCell), refBottomDepth, maxLevelCell(iCell), iErr)
+           if(iErr .ne. 0) then
+             call mpas_log_write( 'ocn_alter_bottomDepth_for_pbcs failed.', MPAS_LOG_CRIT)
+             return
+           end if
+         end do
+         block_ptr => block_ptr % next
+       end do !block_ptr
+
+       block_ptr => domain % blocklist
+       do while(associated(block_ptr))
+         call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
+         call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
+         call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
+
+         call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
+         call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
+
+         call mpas_pool_get_array(meshPool, 'refBottomDepth', refBottomDepth)
+         call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
+         call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
+
+         call mpas_pool_get_array(statePool, 'layerThickness', layerThickness, 1)
+         call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
+
+         call mpas_pool_get_array(verticalMeshPool, 'restingThickness', restingThickness)
+
+         do iCell = 1, nCells
+           call ocn_compute_layerThickness_zMid_from_bottomDepth(layerThickness(:,iCell),zMid(:,iCell), &
+                refBottomDepth,bottomDepth(iCell), &
+                maxLevelCell(iCell),nVertLevels,iErr, &
+                restingThickness=restingThickness(:,iCell), &
+                ssh=ssh(iCell))
+
+           if(iErr .ne. 0) then
+             call mpas_log_write( 'ocn_compute_layerThickness_zMid_from_bottomDepth failed.', MPAS_LOG_CRIT)
+             return
+           end if
+         end do !iCell
+
+         block_ptr => block_ptr % next
+       end do !block_ptr
+     end if
+
+   end subroutine ocn_init_vertical_grid
 
 !***********************************************************************
 !
@@ -747,7 +855,7 @@ contains
 
       type (block_type), pointer :: block_ptr
 
-      type (mpas_pool_type), pointer :: meshPool, statePool, diagnosticsPool, verticalMeshPool, scratchPool, forcingPool
+      type (mpas_pool_type), pointer :: meshPool, statePool, verticalMeshPool, scratchPool, forcingPool
 
       integer, pointer :: config_rx1_outer_iter_count, config_rx1_inner_iter_count, &
                           config_rx1_horiz_smooth_open_ocean_cells, config_rx1_min_levels
@@ -756,22 +864,19 @@ contains
                            config_rx1_zstar_weight, config_rx1_init_inner_weight, &
                            config_rx1_min_layer_thickness
 
-      type (field2DReal), pointer :: zInterfaceField, goalStretchField, goalWeightField, &
-                                     verticalStretchField
+      type (field2DReal), pointer :: zInterfaceField, goalStretchField, goalWeightField
       type (field1DReal), pointer :: zTopField, zBotField, zBotNewField
       type (field1DInteger), pointer :: maxLevelCellField
-      type (field1DInteger), pointer :: smoothingMaskField, smoothingMaskNewField
+      type (field1DInteger), pointer :: smoothingMaskNewField
 
-      real (kind=RKIND), dimension(:,:), pointer :: zMid, layerThickness, restingThickness, zInterface, &
-                                                    verticalStretch, goalStretch, goalWeight, rx1Edge
+      real (kind=RKIND), dimension(:,:), pointer :: layerThickness, restingThickness, zInterface, &
+                                                    goalStretch, goalWeight
       integer, dimension(:), pointer :: landIceMask
       real (kind=RKIND), dimension(:), pointer :: ssh, bottomDepth, refBottomDepth, zTop, zBot, zBotNew, &
                                         refLayerThickness
 
-      real (kind=RKIND), pointer :: globalRx1Max, globalVerticalStretchMax, globalVerticalStretchMin
-
       integer, pointer :: nCells, nVertLevels, nEdges, nCellsSolve
-      integer, dimension(:), pointer :: maxLevelCell, cullCell, nEdgesOnCell, smoothingMask, smoothingMaskNew
+      integer, dimension(:), pointer :: maxLevelCell, cullCell, nEdgesOnCell, smoothingMaskNew
       integer, dimension(:,:), pointer :: cellsOnEdge, cellsOnCell, edgesOnCell
 
       integer :: iCell, iEdge, coc, c1, c2, k, maxLevelEdge, iSmooth, iterIndex, maxLevelNeighbors
@@ -801,13 +906,6 @@ contains
       call mpas_pool_get_subpool(domain % blocklist % structs, 'mesh', meshPool)
       call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
 
-      call mpas_pool_get_subpool(domain % blocklist % structs, 'diagnostics', diagnosticsPool)
-      call mpas_pool_get_field(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMaskField, 1)
-      call mpas_pool_get_field(diagnosticsPool, 'verticalStretch', verticalStretchField, 1)
-      call mpas_pool_get_array(diagnosticsPool, 'globalRx1Max', globalRx1Max, 1)
-      call mpas_pool_get_array(diagnosticsPool, 'globalVerticalStretchMax', globalVerticalStretchMax, 1)
-      call mpas_pool_get_array(diagnosticsPool, 'globalVerticalStretchMin', globalVerticalStretchMin, 1)
-
       ! allocate scratch variables that persist across blocks
       call mpas_pool_get_subpool(domain % blocklist % structs, 'scratch', scratchPool)
       call mpas_pool_get_field(scratchPool, 'zInterfaceScratch', zInterfaceField)
@@ -821,7 +919,6 @@ contains
       do while(associated(block_ptr))
         call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'forcing', forcingPool)
-        call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
 
         call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
 
@@ -829,7 +926,6 @@ contains
         call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
 
         call mpas_pool_get_array(forcingPool, 'landIceMask', landIceMask)
-        call mpas_pool_get_array(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMask, 1)
 
         maxLevelCell(nCells+1) = -1
         do iCell = 1, nCells
@@ -856,14 +952,12 @@ contains
         do while(associated(block_ptr))
           call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
           call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
-          call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
 
           call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
 
           call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
           call mpas_pool_get_array(meshPool, 'cellsOnCell', cellsOnCell)
           call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-          call mpas_pool_get_array(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMask, 1)
 
           call mpas_pool_get_field(scratchPool, 'smoothingMaskNewScratch', smoothingMaskNewField)
           call mpas_allocate_scratch_field(smoothingMaskNewField, .true.)
@@ -901,7 +995,6 @@ contains
         call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
-        call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
 
         call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
@@ -913,7 +1006,6 @@ contains
         call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
         call mpas_pool_get_array(scratchPool, 'zInterfaceScratch', zInterface)
 
-        call mpas_pool_get_array(diagnosticsPool, 'verticalStretch', verticalStretch, 1)
         call mpas_pool_get_array(verticalMeshPool, 'refLayerThickness', refLayerThickness)
 
         do iCell = 1, nCells
@@ -953,7 +1045,6 @@ contains
           do while(associated(block_ptr))
             call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
             call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
-            call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
             call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
             call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
 
@@ -968,10 +1059,6 @@ contains
             call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
 
             call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
-
-            call mpas_pool_get_array(diagnosticsPool, 'verticalStretch', verticalStretch, 1)
-            call mpas_pool_get_array(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMask, 1)
-            call mpas_pool_get_array(diagnosticsPool, 'rx1Edge', rx1Edge, 1)
 
             call mpas_pool_get_array(verticalMeshPool, 'refLayerThickness', refLayerThickness)
 
@@ -1054,12 +1141,10 @@ contains
           call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
           call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
           call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
-          call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
 
           call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
           call mpas_pool_get_array(scratchPool, 'zTopScratch', zTop)
           call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
-          call mpas_pool_get_array(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMask, 1)
 
           zTop(:) = ssh(:)
           where(smoothingMask == 1)
@@ -1075,7 +1160,6 @@ contains
           do while(associated(block_ptr))
             call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
             call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
-            call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
             call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
 
             call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
@@ -1085,8 +1169,6 @@ contains
 
             call mpas_pool_get_array(scratchPool, 'zInterfaceScratch', zInterface)
             call mpas_pool_get_array(scratchPool, 'zBotScratch', zBot)
-            call mpas_pool_get_array(diagnosticsPool, 'verticalStretch', verticalStretch, 1)
-            call mpas_pool_get_array(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMask, 1)
             call mpas_pool_get_array(verticalMeshPool, 'refLayerThickness', refLayerThickness)
 
             zInterface(k+1,:) = zInterface(k,:) - verticalStretch(k,:)*refLayerThickness(k)
@@ -1147,15 +1229,11 @@ contains
           block_ptr => domain % blocklist
           do while(associated(block_ptr))
             call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
-            call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
             call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
 
             call mpas_pool_get_array(scratchPool, 'zInterfaceScratch', zInterface)
             call mpas_pool_get_array(scratchPool, 'zTopScratch', zTop)
             call mpas_pool_get_array(scratchPool, 'zBotScratch', zBot)
-            call mpas_pool_get_array(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMask, 1)
-            call mpas_pool_get_array(diagnosticsPool, 'zMid', zMid, 1)
-            call mpas_pool_get_array(diagnosticsPool, 'verticalStretch', verticalStretch, 1)
             call mpas_pool_get_array(verticalMeshPool, 'refLayerThickness', refLayerThickness)
 
             where (smoothingMask(:) == 1)
@@ -1174,11 +1252,9 @@ contains
         block_ptr => domain % blocklist
         do while(associated(block_ptr))
           call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
-          call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
 
           call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
           call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-          call mpas_pool_get_array(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMask, 1)
           call mpas_pool_get_dimension(meshPool, 'nCellsSolve', nCellsSolve)
           call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
           call mpas_pool_get_array(meshPool, 'cellsOnCell', cellsOnCell)
@@ -1222,7 +1298,6 @@ contains
         do while(associated(block_ptr))
           call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
           call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
-          call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
           call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
 
           call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
@@ -1232,9 +1307,6 @@ contains
           call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
           call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
 
-          call mpas_pool_get_array(diagnosticsPool, 'verticalStretch', verticalStretch, 1)
-          call mpas_pool_get_array(diagnosticsPool, 'rx1Edge', rx1Edge, 1)
-          call mpas_pool_get_array(diagnosticsPool, 'zMid', zMid, 1)
           call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
 
           ! compute rx1Edge so we can determine which cells need to be thickened
@@ -1285,7 +1357,6 @@ contains
       do while(associated(block_ptr))
         call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
-        call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
 
@@ -1299,10 +1370,7 @@ contains
         call mpas_pool_get_array(verticalMeshPool, 'restingThickness', restingThickness)
         call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
         call mpas_pool_get_array(statePool, 'layerThickness', layerThickness, 1)
-        call mpas_pool_get_array(diagnosticsPool, 'zMid', zMid, 1)
         call mpas_pool_get_array(scratchPool, 'zInterfaceScratch', zInterface)
-        call mpas_pool_get_array(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMask, 1)
-        call mpas_pool_get_array(diagnosticsPool, 'verticalStretch', verticalStretch, 1)
         call mpas_pool_get_array(verticalMeshPool, 'refLayerThickness', refLayerThickness)
 
         ! compute zMid, layerThickness and restingThickness
@@ -1377,14 +1445,14 @@ contains
 
       type (block_type), pointer :: block_ptr
 
-      type (mpas_pool_type), pointer :: meshPool, diagnosticsPool, scratchPool
+      type (mpas_pool_type), pointer :: meshPool, scratchPool
 
       type (field1DReal), pointer :: zBotField, zBotNewField
 
       real (kind=RKIND), dimension(:), pointer :: zTop, zBot, zBotNew, bottomDepth
 
       integer, pointer :: nCells, nVertLevels, nEdges
-      integer, dimension(:), pointer :: maxLevelCell, smoothingMask
+      integer, dimension(:), pointer :: maxLevelCell
       integer, dimension(:,:), pointer :: cellsOnEdge
 
       integer :: iCell, iEdge, c1, c2, iterIndex
@@ -1411,7 +1479,6 @@ contains
         do while(associated(block_ptr))
           call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
           call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
-          call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
 
           call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
           call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
@@ -1423,7 +1490,6 @@ contains
 
           call mpas_pool_get_array(scratchPool, 'zTopScratch', zTop)
           call mpas_pool_get_array(scratchPool, 'zBotScratch', zBot)
-          call mpas_pool_get_array(diagnosticsPool, 'rx1InitSmoothingMask', smoothingMask, 1)
 
           call mpas_pool_get_field(scratchPool, 'zBotNewScratch', zBotNewField)
           call mpas_allocate_scratch_field(zBotNewField, .true.)

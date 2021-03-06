@@ -189,7 +189,7 @@ contains
       !$omp end do
       !$omp end parallel
 
-      nCells = nCellsArray(1)
+      nCells = nCellsArray(2)
       nCellsP1 = nCellsArray(size(nCellsArray)) + 1
 
       ! Term 1: this is the "standard" horizontal del2 term, but with RediKappa coefficient.
@@ -240,7 +240,7 @@ contains
                              + slopeTriadDown(k, 2, iEdge)*(tracers(iTr, k, cell2) - tracers(iTr, k + 1, cell2)) &
                              /(zMid(k, cell2) - zMid(k + 1, cell2)))
 
-               redi_term2(iTr, k, iCell) = redi_term2(iTr, k, iCell) - flux_term2*invAreaCell
+               redi_term2(iTr, k, iCell) = redi_term2(iTr, k, iCell) - edgeSignOnCell(i, iCell)*flux_term2*invAreaCell
                redi_term2_edge(iTr, k, iEdge) = -flux_term2
             end do
 
@@ -271,7 +271,8 @@ contains
                                 /(zMid(k, cell1) - zMid(k + 1, cell1)) &
                                 + slopeTriadDown(k, 2, iEdge)*(tracers(iTr, k, cell2) - tracers(iTr, k + 1, cell2)) &
                                 /(zMid(k, cell2) - zMid(k + 1, cell2)))
-                  redi_term2(iTr, k, iCell) = redi_term2(iTr, k, iCell) - flux_term2*invAreaCell
+                  redi_term2(iTr, k, iCell) = redi_term2(iTr, k, iCell) - edgeSignOnCell(i, iCell)*flux_term2* &
+                                invAreaCell
                   redi_term2_edge(iTr, k, iEdge) = -flux_term2
 
                   dTracerDx = (tracers(iTr, k, cell2) - tracers(iTr, k, cell1))*dvEdge(iEdge)*0.25_RKIND
@@ -311,7 +312,8 @@ contains
                                layerThicknessEdge(k, iEdge)*0.25_RKIND*kappaRediEdgeVal*slopeTriadDown(k, 2, iEdge)* &
                                (tracers(iTr, k, cell2) - tracers(iTr, k + 1, cell2))/(zMid(k, cell2) - zMid(k + 1, cell2))
                endif
-               redi_term2(iTr, k, iCell) = redi_term2(iTr, k, iCell) - flux_term2*invAreaCell
+               redi_term2(iTr, k, iCell) = redi_term2(iTr, k, iCell) - edgeSignOnCell(i, iCell)*flux_term2 &
+                                *invAreaCell
                redi_term2_edge(iTr, k, iEdge) = -flux_term2
 
                dTracerDx = (tracers(iTr, k, cell2) - tracers(iTr, k, cell1))*dvEdge(iEdge)*0.25_RKIND

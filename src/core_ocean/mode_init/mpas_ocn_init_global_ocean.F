@@ -33,6 +33,7 @@ module ocn_init_global_ocean
 
    use ocn_constants
    use ocn_config
+   use ocn_diagnostics_variables
    use ocn_init_cell_markers
    use ocn_init_vertical_grids
    use ocn_init_interpolation
@@ -194,13 +195,13 @@ contains
          call ocn_init_setup_global_ocean_interpolate_land_ice_topography(domain, iErr)
       end if
 
-      call mpas_log_write( 'Initializing vertical coordinate with ssh = 0.')
+      call mpas_log_write( 'Initializing vertical coordinate.')
       ! compute the vertical grid (layerThickness, restingThickness, maxLevelCell, zMid)
       ! based on bottomDepth and refBottomDepth and apply PBCs if requested
-      call ocn_init_ssh_and_landIcePressure_vertical_grid(domain, iErr)
+      call ocn_init_vertical_grid(domain, iErr=iErr)
 
       if(iErr .ne. 0) then
-        call mpas_log_write( 'ocn_init_ssh_and_landIcePressure_vertical_grid failed.', MPAS_LOG_CRIT)
+        call mpas_log_write( 'ocn_init_vertical_grid failed.', MPAS_LOG_CRIT)
         call mpas_dmpar_finalize(domain % dminfo)
       end if
 
@@ -488,9 +489,8 @@ contains
          call mpas_log_write('Modifying temperature and surface restoring under land ice.')
          call ocn_init_setup_global_ocean_modify_temp_under_land_ice(domain, iErr)
 
-         call mpas_log_write( 'Recalculating ocean layer topography due to land ice depression')
-         ! compute or update the land-ice pressure (or possibly SSH), also computing density along the way
-         ! If this is the initial guess, the vertical grid and activeTracers may also be recomputed based on SSH
+         call mpas_log_write('Calculating land-ice pressure from the weight of ice shelves')
+         ! compute the land-ice pressure, also computing density along the way.
          call ocn_init_ssh_and_landIcePressure_balance(domain, iErr)
 
          if(iErr .ne. 0) then
@@ -1044,7 +1044,7 @@ contains
 
        type (block_type), pointer :: block_ptr
 
-       type (mpas_pool_type), pointer :: meshPool, forcingPool, landIceInitPool, diagnosticsPool, &
+       type (mpas_pool_type), pointer :: meshPool, forcingPool, landIceInitPool, &
                                          statePool
 
        real (kind=RKIND), dimension(:), pointer :: latCell, lonCell
@@ -1055,7 +1055,7 @@ contains
                                                    bottomDepth
 
        integer, pointer :: nCells
-       integer, dimension(:), pointer :: maxLevelCell, landIceMask, modifySSHMask
+       integer, dimension(:), pointer :: maxLevelCell, landIceMask
 
        integer :: iCell
 
@@ -1152,7 +1152,6 @@ contains
 
           call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
           call mpas_pool_get_subpool(block_ptr % structs, 'landIceInit', landIceInitPool)
-          call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
           call mpas_pool_get_subpool(block_ptr % structs, 'forcing', forcingPool)
           call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
           call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
@@ -1163,14 +1162,13 @@ contains
           call mpas_pool_get_array(landIceInitPool, 'landIceFracObserved', landIceFracObserved)
           call mpas_pool_get_array(landIceInitPool, 'landIceGroundedFracObserved', landIceGroundedFracObserved)
           call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
-          call mpas_pool_get_array(diagnosticsPool, 'modifySSHMask', modifySSHMask)
           call mpas_pool_get_array(forcingPool, 'landIceMask', landIceMask)
           call mpas_pool_get_array(forcingPool, 'landIcePressure', landIcePressure)
           call mpas_pool_get_array(forcingPool, 'landIceFraction', landIceFraction)
 
           ssh(:) = 0.0_RKIND
           landIceFraction(:) = 0.0_RKIND
-          modifySSHMask(:) = 0
+          modifyLandIcePressureMask(:) = 0
           landIcePressure(:) = 0.0_RKIND
           do iCell = 1, nCells
 
@@ -1181,24 +1179,10 @@ contains
              ! nothing to do here if the cell is land
              if (maxLevelCell(iCell) <= 0) cycle
 
-             if(config_iterative_init_variable == 'ssh') then
-                ! we compute the land-ice pressure first and find out the SSH
-                landIcePressure(iCell) = max(0.0_RKIND, config_land_ice_flux_rho_ice &
-                   * gravity * landIceThkObserved(iCell))
-                if(landIcePressure(iCell) > 0.0_RKIND) then
-                   modifySSHMask(iCell) = 1
-                end if
-             else if(config_iterative_init_variable == 'landIcePressure' &
-                .or. config_iterative_init_variable == 'landIcePressure_from_top_density') then
-                ! we compute the SSH first and find out the land-ice pressure
-                ssh(iCell) = min(0.0_RKIND,landIceDraftObserved(iCell))
-                if(ssh(iCell) < 0.0_RKIND) then
-                   modifySSHMask(iCell) = 1
-                end if
-             else
-                call mpas_log_write( 'Invalid choice of config_iterative_init_variable.', MPAS_LOG_CRIT)
-                iErr = 1
-                call mpas_dmpar_finalize(domain % dminfo)
+             ! we compute the SSH first and find out the land-ice pressure
+             ssh(iCell) = min(0.0_RKIND, landIceDraftObserved(iCell))
+             if(ssh(iCell) < 0.0_RKIND) then
+                modifyLandIcePressureMask(iCell) = 1
              end if
           end do
 
@@ -2007,7 +1991,7 @@ contains
       character (len=StrKIND), intent(in) :: interpTracerName
 
       type (block_type), pointer :: block_ptr
-      type (mpas_pool_type), pointer :: meshPool, scratchPool, diagnosticsPool
+      type (mpas_pool_type), pointer :: meshPool, scratchPool
 
       real (kind=RKIND) :: counter
       integer :: iSmooth, j, coc, iCell, k, nDepth
@@ -2020,7 +2004,6 @@ contains
       real (kind=RKIND), dimension(:, :), pointer :: smoothedTracer
 
       real (kind=RKIND), dimension(:), pointer :: outTracerColumn
-      real (kind=RKIND), dimension(:,:), pointer :: zMid
       integer :: inKMax, outKMax
 
       type (field2DReal), pointer :: interpTracerField
@@ -2124,14 +2107,12 @@ contains
       block_ptr => domain % blocklist
       do while(associated(block_ptr))
          call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
-         call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
          call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
 
          call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
          call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
 
          call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-         call mpas_pool_get_array(diagnosticsPool, 'zMid', zMid)
          call mpas_pool_get_array(scratchPool, trim(interpTracerName), interpTracer)
 
          allocate(outTracerColumn(nVertLevels))
@@ -2321,7 +2302,7 @@ subroutine ocn_init_setup_global_ocean_interpolate_swData(domain, iErr)!{{{
 
    type (block_type), pointer :: block_ptr
    type (MPAS_Stream_type) :: zenithStream, chlorophyllStream, clearSkyStream
-   type (mpas_pool_type), pointer :: meshPool, statePool, shortwavePool, diagnosticsPool
+   type (mpas_pool_type), pointer :: meshPool, statePool, shortwavePool
 
    type(MPAS_TimeInterval_type) :: timeStep ! time step interval
    type(MPAS_Time_Type) :: currentTime
@@ -2334,8 +2315,6 @@ subroutine ocn_init_setup_global_ocean_interpolate_swData(domain, iErr)!{{{
 
    real (kind=RKIND), dimension(:), pointer :: chlorophyllData, zenithAngle, clearSkyRadiation
    real (kind=RKIND), dimension(:), pointer :: latCell, lonCell
-
-   character (len=StrKIND), pointer :: xtime
 
    iErr = 0
 
@@ -2403,12 +2382,10 @@ subroutine ocn_init_setup_global_ocean_interpolate_swData(domain, iErr)!{{{
       call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
       call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
       call mpas_pool_get_subpool(block_ptr % structs, 'shortwave', shortwavePool)
-      call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
 
       call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
       call mpas_pool_get_dimension(meshPool, 'nCellsSolve', nCellsSolve)
 
-      call mpas_pool_get_array(diagnosticsPool, 'xtime', xtime)
       call mpas_pool_get_array(meshPool, 'latCell', latCell)
       call mpas_pool_get_array(meshPool, 'lonCell', lonCell)
       call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
@@ -3041,7 +3018,7 @@ end subroutine ocn_init_setup_global_ocean_interpolate_swData!}}}
 
       end if
 
-      if ( config_global_ocean_depress_by_land_ice) then
+      if (config_global_ocean_depress_by_land_ice) then
          if (trim(config_global_ocean_land_ice_topo_file) == 'none') then
             call mpas_log_write( 'Validation failed for global ocean. '// &
                'Invalid filename for config_global_ocean_land_ice_topo_file', MPAS_LOG_CRIT)
