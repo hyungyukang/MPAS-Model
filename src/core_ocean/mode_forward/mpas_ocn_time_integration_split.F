@@ -656,6 +656,8 @@ module ocn_time_integration_split
                   normalBaroclinicVelocityCur(k,iEdge) + uTemp(k) - &
                          dt * barotropicForcing(iEdge))
 
+                  normalVelocityTendOld(k,iEdge) = normalVelocityTendOld(k,iEdge) &
+                                                 - barotropicForcing(iEdge)
                enddo
 
             enddo ! iEdge
@@ -694,10 +696,10 @@ module ocn_time_integration_split
 !                            (sshNew(cell2) - sshNew(cell1)) &
 !                            /dcEdge(iEdge) ) 
 
-                   normalVelocityTendOld(k,iEdge) =  (normalVelocityTend(k,iEdge) &
-                       + normalVelocityNew(k,iEdge) &  ! this is f*normalBaroclinicVelocity^{perp}
-                       + splitFact * gravity * (  sshNew(cell2) - sshNew(cell1) ) &
-                        / dcEdge(iEdge) )
+                  normalVelocityTendOld(k,iEdge) =  (normalVelocityTend(k,iEdge) &
+                      + normalVelocityNew(k,iEdge) &  ! this is f*normalBaroclinicVelocity^{perp}
+                      + splitFact * gravity * (  sshNew(cell2) - sshNew(cell1) ) &
+                       / dcEdge(iEdge) )
 
                enddo ! vertical
 
@@ -728,7 +730,9 @@ module ocn_time_integration_split
                   normalBaroclinicVelocityNew(k,iEdge) = 0.5_RKIND*( &
                   normalBaroclinicVelocityCur(k,iEdge) + uTemp(k) - &
                          dt * barotropicForcing(iEdge))
-
+  
+                  normalVelocityTendOld(k,iEdge) = normalVelocityTendOld(k,iEdge) &
+                                                 - barotropicForcing(iEdge)
                enddo
 
             enddo ! iEdge
