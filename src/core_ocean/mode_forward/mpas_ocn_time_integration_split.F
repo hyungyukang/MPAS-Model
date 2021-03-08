@@ -92,7 +92,7 @@ module ocn_time_integration_split
 
 !***********************************************************************
 
-   integer :: istep
+   integer :: istep = 0
    real(kind=RKIND) :: afact,bfact
    real (kind=RKIND), dimension(:,:), pointer :: highFreqThicknessTendOld
    real (kind=RKIND), dimension(:,:), pointer :: lowFreqDivergenceTendOld
@@ -638,7 +638,7 @@ module ocn_time_integration_split
 
                enddo ! vertical
 
-               if ( j == 3 ) then
+               if ( j == 2 ) then
                   do k = 1, maxLevelEdgeTop(iEdge)
                      normalVelocityTendOld(k,iEdge) =  (normalVelocityTend(k,iEdge) &
                          + normalVelocityNew(k,iEdge) &  ! this is f*normalBaroclinicVelocity^{perp}
@@ -676,7 +676,7 @@ module ocn_time_integration_split
                          dt * barotropicForcing(iEdge))
                enddo
 
-               if ( j == 3 ) then
+               if ( j == 2 ) then
                   do k = 1, maxLevelEdgeTop(iEdge)
                      normalVelocityTendOld(k,iEdge) = normalVelocityTendOld(k,iEdge) &
                                                     - barotropicForcing(iEdge)
