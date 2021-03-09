@@ -26,7 +26,8 @@ module ocn_high_frequency_output
    use mpas_stream_manager
 
    use ocn_constants
-   use ocn_diagnostics_routines
+   use ocn_config
+   use ocn_diagnostics_variables
 
    implicit none
    private
@@ -54,6 +55,20 @@ module ocn_high_frequency_output
    ! Private module variables
    !
    !--------------------------------------------------------------------
+
+   !--------------------------------------------------------------------
+   !
+   ! Replace calls to mpas_allocate_scratch_Field with straight allocates.
+   ! These variables were moved from the subroutines, but will be moved back once the
+   ! threading implementation is changed to more localized threading
+   !
+   !--------------------------------------------------------------------
+   ! normalThicknessFluxSum: Flux of thickness through an edge over full column, sum(h*u)
+   !                  units: m^{2} s^{-1}
+   real (kind=RKIND), dimension(:), allocatable :: normalThicknessFluxSum
+   ! layerThicknessSumEdge: total thickness at edge, sum(h)
+   !                 units: m
+   real (kind=RKIND), dimension(:), allocatable :: layerThicknessSumEdge
 
 !***********************************************************************
 
@@ -159,7 +174,6 @@ contains
       type (mpas_pool_type), pointer :: forcingPool
       type (mpas_pool_type), pointer :: highFrequencyOutputAMPool
       type (mpas_pool_type), pointer :: tracersPool
-      type (mpas_pool_type), pointer :: scratchPool
 
       integer :: iLevel, iLevelTarget, iCell, iEdge, i, cell1, cell2, k, eoe
       integer :: iLevel0100, iLevel0250, iLevel0700, iLevel2000
@@ -208,31 +222,14 @@ contains
       real (kind=RKIND), dimension(:,:), pointer :: activeTracersAtSurface, activeTracersAtBottom
       real (kind=RKIND), dimension(:,:), pointer :: activeTracersAvg0250to0700, activeTracersAvg0700to2000, activeTracersAvg2000toBottom
       real (kind=RKIND), dimension(:,:), pointer :: relativeVorticity, divergence, layerThickness
-      real (kind=RKIND), dimension(:,:), pointer :: normalVelocity, tangentialVelocity, BruntVaisalaFreqTop
-      real (kind=RKIND), dimension(:,:), pointer :: vertVelocityTop, vertGMBolusVelocityTop, vertTransportVelocityTop
-      real (kind=RKIND), dimension(:,:), pointer :: normalGMBolusVelocity
+      real (kind=RKIND), dimension(:,:), pointer :: normalVelocity
       real (kind=RKIND), dimension(:,:), pointer :: normalBaroclinicVelocity ! baroclinic/barotropic pressume split explicit
       real (kind=RKIND), dimension(:), pointer :: normalBarotropicVelocity ! baroclinic/barotropic pressume split explicit
       real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers
-      character (len=StrKIND), pointer :: config_time_integrator
-
-      ! scratch space
-      type (field1DReal), pointer :: normalThicknessFluxSumField, layerThicknessSumEdgeField
-      real (kind=RKIND), dimension(:), pointer :: normalThicknessFluxSum, layerThicknessSumEdge
 
       err = 0
 
       dminfo = domain % dminfo
-
-      ! scratch arrays
-      call mpas_pool_get_subpool(domain % blocklist % structs, 'scratch', scratchPool)
-      call mpas_pool_get_field(scratchPool, 'normalThicknessFluxSum', normalThicknessFluxSumField)
-      call mpas_allocate_scratch_field(normalThicknessFluxSumField, .true.)
-      normalThicknessFluxSum => normalThicknessFluxSumField % array
-
-      call mpas_pool_get_field(scratchPool, 'layerThicknessSumEdge', layerThicknessSumEdgeField)
-      call mpas_allocate_scratch_field(layerThicknessSumEdgeField, .true.)
-      layerThicknessSumEdge => layerThicknessSumEdgeField % array
 
       block => domain % blocklist
       do while (associated(block))
@@ -240,6 +237,9 @@ contains
          call mpas_pool_get_dimension(block % dimensions, 'nCells', nCells)
          call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdges)
          call mpas_pool_get_dimension(block % dimensions, 'nVertLevels', nVertLevels)
+
+         allocate(normalThicknessFluxSum(nEdges))
+         allocate(layerThicknessSumEdge(nEdges))
 
          ! get pointers to pools
          call mpas_pool_get_subpool(block % structs, 'state', statePool)
@@ -258,12 +258,6 @@ contains
          call mpas_pool_get_array(diagnosticsPool, 'relativeVorticity', relativeVorticity, timeLevel)
          call mpas_pool_get_array(diagnosticsPool, 'divergence', divergence, timeLevel)
          call mpas_pool_get_array(tracersPool, 'activeTracers', activeTracers, timeLevel)
-         call mpas_pool_get_array(diagnosticsPool, 'vertGMBolusVelocityTop', vertGMBolusVelocityTop)
-         call mpas_pool_get_array(diagnosticsPool, 'vertTransportVelocityTop', vertTransportVelocityTop)
-         call mpas_pool_get_array(diagnosticsPool, 'vertVelocityTop', vertVelocityTop)
-         call mpas_pool_get_array(diagnosticsPool, 'tangentialVelocity', tangentialVelocity)
-         call mpas_pool_get_array(diagnosticsPool, 'BruntVaisalaFreqTop', BruntVaisalaFreqTop)
-         call mpas_pool_get_array(diagnosticsPool, 'normalGMBolusVelocity', normalGMBolusVelocity)
 
          ! get arrays that can be written to output at high freqency
          call mpas_pool_get_array(highFrequencyOutputAMPool, 'kineticEnergyAt250m', kineticEnergyAt250m)
@@ -688,12 +682,12 @@ contains
 
          end do
 
+         ! scratch arrays
+         deallocate(normalThicknessFluxSum)
+         deallocate(layerThicknessSumEdge)
+
          block => block % next
       end do
-
-      ! scratch arrays
-      call mpas_deallocate_scratch_field(normalThicknessFluxSumField, .true.)
-      call mpas_deallocate_scratch_field(layerThicknessSumEdgeField, .true.)
 
    end subroutine ocn_compute_high_frequency_output!}}}
 

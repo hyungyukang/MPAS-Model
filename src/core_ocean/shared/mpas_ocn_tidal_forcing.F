@@ -26,7 +26,9 @@ module ocn_tidal_forcing
    use mpas_timekeeping
    use mpas_timer
    use ocn_constants
+   use ocn_config
    use ocn_equation_of_state
+   use ocn_diagnostics_variables
 
    implicit none
    private
@@ -123,6 +125,7 @@ contains
       nCells = nCellsArray( 2 )
 
       ! Build surface fluxes at cell centers
+      !$omp parallel
       !$omp do schedule(runtime) private(k)
       do iCell = 1, nCells
         do k = 1, maxLevelCell(iCell)
@@ -132,6 +135,7 @@ contains
         end do
       end do
       !$omp end do
+      !$omp end parallel
 
       call mpas_timer_stop("tidal thickness tendency")
 
@@ -157,7 +161,7 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_tidal_forcing_build_array(domain, meshPool, forcingPool, diagnosticsPool, statePool, err)!{{{
+   subroutine ocn_tidal_forcing_build_array(domain, meshPool, forcingPool, statePool, err)!{{{
 
       !-----------------------------------------------------------------
       !
@@ -166,7 +170,6 @@ contains
       !-----------------------------------------------------------------
 
       type (mpas_pool_type), pointer, intent(in) :: meshPool !< Input: Mesh information
-      type (mpas_pool_type), pointer, intent(in) :: diagnosticsPool !< Input: Diagnostic information
 
       !-----------------------------------------------------------------
       !
@@ -193,14 +196,6 @@ contains
       real (kind=RKIND), dimension(:,:), pointer :: tidalLayerThicknessTendency
       real (kind=RKIND), dimension(:), pointer :: tidalInputMask
       real (kind=RKIND), dimension(:), pointer :: tidalBCValue
-      real (kind=RKIND), pointer :: config_tidal_forcing_monochromatic_amp
-      real (kind=RKIND), pointer :: config_tidal_forcing_monochromatic_period
-      real (kind=RKIND), pointer :: config_tidal_forcing_monochromatic_baseline
-      real (kind=RKIND), pointer :: config_use_tidal_forcing_tau
-      character (len=StrKIND), pointer :: config_tidal_forcing_type
-      character (len=StrKIND), pointer :: config_tidal_forcing_model
-      logical, pointer :: config_use_wetting_drying
-      real (kind=RKIND), pointer :: config_drying_min_cell_height
       real (kind=RKIND), dimension(:), pointer :: bottomDepth
 
       integer :: iCell, k, nCells
@@ -218,7 +213,6 @@ contains
       real (kind=RKIND) :: totalDepth, tidalHeight
 
       character (len=StrKIND), pointer :: simulationStartTime, xtime
-      real (kind=RKIND), pointer :: daysSinceStartOfSim
       type (MPAS_Time_type) :: startTime, xtime_timeType, simulationStartTime_timeType
 
       if ( .not. tidalfluxOn ) return
@@ -229,26 +223,6 @@ contains
                                              tidalLayerThicknessTendency)
       call mpas_pool_get_array(forcingPool, 'tidalInputMask', tidalInputMask)
       call mpas_pool_get_array(forcingPool, 'tidalBCValue', tidalBCValue)
-
-      ! compute time since start of simulation, in days
-      call mpas_pool_get_array(diagnosticsPool, 'daysSinceStartOfSim', daysSinceStartOfSim)
-
-      call mpas_pool_get_config(ocnConfigs, 'config_tidal_forcing_type', config_tidal_forcing_type)
-      call mpas_pool_get_config(ocnConfigs, 'config_tidal_forcing_model', config_tidal_forcing_model)
-      call mpas_pool_get_config(ocnConfigs, 'config_tidal_forcing_monochromatic_amp', &
-                                             config_tidal_forcing_monochromatic_amp)
-      call mpas_pool_get_config(ocnConfigs, 'config_tidal_forcing_monochromatic_period', &
-                                             config_tidal_forcing_monochromatic_period)
-      call mpas_pool_get_config(ocnConfigs, 'config_tidal_forcing_monochromatic_baseline', &
-                                             config_tidal_forcing_monochromatic_baseline)
-      call mpas_pool_get_config(ocnConfigs, 'config_use_tidal_forcing_tau', &
-                                             config_use_tidal_forcing_tau)
-
-      ! wetting and drying considerations
-      call mpas_pool_get_config(ocnConfigs, 'config_use_wetting_drying', &
-                                             config_use_wetting_drying)
-      call mpas_pool_get_config(ocnConfigs, 'config_drying_min_cell_height', &
-                                             config_drying_min_cell_height)
 
       call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
       call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
@@ -263,7 +237,8 @@ contains
         ! compute the tidalHeight
         if (trim(config_tidal_forcing_model) == 'monochromatic') then
           tidalHeight = config_tidal_forcing_monochromatic_amp * &
-            SIN(2.0_RKIND*pii/config_tidal_forcing_monochromatic_period * daysSinceStartOfSim) - &
+            SIN(2.0_RKIND*pii/config_tidal_forcing_monochromatic_period * daysSinceStartOfSim - &
+            pii*config_tidal_forcing_monochromatic_phaseLag/180.0_RKIND) - &
             config_tidal_forcing_monochromatic_baseline
         !else if (trim(config_tidal_forcing_type) == 'data') then
         !  ! data option
@@ -322,11 +297,8 @@ contains
    subroutine ocn_tidal_forcing_init(err)!{{{
 
       integer, intent(out) :: err !< Output: error flag
-      logical, pointer :: config_use_tidal_forcing
 
       err = 0
-
-      call mpas_pool_get_config(ocnConfigs, 'config_use_tidal_forcing', config_use_tidal_forcing)
 
       tidalFluxOn = .false.
 

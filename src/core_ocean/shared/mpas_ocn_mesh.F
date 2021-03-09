@@ -227,8 +227,6 @@ contains
       !*** end of preamble, begin code
       !***
 
-      !$omp master
-
       blockCount = 0
       block => domain%blocklist
       do while (associated(block))
@@ -593,9 +591,6 @@ contains
          block => block%next
       end do
 
-      !$omp end master
-      !$omp barrier
-
 !-------------------------------------------------------------------------------
 
    end subroutine ocn_meshCreate !}}}
@@ -634,9 +629,6 @@ contains
       !***
 
       err = 0
-
-      !$omp barrier
-      !$omp master
 
       ! First remove data from the device. Must remove components first,
       ! then remove the mesh type itself.
@@ -820,8 +812,6 @@ contains
                   edgeSignOnVertex, &
                   highOrderAdvectionMask)
 
-      !$omp end master
-
 !-------------------------------------------------------------------------------
 
    end subroutine ocn_meshDestroy !}}}
@@ -873,8 +863,6 @@ contains
       !***
       !*** end of preamble, begin code
       !***
-
-      !$omp master
 
       ! already check during create that there should only be one block
       block => domain%blocklist
@@ -1044,9 +1032,11 @@ contains
       end do
       end do
 
+      ! Allocatable array was updated in ocn_init_routines_setup_sign_and_index_fields.  Now the
+      ! pointer needs to be udpated
       do n = 1, nCellsAll+1
       do k = 1, maxEdges
-         edgeSignOnCell(k, n) = real(edgeSignOnCellTmp(k, n), RKIND)
+         edgeSignOnCellTmp(k, n) = int(edgeSignOnCell(k, n))
       end do
       end do
 
@@ -1066,10 +1056,12 @@ contains
       end do
       end do
 
+      ! Allocatable array was updated in ocn_init_routines_setup_sign_and_index_fields.  Now the
+      ! pointer needs to be udpated
       do n = 1, nVerticesAll+1
       do k = 1, vertexDegree
-         edgeSignOnVertex(k, n) = &
-            real(edgeSignOnVertexTmp(k, n), RKIND)
+         edgeSignOnVertexTmp(k, n) = &
+            int(edgeSignOnVertex(k, n))
       end do
       end do
 
@@ -1162,9 +1154,6 @@ contains
       !$acc               derivTwo,                 &
       !$acc               cellTangentPlane,         &
       !$acc               coeffs_reconstruct)
-
-      !$omp end master
-      !$omp barrier
 
 !-------------------------------------------------------------------------------
 

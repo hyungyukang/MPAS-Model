@@ -24,6 +24,7 @@ module ocn_thick_surface_flux
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
+   use ocn_config
 
    use ocn_forcing
 
@@ -133,6 +134,7 @@ contains
 
       nCells = nCellsArray( 1 )
 
+      !$omp parallel
       !$omp do schedule(runtime) private(remainingFlux, remainingFluxRunoff, k)
       do iCell = 1, nCells
         remainingFlux = 1.0_RKIND
@@ -155,6 +157,7 @@ contains
         end if
       end do
       !$omp end do
+      !$omp end parallel
 
       call mpas_timer_stop("thick surface flux")
 
@@ -187,11 +190,7 @@ contains
 
       integer, intent(out) :: err !< Output: error flag
 
-      logical, pointer :: config_disable_thick_sflux
-
       err = 0
-
-      call mpas_pool_get_config(ocnConfigs, 'config_disable_thick_sflux', config_disable_thick_sflux)
 
       surfaceThicknessFluxOn = .true.
 

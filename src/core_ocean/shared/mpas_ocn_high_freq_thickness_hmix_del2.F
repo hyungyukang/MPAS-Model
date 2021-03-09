@@ -24,6 +24,7 @@ module ocn_high_freq_thickness_hmix_del2
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
+   use ocn_config
 
    implicit none
    private
@@ -41,18 +42,13 @@ module ocn_high_freq_thickness_hmix_del2
    !
    !--------------------------------------------------------------------
 
-   public :: ocn_high_freq_thickness_hmix_del2_tend, &
-             ocn_high_freq_thickness_hmix_del2_init
-
+   public :: ocn_high_freq_thickness_hmix_del2_tend
 
    !--------------------------------------------------------------------
    !
    ! Private module variables
    !
    !--------------------------------------------------------------------
-
-   logical, pointer :: config_use_highFreqThick_del2
-   real (kind=RKIND), pointer :: config_highFreqThick_del2
 
 !***********************************************************************
 
@@ -140,6 +136,7 @@ contains
       call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
       call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
 
+      !$omp parallel
       !$omp do schedule(runtime) private(invAreaCell, i, iEdge, cell1, cell2, r_tmp, k, hhf_turb_flux, flux)
       do iCell = 1, nCells
          invAreaCell = 1.0_RKIND / areaCell(iCell)
@@ -163,35 +160,11 @@ contains
          end do
       end do
       !$omp end do
+      !$omp end parallel
 
       call mpas_timer_stop("thick hmix del2")
 
    end subroutine ocn_high_freq_thickness_hmix_del2_tend!}}}
-
-!***********************************************************************
-!
-!  routine ocn_high_freq_thickness_hmix_del2_init
-!
-!> \brief   Initializes horizontal highFreqThickness mixing
-!> \author  Mark Petersen
-!> \date    July 2013
-!> \details
-!>  This routine initializes the module for horizontal mixing of
-!>  high frequency thickness
-!>
-!
-!-----------------------------------------------------------------------
-
-   subroutine ocn_high_freq_thickness_hmix_del2_init(err)!{{{
-
-      integer, intent(out) :: err !< Output: error flag
-
-      err = 0
-
-      call mpas_pool_get_config(ocnConfigs, 'config_use_highFreqThick_del2', config_use_highFreqThick_del2)
-      call mpas_pool_get_config(ocnConfigs, 'config_highFreqThick_del2', config_highFreqThick_del2)
-
-   end subroutine ocn_high_freq_thickness_hmix_del2_init!}}}
 
 end module ocn_high_freq_thickness_hmix_del2
 

@@ -94,7 +94,10 @@ module ocn_tracer_advection_std
       real (kind=RKIND) :: tracer_weight, invAreaCell1
       real (kind=RKIND) :: verticalWeightK, verticalWeightKm1
       real (kind=RKIND), dimension(:), pointer :: dvEdge, areaCell, verticalDivergenceFactor
-      real (kind=RKIND), dimension(:,:), allocatable :: tracer_cur, high_order_horiz_flux, high_order_vert_flux
+
+      real (kind=RKIND), dimension(:,:), allocatable :: tracer_cur
+      real (kind=RKIND), dimension(:,:), allocatable :: high_order_horiz_flux
+      real (kind=RKIND), dimension(:,:), allocatable :: high_order_vert_flux
 
       real (kind=RKIND), parameter :: eps = 1.e-10_RKIND
 
@@ -117,15 +120,14 @@ module ocn_tracer_advection_std
       allocate(verticalDivergenceFactor(nVertLevels))
       verticalDivergenceFactor = 1.0_RKIND
 
-      allocate(high_order_horiz_flux(nVertLevels,nEdges))
-      allocate(tracer_cur(nVertLevels,nCells+1))
-      allocate(high_order_vert_flux(nVertLevels+1,nCells))
-
-      call mpas_threading_barrier()
+      allocate(high_order_horiz_flux(nVertLevels, nEdges), &
+               tracer_cur(nVertLevels, nCells), &
+               high_order_vert_flux(nVertLevels, nCells))
 
       ! Loop over tracers. One tracer is advected at a time. It is copied into a temporary array in order to improve locality
       do iTracer = 1, num_tracers
         ! Initialize variables for use in this iTracer iteration
+        !$omp parallel
         !$omp do schedule(runtime)
         do iCell = 1, nCells
            tracer_cur(:, iCell) = tracers(iTracer, :, iCell)
@@ -223,9 +225,8 @@ module ocn_tracer_advection_std
           end do ! k loop
         end do ! iCell loop
         !$omp end do
+        !$omp end parallel
       end do ! iTracer loop
-
-      call mpas_threading_barrier()
 
       deallocate(tracer_cur, high_order_horiz_flux, high_order_vert_flux)
       deallocate(verticalDivergenceFactor)

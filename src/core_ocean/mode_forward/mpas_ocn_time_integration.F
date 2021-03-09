@@ -31,6 +31,8 @@ module ocn_time_integration
    use mpas_log
 
    use ocn_constants
+   use ocn_config
+   use ocn_diagnostics_variables
    use ocn_time_integration_rk4
    use ocn_time_integration_split
    use ocn_time_integration_si
@@ -97,11 +99,8 @@ module ocn_time_integration
       type (dm_info) :: dminfo
       type (block_type), pointer :: block
 
-      type (mpas_pool_type), pointer :: diagnosticsPool, statePool, meshPool
+      type (mpas_pool_type), pointer :: statePool, meshPool
 
-      character (len=StrKIND), pointer :: xtime
-      real (kind=RKIND), pointer :: daysSinceStartOfSim
-      character (len=StrKIND), pointer :: simulationStartTime
       type (MPAS_Time_type) :: xtime_timeType, simulationStartTime_timeType
 
 
@@ -113,29 +112,22 @@ module ocn_time_integration
          call ocn_time_integrator_si(domain, dt)
      endif
 
-     !$omp master
      block => domain % blocklist
      do while (associated(block))
         call mpas_pool_get_subpool(block % structs, 'state', statePool)
-        call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
         call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-
-        call mpas_pool_get_array(diagnosticsPool, 'xtime', xtime)
 
         xtime = timeStamp
 
         ! compute time since start of simulation, in days
-        call mpas_pool_get_array(diagnosticsPool, 'simulationStartTime', simulationStartTime)
-        call mpas_pool_get_array(diagnosticsPool, 'daysSinceStartOfSim',daysSinceStartOfSim)
         call mpas_set_time(xtime_timeType, dateTimeString=xtime)
         call mpas_set_time(simulationStartTime_timeType, dateTimeString=simulationStartTime)
         call mpas_get_timeInterval(xtime_timeType - simulationStartTime_timeType,dt=daysSinceStartOfSim)
+
         daysSinceStartOfSim = daysSinceStartOfSim*days_per_second
 
         block => block % next
      end do
-     !$omp end master
-     !$omp barrier
 
    end subroutine ocn_timestep!}}}
 
@@ -143,11 +135,7 @@ module ocn_time_integration
 
       integer, intent(out) :: err
 
-      character (len=StrKIND), pointer :: config_time_integrator
-
       err = 0
-
-      call mpas_pool_get_config(ocnConfigs, 'config_time_integrator', config_time_integrator)
 
       rk4On = .false.
       splitOn = .false.

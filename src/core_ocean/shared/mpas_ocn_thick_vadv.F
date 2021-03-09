@@ -24,6 +24,7 @@ module ocn_thick_vadv
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
+   use ocn_config
 
    implicit none
    private
@@ -132,6 +133,7 @@ contains
 
       nCells = nCellsArray( 1 )
 
+      !$omp parallel
       !$omp do schedule(runtime) private(k)
       do iCell = 1, nCells
          do k = 1, maxLevelCell(iCell)
@@ -139,6 +141,7 @@ contains
          end do
       end do
       !$omp end do
+      !$omp end parallel
 
       call mpas_timer_stop("thick vadv")
 
@@ -170,10 +173,6 @@ contains
       !-----------------------------------------------------------------
 
       integer, intent(out) :: err !< Output: error flag
-
-      logical, pointer :: config_disable_thick_vadv
-
-      call mpas_pool_get_config(ocnConfigs, 'config_disable_thick_vadv', config_disable_thick_vadv)
 
       thickVadvOn = .true.
 
