@@ -90,16 +90,16 @@ module ocn_time_integration_split
       useVelocityCorrection,&! mask for velocity correction
       splitFact          ! mask for terms in split or unsplit cases
 
-!***********************************************************************
+   real (kind=RKIND),allocatable, dimension(:,:) :: normalVelocityTendOld, layerThicknessTendOld
+   real (kind=RKIND),allocatable, dimension(:,:) :: layerThickEdgeOld,layerThicknessOld
+   real (kind=RKIND),allocatable, dimension(:,:,:) :: tracersGroupTendOld, activeTracersTendOld
+   real (kind=RKIND),allocatable, dimension(:,:) :: normalVelocityOld
+   real (kind=RKIND),allocatable, dimension(:) :: sshOld
 
-   integer :: istep
-   real(kind=RKIND) :: afact,bfact
-   real (kind=RKIND), dimension(:,:), pointer :: highFreqThicknessTendOld
-   real (kind=RKIND), dimension(:,:), pointer :: lowFreqDivergenceTendOld
-   real (kind=RKIND), dimension(:,:), pointer :: normalVelocityTendOld, layerThicknessTendOld
-   real (kind=RKIND), dimension(:,:), pointer :: layerThicknessTendOld2
-   real (kind=RKIND), dimension(:,:,:), pointer :: tracersGroupTendOld, activeTracersTendOld
-   real (kind=RKIND), dimension(:,:), pointer :: normalVelocityOld
+   integer :: istep = 0
+   integer :: n1(1),n2(2),n3(3)
+
+!***********************************************************************
 
    contains
 
@@ -255,10 +255,6 @@ module ocn_time_integration_split
       ! Forcing pool
       real (kind=RKIND), dimension(:), pointer :: tidalPotentialEta
 
-      integer :: ni,nj,nk
-      integer,dimension(2) :: n2
-      integer,dimension(3) :: n3
-
       ! These are public variables used from the diagnostics module
       ! indexSurfaceVelocityZonal, indexSurfaceVelocityMeridional
       ! indexSSHGradientZonal, indexSSHGradientMeridional
@@ -281,8 +277,6 @@ module ocn_time_integration_split
       ! End preamble
       !-----------------------------------------------------------------
       ! Begin code
-
-      istep = istep + 1
 
       !*** Start main time step timer
       call mpas_timer_start("se timestep")
@@ -369,6 +363,29 @@ module ocn_time_integration_split
       call mpas_pool_get_array(tendPool, 'lowFreqDivergence', &
                                           lowFreqDivergenceTend)
 
+      istep = istep + 1
+
+      if ( istep == 1 ) then
+         n2 = shape(normalVelocityTend)
+         allocate(normalVelocityTendOld(n2(1),n2(2)))
+         normalVelocityTendOld = 0.0_RKIND
+         n2 = shape(normalVelocityCur)
+         allocate(normalVelocityOld(n2(1),n2(2)))
+         normalVelocityOld = 0.0_RKIND
+         n2 = shape(layerThicknessCur)
+         allocate(layerThicknessOld(n2(1),n2(2)))
+         layerThicknessOld = 0.0_RKIND
+         n2 = shape(layerThicknessTend)
+         allocate(layerThicknessTendOld(n2(1),n2(2)))
+         layerThicknessTendOld = 0.0_RKIND
+         n2 = shape(layerThickEdge)
+         allocate(layerThickEdgeOld(n2(1),n2(2)))
+         layerThickEdgeOld = 0.0_RKIND
+         n1 = shape(sshCur)
+         allocate(sshOld(n1(1)))
+         sshOld = 0.0_RKIND
+      endif
+
       ! Initialize * variables that are used to compute baroclinic
       ! tendencies below.
 
@@ -404,6 +421,8 @@ module ocn_time_integration_split
          sshNew(iCell) = sshCur(iCell)
          do k = 1, maxLevelCell(iCell)
             layerThicknessNew(k,iCell) = layerThicknessCur(k,iCell)
+
+            layerThickEdgeOld(k,iCell) = layerThickEdge(k,iCell)
          end do
       end do
       !$omp end do
@@ -559,14 +578,7 @@ module ocn_time_integration_split
          call ocn_tend_vel(tendPool, statePool, forcingPool, &
                            stage1_tend_time, dt)
 
-            if ( istep == 1 ) then
-               n2 = shape(normalVelocityTend)
-               allocate(normalVelocityTendOld(n2(1),n2(2)))
-               normalVelocityTendOld = 0.0_RKIND
-               n2 = shape(normalVelocityCur)
-               allocate(normalVelocityOld(n2(1),n2(2)))
-               normalVelocityOld = 0.0_RKIND
-            endif
+         normalVelocityTendOld(:,:) = normalVelocityTend(:,:)
 
          call mpas_timer_stop('se bcl vel tend')
 
@@ -574,23 +586,7 @@ module ocn_time_integration_split
          ! BEGIN baroclinic iterations on linear Coriolis term
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-             if ( istep == 1 ) then
-               afact = 1.0
-               bfact = 0.0
-             else
-               afact = 1.5
-               bfact = 0.5
-             endif
-
          do j=1,numClinicIterations(splitExplicitStep)
-  
-!           if ( j==2 ) then
-!              afact = 1.5
-!              bfact = 0.5
-!           else
-!              afact = 1.5
-!              bfact = 0.5
-!           endif
 
             call mpas_timer_start('bcl iters on linear Coriolis')
 
@@ -604,7 +600,10 @@ module ocn_time_integration_split
 
             allocate(uTemp(nVertLevels))
 
-
+            !$omp parallel
+            !$omp do schedule(runtime) &
+            !$omp private(k, cell1, cell2, uTemp, &
+            !$omp         normalThicknessFluxSum, thicknessSum)
             do iEdge = 1, nEdgesOwned
                cell1 = cellsOnEdge(1,iEdge)
                cell2 = cellsOnEdge(2,iEdge)
@@ -612,40 +611,19 @@ module ocn_time_integration_split
                uTemp = 0.0_RKIND
                do k = 1, maxLevelEdgeTop(iEdge)
 
+                  ! normalBaroclinicVelocityNew =
+                  ! normalBaroclinicVelocityOld +
+                  !                dt*(-f*normalBaroclinicVelocityPerp
+                  !                    + T(u*,w*,p*) + g*grad(SSH*) )
+                  ! Here uNew is a work variable containing
+                  !  -fEdge(iEdge)*normalBaroclinicVelocityPerp(k,iEdge)
                   uTemp(k) = normalBaroclinicVelocityCur(k,iEdge) &
-                           + afact*dt * (normalVelocityTend(k,iEdge) &
+                           + dt * (normalVelocityTend(k,iEdge) &
                            + normalVelocityNew(k,iEdge) &
                            + splitFact*gravity * &
                              (sshNew(cell2) - sshNew(cell1)) &
-                             /dcEdge(iEdge) ) &
-                           - bfact *dt * (normalVelocityTendOld(k,iEdge))
-
-!                 uTemp(k) = normalBaroclinicVelocityCur(k,iEdge) &
-!                          + dt * (1.5*normalVelocityTend(k,iEdge) &
-!                          + normalVelocityNew(k,iEdge) &
-!                          + splitFact*gravity * &
-!                            (sshNew(cell2) - sshNew(cell1)) &
-!                            /dcEdge(iEdge) ) &
-!                          - 0.5*dt * (normalVelocityTendOld(k,iEdge))
-
-!                 uTemp(k) = normalBaroclinicVelocityCur(k,iEdge) &
-!                          + dt * (normalVelocityTend(k,iEdge) &
-!                          + normalVelocityNew(k,iEdge) &
-!                          + splitFact*gravity * &
-!                            (sshNew(cell2) - sshNew(cell1)) &
-!                            /dcEdge(iEdge) ) 
-
-
+                             /dcEdge(iEdge) )
                enddo ! vertical
-
-               if ( j == 3 ) then
-                  do k = 1, maxLevelEdgeTop(iEdge)
-                     normalVelocityTendOld(k,iEdge) =  (normalVelocityTend(k,iEdge) &
-                         + normalVelocityNew(k,iEdge) &  ! this is f*normalBaroclinicVelocity^{perp}
-                         + splitFact * gravity * (  sshNew(cell2) - sshNew(cell1) ) &
-                          / dcEdge(iEdge) )
-                  enddo ! vertical
-               endif
 
                ! thicknessSum is initialized outside the loop because
                ! on land boundaries maxLevelEdgeTop=0, but we want to
@@ -674,16 +652,12 @@ module ocn_time_integration_split
                   normalBaroclinicVelocityNew(k,iEdge) = 0.5_RKIND*( &
                   normalBaroclinicVelocityCur(k,iEdge) + uTemp(k) - &
                          dt * barotropicForcing(iEdge))
+
                enddo
 
-               if ( j == 3 ) then
-                  do k = 1, maxLevelEdgeTop(iEdge)
-                     normalVelocityTendOld(k,iEdge) = normalVelocityTendOld(k,iEdge) &
-                                                    - barotropicForcing(iEdge)
-                  enddo
-               end if
-
             enddo ! iEdge
+            !$omp end do
+            !$omp end parallel
 
             deallocate(uTemp)
 
@@ -699,8 +673,6 @@ module ocn_time_integration_split
          call mpas_timer_start('se halo barotropicForcing')
          call mpas_dmpar_field_halo_exch(domain, 'barotropicForcing')
          call mpas_timer_stop('se halo barotropicForcing')
-
-     
 
          call mpas_timer_stop("se bcl vel")
 
@@ -1894,11 +1866,12 @@ module ocn_time_integration_split
             !$omp parallel
             !$omp do schedule(runtime) private(k)
             do iEdge = 1, nEdgesAll
-            do k = 1, maxLevelEdgeTop(iEdge)
+            !do k = 1, maxLevelEdgeTop(iEdge)
+            do k = 1, nVertLevels
                normalVelocityNew(k,iEdge) = &
-                               normalBarotropicVelocityNew(iEdge) + &
+              edgeMask(k,iEdge)*(normalBarotropicVelocityNew(iEdge) + &
                              2*normalBaroclinicVelocityNew(k,iEdge) - &
-                               normalBaroclinicVelocityCur(k,iEdge)
+                               normalBaroclinicVelocityCur(k,iEdge))
             end do
             end do ! iEdges
             !$omp end do
@@ -1926,6 +1899,180 @@ module ocn_time_integration_split
       ! implicit vmix routine that follows.
       call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, &
                                 scratchPool, tracersPool, 2)
+
+
+
+!@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+!@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+         !  Stage 4: Baroclinic velocity (3D) prediction, explicit with
+         !           long timestep
+         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+!         ! compute velocity tendencies, T(u*,w*,p*)
+!         call mpas_timer_start("se bcl vel")
+!         call mpas_timer_start('se bcl vel tend')
+!
+!!     call mpas_pool_get_array(statePool, 'normalBaroclinicVelocity', &
+!!                                          normalBaroclinicVelocityCur, 1)
+!!     call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', &
+!!                                          normalBarotropicVelocityCur, 1)
+ !     call mpas_pool_get_array(statePool, 'normalVelocity', &
+ !                                          normalVelocityCur, 1)
+!
+!!     call mpas_pool_get_array(statePool, 'normalBaroclinicVelocity', &
+!!                                          normalBaroclinicVelocityNew, 2)
+!!     call mpas_pool_get_array(statePool, 'normalBarotropicVelocity', &
+!!                                          normalBarotropicVelocityNew, 2)
+     call mpas_pool_get_array(statePool, 'normalVelocity', &
+                                          normalVelocityNew, 2)
+!         ! compute vertAleTransportTop.  Use u (rather than &
+!         ! normalTransportVelocity) for momentum advection.
+!         ! Use the most recent time level available.
+!
+         call ocn_vert_transport_velocity_top(meshPool, &
+              verticalMeshPool, scratchPool, layerThicknessCur, &
+              layerThickEdge, normalVelocityCur, sshCur, dt, &
+              vertAleTransportTop, err)
+ 
+         call ocn_tend_vel(tendPool, statePool, forcingPool, &
+                           2, dt)
+!
+!         call mpas_timer_stop('se bcl vel tend')
+!
+!         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!         ! BEGIN baroclinic iterations on linear Coriolis term
+!         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!
+!!        do j=1,2
+!!
+!            call mpas_timer_start('bcl iters on linear Coriolis')
+!
+!            ! Put f*normalBaroclinicVelocity^{perp} in
+!            ! normalVelocityNew as a work variable
+!           call ocn_fuperp(statePool, meshPool, 2)
+!
+!            !TODO: look at loop optimizations here
+!            ! Only need to loop over owned cells, since there is a halo
+!            ! exchange immediately after this computation.
+!
+            allocate(uTemp(nVertLevels))
+
+            !$omp parallel
+            !$omp do schedule(runtime) &
+            !$omp private(k, cell1, cell2, uTemp, &
+            !$omp         normalThicknessFluxSum, thicknessSum)
+            do iEdge = 1, nEdgesOwned
+               cell1 = cellsOnEdge(1,iEdge)
+               cell2 = cellsOnEdge(2,iEdge)
+               ! could put this after with uTemp(maxleveledgetop+1:nvertlevels)=0
+               uTemp = 0.0_RKIND
+               do k = 1, maxLevelEdgeTop(iEdge)
+
+                  ! normalBaroclinicVelocityNew =
+                  ! normalBaroclinicVelocityOld +
+                  !                dt*(-f*normalBaroclinicVelocityPerp
+                  !                    + T(u*,w*,p*) + g*grad(SSH*) )
+                  ! Here uNew is a work variable containing
+                  !  -fEdge(iEdge)*normalBaroclinicVelocityPerp(k,iEdge)
+                  uTemp(k) = normalBaroclinicVelocityCur(k,iEdge) &
+                           + dt * (      normalVelocityTend(k,iEdge) &
+                                   + 0.5*normalVelocityTendOld(k,iEdge) &
+!                          + normalVelocityNew(k,iEdge) &
+                           + splitFact*gravity * &
+                             (0.5*(sshNew(cell2) - sshNew(cell1))+ &
+                              0.5*(sshCur(cell2) - sshCur(cell1))) &
+                             /dcEdge(iEdge) )
+               enddo ! vertical
+
+               ! thicknessSum is initialized outside the loop because
+               ! on land boundaries maxLevelEdgeTop=0, but we want to
+               ! initialize thicknessSum with a nonzero value to avoid
+               ! a NaN.
+
+               layerThickEdgeOld(1,iEdge) = 0.5*(layerThickEdgeOld(1,iEdge) + &
+                                                 layerThickEdge(1,iEdge))
+
+               normalThicknessFluxSum = layerThickEdgeOld(1,iEdge)* &
+                                        uTemp(1)
+               thicknessSum = layerThickEdgeOld(1,iEdge)
+
+               do k = 2, maxLevelEdgeTop(iEdge)
+                  layerThickEdgeOld(k,iEdge) = 0.5*(layerThickEdgeOld(k,iEdge) + &
+                                                    layerThickEdge(k,iEdge))
+                  normalThicknessFluxSum = normalThicknessFluxSum + &
+                                 layerThickEdgeOld(k,iEdge)*uTemp(k)
+                  thicknessSum = thicknessSum + &
+                                 layerThickEdgeOld(k,iEdge)
+               enddo
+               barotropicForcing(iEdge) = splitFact* &
+                              normalThicknessFluxSum/thicknessSum/dt
+
+               do k = 1, maxLevelEdgeTop(iEdge)
+                  ! These two steps are together here:
+                  !{\bf u}'_{k,n+1} =
+                  !    {\bf u}'_{k,n} - \Delta t {\overline {\bf G}}
+                  !{\bf u}'_{k,n+1/2} = \frac{1}{2}\left(
+                  !        {\bf u}^{'}_{k,n} +{\bf u}'_{k,n+1}\right)
+                  ! so that normalBaroclinicVelocityNew is at time n+1/2
+!                 normalBaroclinicVelocityNew(k,iEdge) = &
+!                 normalBaroclinicVelocityCur(k,iEdge) + uTemp(k) - &
+!                        dt * barotropicForcing(iEdge)
+                  normalBaroclinicVelocityNew(k,iEdge) = &
+                         uTemp(k) - &
+                         dt * barotropicForcing(iEdge)
+
+               enddo
+
+            enddo ! iEdge
+            !$omp end do
+            !$omp end parallel
+
+            deallocate(uTemp)
+!
+!!           call mpas_timer_start("se halo normalBaroclinicVelocity")
+!           call mpas_dmpar_field_halo_exch(domain, &
+!!!                             'normalBaroclinicVelocity', timeLevel=2)
+!!!           call mpas_timer_stop("se halo normalBaroclinicVelocity")
+!!
+!!            call mpas_timer_stop('bcl iters on linear Coriolis')
+!!
+!!        end do  ! do j=1,config_n_bcl_iter
+!!
+!!!        call mpas_timer_start('se halo barotropicForcing')
+!!!        call mpas_dmpar_field_halo_exch(domain, 'barotropicForcing')
+!!!        call mpas_timer_stop('se halo barotropicForcing')
+!!
+!!         call mpas_timer_stop("se bcl vel")
+!
+!         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!         ! END baroclinic iterations on linear Coriolis term
+!
+            !$omp parallel
+            !$omp do schedule(runtime) private(k)
+            do iEdge = 1, nEdgesOwned
+            !do k = 1, maxLevelEdgeTop(iEdge)
+            do k = 1, nVertLevels
+               normalVelocityNew(k,iEdge) = &
+              edgeMask(k,iEdge)*(normalBarotropicVelocityNew(iEdge) + &
+                                 normalBaroclinicVelocityNew(k,iEdge))
+            end do
+            end do ! iEdges
+            !$omp end do
+            !$omp end parallel
+!@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+!@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+
+
+
+
+
+
+
 
       call mpas_dmpar_field_halo_exch(domain, 'surfaceFrictionVelocity')
 
