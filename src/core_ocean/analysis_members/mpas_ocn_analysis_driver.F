@@ -27,7 +27,6 @@ module ocn_analysis_driver
    use mpas_log
 
    use ocn_constants
-   use ocn_config
    use ocn_global_stats
    use ocn_surface_area_weighted_averages
    use ocn_layer_volume_weighted_averages
@@ -49,11 +48,6 @@ module ocn_analysis_driver
    use ocn_transect_transport
    use ocn_eddy_product_variables
    use ocn_moc_streamfunction
-   use ocn_ocean_heat_content
-   use ocn_mixed_layer_heat_budget
-   use ocn_sediment_flux_index
-   use ocn_sediment_transport
-   use ocn_harmonic_analysis
 !   use ocn_TEM_PLATE
 
    implicit none
@@ -183,7 +177,6 @@ contains
       call mpas_pool_add_config(analysisMemberList, 'lagrPartTrack', 1)
       call mpas_pool_add_config(analysisMemberList, 'eliassenPalm', 1)
       call mpas_pool_add_config(analysisMemberList, 'mixedLayerDepths', 1)
-      call mpas_pool_add_config(analysisMemberList, 'mixedLayerHeatBudget', 1)
       call mpas_pool_add_config(analysisMemberList, 'rpnCalculator', 1)
       call mpas_pool_add_config(analysisMemberList, 'timeSeriesStatsDaily', 1)
       call mpas_pool_add_config(analysisMemberList, 'timeSeriesStatsMonthly', 1)
@@ -200,10 +193,6 @@ contains
       call mpas_pool_add_config(analysisMemberList, 'transectTransport', 1)
       call mpas_pool_add_config(analysisMemberList, 'eddyProductVariables', 1)
       call mpas_pool_add_config(analysisMemberList, 'mocStreamfunction', 1)
-      call mpas_pool_add_config(analysisMemberList, 'oceanHeatContent', 1)
-      call mpas_pool_add_config(analysisMemberList, 'sedimentFluxIndex', 1)
-      call mpas_pool_add_config(analysisMemberList, 'sedimentTransport', 1)
-      call mpas_pool_add_config(analysisMemberList, 'harmonicAnalysis', 1)
 !     call mpas_pool_add_config(analysisMemberList, 'temPlate', 1)
 
       ! DON'T EDIT BELOW HERE
@@ -283,7 +272,7 @@ contains
       integer :: err_tmp
 
       character (len=StrKIND) :: configName, alarmName, restartStreamName, inputStreamName, timerName
-      logical, pointer :: config_AM_enable
+      logical, pointer :: config_AM_enable, config_do_restart
       character (len=StrKIND), pointer :: config_AM_restart_stream, config_AM_input_stream
       integer :: nameLength
       type (mpas_pool_iterator_type) :: poolItr
@@ -301,6 +290,8 @@ contains
       call mpas_pool_set_error_level(MPAS_POOL_SILENT)
 
       call mpas_timer_start('analysis_bootstrap')
+
+      call mpas_pool_get_config(domain % configs, 'config_do_restart', config_do_restart)
 
       call mpas_pool_begin_iteration(analysisMemberList)
       do while ( mpas_pool_get_next_member(analysisMemberList, poolItr) )
@@ -432,7 +423,7 @@ contains
 
       character (len=StrKIND) :: configName, alarmName, streamName, timerName
       logical, pointer :: config_AM_enable
-      character (len=StrKIND), pointer :: config_AM_compute_interval, config_AM_output_stream
+      character (len=StrKIND), pointer :: config_AM_compute_interval, config_AM_output_stream, config_start_time
       integer :: nameLength
       type (mpas_pool_iterator_type) :: poolItr
 
@@ -500,6 +491,8 @@ contains
                                                     MPAS_STREAM_PROPERTY_REF_TIME, referenceTimeString, err_tmp)
                   call mpas_set_time(referenceTime, dateTimeString=referenceTimeString, ierr=err_tmp)
                else
+                  call mpas_pool_get_config(domain % configs, 'config_start_time', config_start_time)
+
                   ! TODO FIXME I'm not sure what it's supposed to be
                   !            but 'file' is causing the code to fail
                   if (trim(config_start_time) == 'file') then
@@ -1063,8 +1056,6 @@ contains
          call ocn_bootstrap_pointwise_stats(domain, err_tmp)
       else if ( analysisMemberName(1:nameLength) == 'transectTransport' ) then
         call ocn_init_transect_transport(domain, err_tmp)
-!      else if ( analysisMemberName(1:nameLength) == 'sedimentFluxIndex' ) then
-!        call ocn_init_sediment_flux_index(domain, err_tmp)
 !     else if ( analysisMemberName(1:nameLength) == 'temPlate' ) then
 !        call ocn_init_TEM_PLATE(domain, err_tmp)
       end if
@@ -1092,7 +1083,6 @@ contains
       integer :: nameLength, err_tmp
 
       iErr = 0
-       err_tmp = 0
 
       nameLength = len_trim(analysisMemberName)
 
@@ -1132,16 +1122,6 @@ contains
         call ocn_init_eddy_product_variables(domain, err_tmp)
       else if ( analysisMemberName(1:nameLength) == 'mocStreamfunction' ) then
          call ocn_init_moc_streamfunction(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'oceanHeatContent' ) then
-         call ocn_init_ocean_heat_content(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'mixedLayerHeatBudget' ) then
-         call ocn_init_mixed_layer_heat_budget(domain,err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'sedimentFluxIndex' ) then
-         call ocn_init_sediment_flux_index(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'sedimentTransport' ) then
-         call ocn_init_sediment_transport(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'harmonicAnalysis' ) then
-        call ocn_init_harmonic_analysis(domain, err_tmp)
 !     else if ( analysisMemberName(1:nameLength) == 'temPlate' ) then
 !        call ocn_init_TEM_PLATE(domain, err_tmp)
       ! rpn is third to last
@@ -1195,7 +1175,7 @@ contains
       integer :: nameLength, err_tmp
 
       iErr = 0
-      err_tmp = 0
+
       nameLength = len_trim(analysisMemberName)
 
       if ( analysisMemberName(1:nameLength) == 'globalStats' ) then
@@ -1234,16 +1214,6 @@ contains
         call ocn_compute_eddy_product_variables(domain, timeLevel, err_tmp)
       else if ( analysisMemberName(1:nameLength) == 'mocStreamfunction' ) then
          call ocn_compute_moc_streamfunction(domain, timeLevel, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'oceanHeatContent' ) then
-         call ocn_compute_ocean_heat_content(domain, timeLevel, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'mixedLayerHeatBudget' ) then
-         call ocn_compute_mixed_layer_heat_budget(domain, timeLevel, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'sedimentFluxIndex' ) then
-         call ocn_compute_sediment_flux_index(domain, timeLevel, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'sedimentTransport' ) then
-         call ocn_compute_sediment_transport(domain, timeLevel, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'harmonicAnalysis' ) then
-         call ocn_compute_harmonic_analysis(domain, timeLevel, err_tmp)
 !     else if ( analysisMemberName(1:nameLength) == 'temPlate' ) then
 !        call ocn_compute_TEM_PLATE(domain, timeLevel, err_tmp)
       ! rpn is third to last
@@ -1302,7 +1272,7 @@ contains
       integer :: nameLength, err_tmp
 
       iErr = 0
-      err_tmp = 0
+
       nameLength = len_trim(analysisMemberName)
 
       if ( analysisMemberName(1:nameLength) == 'globalStats' ) then
@@ -1341,16 +1311,6 @@ contains
         call ocn_restart_eddy_product_variables(domain, err_tmp)
       else if ( analysisMemberName(1:nameLength) == 'mocStreamfunction' ) then
          call ocn_restart_moc_streamfunction(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'oceanHeatContent' ) then
-         call ocn_restart_ocean_heat_content(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'mixedLayerHeatBudget' ) then
-         call ocn_restart_mixed_layer_heat_budget(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'sedimentFluxIndex' ) then
-         call ocn_restart_sediment_flux_index(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'sedimentTransport' ) then
-         call ocn_restart_sediment_transport(domain, err_tmp)
-     else if ( analysisMemberName(1:nameLength) == 'harmonicAnalysis' ) then
-        call ocn_restart_harmonic_analysis(domain, err_tmp)
 !     else if ( analysisMemberName(1:nameLength) == 'temPlate' ) then
 !        call ocn_restart_TEM_PLATE(domain, err_tmp)
       ! rpn is third to last
@@ -1403,7 +1363,7 @@ contains
       integer :: nameLength, err_tmp
 
       iErr = 0
-      err_tmp = 0
+
       nameLength = len_trim(analysisMemberName)
 
       if ( analysisMemberName(1:nameLength) == 'globalStats' ) then
@@ -1442,16 +1402,6 @@ contains
         call ocn_finalize_eddy_product_variables(domain, err_tmp)
       else if ( analysisMemberName(1:nameLength) == 'mocStreamfunction' ) then
          call ocn_finalize_moc_streamfunction(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'oceanHeatContent' ) then
-         call ocn_finalize_ocean_heat_content(domain,err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'mixedLayerHeatBudget' ) then
-         call ocn_finalize_mixed_layer_heat_budget(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'sedimentFluxIndex' ) then
-         call ocn_finalize_sediment_flux_index(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'sedimentTransport' ) then
-         call ocn_finalize_sediment_transport(domain, err_tmp)
-      else if ( analysisMemberName(1:nameLength) == 'harmonicAnalysis' ) then
-         call ocn_finalize_harmonic_analysis(domain, err_tmp)
 !     else if ( analysisMemberName(1:nameLength) == 'temPlate' ) then
 !        call ocn_finalize_TEM_PLATE(domain, err_tmp)
       ! rpn is third to last

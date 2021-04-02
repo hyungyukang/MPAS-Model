@@ -1,8 +1,5 @@
-MODEL_FORMULATION =
+MODEL_FORMULATION = 
 
-ifneq "${MPAS_SHELL}" ""
-        SHELL = ${MPAS_SHELL}
-endif
 
 dummy:
 	( $(MAKE) error )
@@ -33,37 +30,7 @@ xlf:
 	"USE_PAPI = $(USE_PAPI)" \
 	"OPENMP = $(OPENMP)" \
 	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI" )
-
-xlf-summit-omp-offload:
-	( $(MAKE) all \
-	"FC_PARALLEL = mpif90" \
-	"CC_PARALLEL = mpicc" \
-	"CXX_PARALLEL = mpiCC" \
-	"FC_SERIAL = xlf90_r" \
-	"CC_SERIAL = xlc_r" \
-	"CXX_SERIAL = xlc++_r" \
-	"FFLAGS_PROMOTION = -qrealsize=8" \
-	"FFLAGS_OPT = -g -qfullpath -qmaxmem=-1 -qphsinfo -qzerosize -qfree=f90 -qxlf2003=polymorphic -qspillsize=2500 -qextname=flush -O2 -qstrict -Q" \
-	"CFLAGS_OPT = -g -qfullpath -qmaxmem=-1 -qphsinfo -O3" \
-	"CXXFLAGS_OPT = -g -qfullpath -qmaxmem=-1 -qphsinfo -O3" \
-	"LDFLAGS_OPT = -Wl,--relax -Wl,--allow-multiple-definition -qsmp -qoffload -lcudart -L$(CUDA_DIR)/lib64" \
-	"FFLAGS_GPU = -qsmp -qoffload" \
-	"LDFLAGS_GPU = -qsmp -qoffload -lcudart -L$(CUDA_DIR)/lib64" \
-	"FFLAGS_DEBUG = -O0 -g -qinitauto=7FF7FFFF -qflttrap=ov:zero:inv:en" \
-	"CFLAGS_DEBUG = -O0 -g" \
-	"CXXFLAGS_DEBUG = -O0 -g" \
-	"LDFLAGS_DEBUG = -O0 -g" \
-	"FFLAGS_OMP = -qsmp=omp" \
-	"CFLAGS_OMP = -qsmp=omp" \
-	"PICFLAG = -qpic" \
-	"BUILD_TARGET = $(@)" \
-	"CORE = $(CORE)" \
-	"DEBUG = $(DEBUG)" \
-	"USE_PAPI = $(USE_PAPI)" \
-	"OPENMP = $(OPENMP)" \
-	"OPENMP_OFFLOAD = $(OPENMP_OFFLOAD)" \
-	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI -DFORTRAN_SAME -DCPRIBM -DLINUX" )
-
+ 
 ftn:
 	( $(MAKE) all \
 	"FC_PARALLEL = ftn" \
@@ -130,37 +97,7 @@ pgi:
 	"DEBUG = $(DEBUG)" \
 	"USE_PAPI = $(USE_PAPI)" \
 	"OPENMP = $(OPENMP)" \
-	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI -DCPRPGI" )
-
-pgi-summit:
-	( $(MAKE) all \
-	"FC_PARALLEL = mpif90" \
-	"CC_PARALLEL = mpicc" \
-	"CXX_PARALLEL = mpicxx" \
-	"FC_SERIAL = pgf90" \
-	"CC_SERIAL = pgcc" \
-	"CXX_SERIAL = pgc++" \
-	"FFLAGS_PROMOTION = -r8" \
-	"FFLAGS_OPT = -g -O3 -byteswapio -Mfree" \
-	"CFLAGS_OPT = -O3 " \
-	"CXXFLAGS_OPT = -O3 " \
-	"LDFLAGS_OPT = -O3 " \
-	"FFLAGS_ACC = -acc -Minfo=accel -ta=tesla:cc70,cc60,deepcopy,nollvm " \
-	"CFLAGS_ACC = -acc -Minfo=accel -ta=tesla:cc70,cc60,deepcopy,nollvm "  \
-	"FFLAGS_DEBUG = -O0 -g -Mbounds -Mchkptr -byteswapio -Mfree -Ktrap=divz,fp,inv,ovf -traceback" \
-	"CFLAGS_DEBUG = -O0 -g -traceback" \
-	"CXXFLAGS_DEBUG = -O0 -g -traceback" \
-	"LDFLAGS_DEBUG = -O0 -g -Mbounds -Mchkptr -Ktrap=divz,fp,inv,ovf -traceback" \
-	"FFLAGS_OMP = -mp" \
-	"CFLAGS_OMP = -mp" \
-	"PICFLAG = -fpic" \
-	"BUILD_TARGET = $(@)" \
-	"CORE = $(CORE)" \
-	"DEBUG = $(DEBUG)" \
-	"USE_PAPI = $(USE_PAPI)" \
-	"OPENMP = $(OPENMP)" \
-	"OPENACC = $(OPENACC)" \
-	"CPPFLAGS = -DpgiFortran -D_MPI -DUNDERSCORE" )
+	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI" )
 
 pgi-nersc:
 	( $(MAKE) all \
@@ -182,7 +119,7 @@ pgi-nersc:
 	"DEBUG = $(DEBUG)" \
 	"USE_PAPI = $(USE_PAPI)" \
 	"OPENMP = $(OPENMP)" \
-	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI -DCPRPGI" )
+	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI" )
 
 pgi-llnl:
 	( $(MAKE) all \
@@ -204,7 +141,7 @@ pgi-llnl:
 	"DEBUG = $(DEBUG)" \
 	"USE_PAPI = $(USE_PAPI)" \
 	"OPENMP = $(OPENMP)" \
-	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI -DCPRPGI" )
+	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI" )
 
 ifort:
 	( $(MAKE) all \
@@ -278,33 +215,6 @@ ifort-gcc:
 	"LDFLAGS_DEBUG = -g -fpe0 -traceback" \
 	"FFLAGS_OMP = -qopenmp" \
 	"CFLAGS_OMP = -fopenmp" \
-	"BUILD_TARGET = $(@)" \
-	"CORE = $(CORE)" \
-	"DEBUG = $(DEBUG)" \
-	"USE_PAPI = $(USE_PAPI)" \
-	"OPENMP = $(OPENMP)" \
-	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI" )
-
-intel-mpi:
-	( $(MAKE) all \
-	"FC_PARALLEL = mpiifort" \
-	"CC_PARALLEL = mpiicc" \
-	"CXX_PARALLEL = mpiicpc" \
-	"FC_SERIAL = ifort" \
-	"CC_SERIAL = icc" \
-	"CXX_SERIAL = icpc" \
-	"FFLAGS_PROMOTION = -real-size 64" \
-	"FFLAGS_OPT = -O3 -convert big_endian -free -align array64byte" \
-	"CFLAGS_OPT = -O3" \
-	"CXXFLAGS_OPT = -O3" \
-	"LDFLAGS_OPT = -O3" \
-	"FFLAGS_DEBUG = -g -convert big_endian -free -CU -CB -check all -fpe0 -traceback" \
-	"CFLAGS_DEBUG = -g -traceback" \
-	"CXXFLAGS_DEBUG = -g -traceback" \
-	"LDFLAGS_DEBUG = -g -fpe0 -traceback" \
-	"FFLAGS_OMP = -qopenmp" \
-	"CFLAGS_OMP = -qopenmp" \
-	"PICFLAG = -fpic" \
 	"BUILD_TARGET = $(@)" \
 	"CORE = $(CORE)" \
 	"DEBUG = $(DEBUG)" \
@@ -440,10 +350,10 @@ gnu-nersc:
 	"CC_SERIAL = cc" \
 	"CXX_SERIAL = CC" \
 	"FFLAGS_PROMOTION = -fdefault-real-8 -fdefault-double-8" \
-	"FFLAGS_OPT = -O3 -m64 -ffree-line-length-none -fconvert=big-endian -ffree-form" \
-	"CFLAGS_OPT = -O3 -m64" \
-	"CXXFLAGS_OPT = -O3 -m64" \
-	"LDFLAGS_OPT = -O3 -m64" \
+	"FFLAGS_OPT = -O3 -m64 -ffree-line-length-none -fconvert=big-endian -ffree-form -mcmodel=large" \
+	"CFLAGS_OPT = -O3 -m64 -mcmodel=large" \
+	"CXXFLAGS_OPT = -O3 -m64 -mcmodel=large" \
+	"LDFLAGS_OPT = -O3 -m64 -mcmodel=large" \
 	"FFLAGS_DEBUG = -g -m64 -ffree-line-length-none -fconvert=big-endian -ffree-form" \
 	"CFLAGS_DEBUG = -g -m64" \
 	"CXXFLAGS_DEBUG = -g -m64" \
@@ -534,34 +444,18 @@ llvm:
 	"OPENMP = $(OPENMP)" \
 	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI" )
 
-nag:
-	( $(MAKE) all \
-	"FC_PARALLEL = mpifort" \
-	"CC_PARALLEL = mpicc" \
-	"CXX_PARALLEL = mpic++" \
-	"FC_SERIAL = nagfor" \
-	"CC_SERIAL = gcc" \
-	"CXX_SERIAL = g++" \
-	"FFLAGS_PROMOTION = -r8" \
-	"FFLAGS_OPT = -free -mismatch -O3 -convert=big_ieee" \
-	"CFLAGS_OPT = -O3" \
-	"CXXFLAGS_OPT = -O3" \
-	"LDFLAGS_OPT = -O3" \
-	"FFLAGS_DEBUG = -free -mismatch -O0 -g -C -convert=big_ieee" \
-	"CFLAGS_DEBUG = -O0 -g -Wall -pedantic" \
-	"CXXFLAGS_DEBUG = -O0 -g -Wall -pedantic" \
-	"LDFLAGS_DEBUG = -O0 -g -C" \
-	"FFLAGS_OMP = -qsmp=omp" \
-	"CFLAGS_OMP = -qsmp=omp" \
-	"CORE = $(CORE)" \
-	"DEBUG = $(DEBUG)" \
-	"USE_PAPI = $(USE_PAPI)" \
-	"OPENMP = $(OPENMP)" \
-	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI -DUNDERSCORE -DNAG_COMPILER" )
 
-CPPINCLUDES =
-FCINCLUDES =
-LIBS =
+#PIO = /global/u2/h/hgkang/my_programs/Scorpio
+FORTRILINOS_ROOT    = /Users/3hk/home/programs/Trilinos/ForTrilinos
+
+FORTRILINOS_BUILD   = $(FORTRILINOS_ROOT)/build
+FORTRILINOS_INSTALL = $(FORTRILINOS_BUILD)/ForTrilinos_install
+#FORTRILINOS_INCLUDES = -I$(FORTRILINOS_INSTALL)/include -I/$(FORTRILINOS_INSTALL)/lib  -I/$(FORTRILINOS_BUILD)/ForTrilinos/src/utils/src -I/$(FORTRILINOS_ROOT)/build/ForTrilinos/src/interface -I$(FORTRILINOS_BUILD)/packages/nox/src
+FORTRILINOS_INCLUDES = -I$(FORTRILINOS_INSTALL)/include -L$(FORTRILINOS_INSTALL)/lib -I$(FORTRILINOS_BUILD)/test
+
+CPPINCLUDES = 
+FCINCLUDES = 
+LIBS = 
 
 #
 # If user has indicated a PIO2 library, define USE_PIO2 pre-processor macro
@@ -596,15 +490,9 @@ endif
 # Depending on PIO version, libraries may be libpio.a, or libpiof.a and libpioc.a
 # Keep open the possibility of shared libraries in future with, e.g., .so suffix
 #
-# Check if libpio.* exists and link -lpio if so, but we make an exception for
-# libpio.settings (a file added in PIO2), which is not a library to link
 ifneq ($(wildcard $(PIO_LIB)/libpio\.*), )
-	# Makefiles don't support "and" operators so we have nested "if" instead
-	ifneq "$(wildcard $(PIO_LIB)/libpio\.*)" "$(PIO_LIB)/libpio.settings"
-		LIBS += -lpio
-	endif
+	LIBS += -lpio
 endif
-
 ifneq ($(wildcard $(PIO_LIB)/libpiof\.*), )
 	LIBS += -lpiof
 endif
@@ -615,24 +503,23 @@ ifneq ($(wildcard $(PIO_LIB)/libgptl\.*), )
 	LIBS += -lgptl
 endif
 
+ifneq "$(LAPACK)" ""
+        LIBS += -L$(LAPACK)/lib
+        LIBS += -llapack
+endif
+
 ifneq "$(NETCDF)" ""
-ifneq ($(wildcard $(NETCDF)/lib), )
-	NETCDFLIBLOC = lib
-endif
-ifneq ($(wildcard $(NETCDF)/lib64), )
-	NETCDFLIBLOC = lib64
-endif
 	CPPINCLUDES += -I$(NETCDF)/include
 	FCINCLUDES += -I$(NETCDF)/include
-	LIBS += -L$(NETCDF)/$(NETCDFLIBLOC)
+	LIBS += -L$(NETCDF)/lib
 	NCLIB = -lnetcdf
 	NCLIBF = -lnetcdff
-	ifneq ($(wildcard $(NETCDF)/$(NETCDFLIBLOC)/libnetcdff.*), ) # CHECK FOR NETCDF4
+	ifneq ($(wildcard $(NETCDF)/lib/libnetcdff.*), ) # CHECK FOR NETCDF4
 		LIBS += $(NCLIBF)
 	endif # CHECK FOR NETCDF4
 	ifneq "$(NETCDFF)" ""
 		FCINCLUDES += -I$(NETCDFF)/include
-		LIBS += -L$(NETCDFF)/$(NETCDFLIBLOC)
+		LIBS += -L$(NETCDFF)/lib
 		LIBS += $(NCLIBF)
 	endif
 	LIBS += $(NCLIB)
@@ -640,36 +527,22 @@ endif
 
 
 ifneq "$(PNETCDF)" ""
-ifneq ($(wildcard $(PNETCDF)/lib), )
-	PNETCDFLIBLOC = lib
-endif
-ifneq ($(wildcard $(PNETCDF)/lib64), )
-	PNETCDFLIBLOC = lib64
-endif
 	CPPINCLUDES += -I$(PNETCDF)/include
 	FCINCLUDES += -I$(PNETCDF)/include
-	LIBS += -L$(PNETCDF)/$(PNETCDFLIBLOC) -lpnetcdf
-endif
-
-ifeq "$(USE_LAPACK)" "true"
-ifndef LAPACK
-$(error LAPACK is not set.  Please set LAPACK to the LAPACK install directory when USE_LAPACK=true)
-endif
-ifneq (, $(shell ls $(LAPACK)/liblapack.*))
-	LIBS += -L$(LAPACK)
-else ifneq (, $(shell ls $(LAPACK)/lib/liblapack.*))
-	LIBS += -L$(LAPACK)/lib
-else
-$(error liblapack.* does NOT exist in $(LAPACK) or $(LAPACK)/lib)
-endif
-	LIBS += -llapack
-	LIBS += -lblas
-	override CPPFLAGS += -DUSE_LAPACK
+	LIBS += -L$(PNETCDF)/lib -lpnetcdf
 endif
 
 RM = rm -f
 CPP = cpp -P -traditional
 RANLIB = ranlib
+
+
+ifeq "$(FORTRILINOS)" "true"
+        FORTRILINOS_LIBS += -Wl,-rpath,$(FORTRILINOS_INSTALL)/lib
+        FORTRILINOS_LIBS += -dynamic -L$(FORTRILINOS_INSTALL)/lib
+        FORTRILINOS_LIBS += -lfortrilinos_hl -lforteuchos -lfortpetra -lforerror -lforbelos
+endif
+
 
 ifdef CORE
 
@@ -730,22 +603,6 @@ ifeq "$(OPENMP)" "true"
 	override CPPFLAGS += "-DMPAS_OPENMP"
 	LDFLAGS += $(FFLAGS_OMP)
 endif #OPENMP IF
-
-ifeq "$(OPENACC)" "true"
-        FFLAGS += $(FFLAGS_ACC)
-        CFLAGS += $(CFLAGS_ACC)
-        CXXFLAGS += $(CFLAGS_ACC)
-        override CPPFLAGS += "-DMPAS_OPENACC"
-        LDFLAGS += $(FFLAGS_ACC)
-endif #OPENACC IF
-
-ifeq "$(OPENMP_OFFLOAD)" "true"
-	FFLAGS += $(FFLAGS_GPU)
-	CFLAGS += $(FFLAGS_GPU)
-	CXXFLAGS += $(FFLAGS_GPU)
-	override CPPFLAGS += "-DMPAS_OPENMP_OFFLOAD"
-	LDFLAGS += $(LDFLAGS_GPU)
-endif #OPENMP_OFFLOAD IF
 
 ifeq "$(PRECISION)" "single"
 	CFLAGS += "-DSINGLE_PRECISION"
@@ -831,22 +688,17 @@ else
 	GEN_F90_MESSAGE="MPAS was built with .F files."
 endif
 
+ifeq "$(FORTRILINOS)" "true"
+        FORTRILINOS_MESSAGE="ForTrilinos is on."
+else
+        override FORTRILINOS=false
+        FORTRILINOS_MESSAGE="ForTrilinos is off."
+endif
+
 ifeq "$(OPENMP)" "true"
 	OPENMP_MESSAGE="MPAS was built with OpenMP enabled."
 else
 	OPENMP_MESSAGE="MPAS was built without OpenMP support."
-endif
-
-ifeq "$(OPENMP_OFFLOAD)" "true"
-	OPENMP_OFFLOAD_MESSAGE="MPAS was built with OpenMP-offload GPU support enabled."
-else
-	OPENMP_OFFLOAD_MESSAGE="MPAS was built without OpenMP-offload GPU support."
-endif
-
-ifeq "$(OPENACC)" "true"
-	OPENACC_MESSAGE="MPAS was built with OpenACC accelerator support enabled."
-else
-	OPENACC_MESSAGE="MPAS was built without OpenACC accelerator support."
 endif
 
 ifneq ($(wildcard .mpas_core_*), ) # CHECK FOR BUILT CORE
@@ -1013,6 +865,9 @@ endif
                  CORE="$(CORE)"\
                  AUTOCLEAN="$(AUTOCLEAN)" \
                  GEN_F90="$(GEN_F90)" \
+                 FORTRILINOS="$(FORTRILINOS)" \
+                 FORTRILINOS_LIBS="$(FORTRILINOS_LIBS)" \
+                 FORTRILINOS_INCLUDES="$(FORTRILINOS_INCLUDES)" \
                  NAMELIST_SUFFIX="$(NAMELIST_SUFFIX)" \
                  EXE_NAME="$(EXE_NAME)"
 
@@ -1026,13 +881,12 @@ endif
 	@echo $(PAPI_MESSAGE)
 	@echo $(TAU_MESSAGE)
 	@echo $(OPENMP_MESSAGE)
-	@echo $(OPENMP_OFFLOAD_MESSAGE)
-	@echo $(OPENACC_MESSAGE)
 	@echo $(SHAREDLIB_MESSAGE)
 ifeq "$(AUTOCLEAN)" "true"
 	@echo $(AUTOCLEAN_MESSAGE)
 endif
 	@echo $(GEN_F90_MESSAGE)
+	@echo $(FORTRILINOS_MESSAGE)
 	@echo $(TIMER_MESSAGE)
 	@echo $(PIO_MESSAGE)
 	@echo "*******************************************************************************"
@@ -1113,9 +967,9 @@ errmsg:
 	@echo "    USE_PIO2=true - links with the PIO 2 library. Default is to use the PIO 1.x library."
 	@echo "    PRECISION=single - builds with default single-precision real kind. Default is to use double-precision."
 	@echo "    SHAREDLIB=true - generate position-independent code suitable for use in a shared library. Default is false."
-	@echo "    USE_LAPACK=true - builds and links with LAPACK / BLAS libraries.  Default is to not use LAPACK."
+	@echo "    ORTRILINOS=true - ENABLE ForTrilinos" 
 	@echo ""
-	@echo "Ensure that NETCDF, PNETCDF, PIO, LAPACK (if USE_LAPACK=true), and PAPI (if USE_PAPI=true) are environment variables"
+	@echo "Ensure that NETCDF, PNETCDF, PIO, and PAPI (if USE_PAPI=true) are environment variables"
 	@echo "that point to the absolute paths for the libraries."
 	@echo ""
 ifdef CORE

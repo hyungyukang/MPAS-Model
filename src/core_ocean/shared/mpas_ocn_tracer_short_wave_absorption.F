@@ -17,7 +17,6 @@ module ocn_tracer_short_wave_absorption
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
-   use ocn_config
    use ocn_tracer_short_wave_absorption_jerlov
    use ocn_tracer_short_wave_absorption_variable
 
@@ -65,8 +64,7 @@ contains
 !-----------------------------------------------------------------------
 
    subroutine ocn_tracer_short_wave_absorption_tend(meshPool, swForcingPool, forcingPool, index_temperature, & !{{{
-                    layerThickness, penetrativeTemperatureFlux, penetrativeTemperatureFluxOBL, tend, &
-                    bottomLayerShortwaveTemperatureFlux, err)
+                    layerThickness, penetrativeTemperatureFlux, penetrativeTemperatureFluxOBL, tend, err)
 
       !-----------------------------------------------------------------
       !
@@ -82,9 +80,6 @@ contains
 
       real (kind=RKIND), dimension(:), intent(inout) :: &
          penetrativeTemperatureFluxOBL
-
-      real (kind=RKIND), dimension(:), intent(inout) :: &
-         bottomLayerShortwaveTemperatureFlux
 
       real (kind=RKIND), dimension(:,:), intent(in) :: layerThickness !< Input: Layer thicknesses
 
@@ -113,6 +108,10 @@ contains
       !
       !-----------------------------------------------------------------
 
+      character(len=strKIND), pointer :: config_sw_absorption_type
+
+      call MPAS_pool_get_config(ocnConfigs, 'config_sw_absorption_type', config_sw_absorption_type)
+
       if (trim(config_sw_absorption_type)=='none')  return
 
       call mpas_timer_start("short wave")
@@ -120,12 +119,10 @@ contains
       err = 0
       if(useJerlov) then
          call ocn_tracer_short_wave_absorption_jerlov_tend(meshPool, forcingPool, index_temperature, layerThickness, &
-                                        penetrativeTemperatureFlux, penetrativeTemperatureFluxOBL, tend, &
-                                        bottomLayerShortwaveTemperatureFLux, err)
+                                        penetrativeTemperatureFlux, penetrativeTemperatureFluxOBL, tend, err)
       else
          call ocn_tracer_short_wave_absorption_variable_tend(meshPool,swForcingPool, forcingPool, index_temperature, &
-                                        layerThickness, penetrativeTemperatureFlux, penetrativeTemperatureFluxOBL,tend, &
-                                        bottomLayerShortwaveTemperatureFlux, err)
+                                        layerThickness, penetrativeTemperatureFlux, penetrativeTemperatureFluxOBL,tend,err)
       endif
 
       call mpas_timer_stop("short wave")
@@ -153,7 +150,14 @@ contains
 
       integer, intent(out) :: err !< Output: error flag
 
+      logical, pointer :: config_use_activeTracers_surface_bulk_forcing
+      character (len=StrKind), pointer :: config_sw_absorption_type
+
       err = 0
+
+      call mpas_pool_get_config(ocnConfigs, 'config_sw_absorption_type', config_sw_absorption_type)
+      call MPAS_pool_get_config(ocnConfigs, 'config_use_activeTracers_surface_bulk_forcing', &
+                                config_use_activeTracers_surface_bulk_forcing)
 
       useJerlov=.false.
 

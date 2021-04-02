@@ -25,7 +25,6 @@ module ocn_tracer_surface_flux_to_tend
    use mpas_pool_routines
 
    use ocn_constants
-   use ocn_config
    use ocn_forcing
 
    implicit none
@@ -141,7 +140,6 @@ contains
 
       nCells = nCellsArray( 1 )
 
-      !$omp parallel
       !$omp do schedule(runtime) private(remainingFlux, k, iTracer)
       do iCell = 1, nCells
         remainingFlux = 1.0_RKIND
@@ -161,7 +159,6 @@ contains
         end if
       end do
       !$omp end do
-      !$omp end parallel
 
       call mpas_timer_stop("surface_tracer_flux")
 
@@ -170,7 +167,6 @@ contains
       if (associated(surfaceTracerFluxRunoff)) then
         call mpas_timer_start("surface_tracer_runoff_flux")
 
-        !$omp parallel
         !$omp do schedule(runtime) private(remainingFlux, k, iTracer)
         do iCell = 1, nCells
           remainingFlux = 1.0_RKIND
@@ -191,7 +187,6 @@ contains
           end if
         end do
         !$omp end do
-        !$omp end parallel
 
         call mpas_timer_stop("surface_tracer_runoff_flux")
       end if
@@ -219,7 +214,11 @@ contains
 
       integer, intent(out) :: err !< Output: error flag
 
+      logical, pointer :: config_disable_tr_sflux
+
       err = 0
+
+      call mpas_pool_get_config(ocnConfigs, 'config_disable_tr_sflux', config_disable_tr_sflux)
 
       surfaceTracerFluxOn = .true.
 

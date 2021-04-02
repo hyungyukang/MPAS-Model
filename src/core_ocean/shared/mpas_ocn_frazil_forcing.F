@@ -26,8 +26,6 @@ module ocn_frazil_forcing
    use mpas_timekeeping
    use mpas_timer
    use ocn_constants
-   use ocn_config
-   use ocn_diagnostics_variables
    use ocn_equation_of_state
 
    implicit none
@@ -184,7 +182,6 @@ contains
       nCells = nCellsArray( 2 )
 
       ! Build surface fluxes at cell centers
-      !$omp parallel
       !$omp do schedule(runtime) private(k)
       do iCell = 1, nCells
         do k = 1, maxLevelCell(iCell)
@@ -192,7 +189,6 @@ contains
         end do
       end do
       !$omp end do
-      !$omp end parallel
 
       call mpas_timer_stop("frazil thickness tendency")
 
@@ -269,7 +265,6 @@ contains
       nCells = nCellsArray( 2 )
 
       ! add to surface fluxes at cell centers
-      !$omp parallel
       !$omp do schedule(runtime) private(k)
       do iCell = 1, nCells
         do k = 1, maxLevelCell(iCell)
@@ -279,7 +274,6 @@ contains
         end do
       end do
       !$omp end do
-      !$omp end parallel
 
    end subroutine ocn_frazil_forcing_active_tracers!}}}
 
@@ -306,7 +300,7 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_frazil_forcing_build_arrays(domain, meshPool, forcingPool, statePool, err)!{{{
+   subroutine ocn_frazil_forcing_build_arrays(domain, meshPool, forcingPool, diagnosticsPool, statePool, err)!{{{
 
       !-----------------------------------------------------------------
       !
@@ -315,6 +309,7 @@ contains
       !-----------------------------------------------------------------
 
       type (mpas_pool_type), pointer, intent(in) :: meshPool !< Input: Mesh information
+      type (mpas_pool_type), pointer, intent(in) :: diagnosticsPool !< Input: Diagnostic information
 
       !-----------------------------------------------------------------
       !
@@ -351,6 +346,17 @@ contains
       real (kind=RKIND) :: dt, columnTemperatureMin
 
       type (MPAS_timeInterval_type) :: timeStep
+      real (kind=RKIND), pointer :: config_frazil_heat_of_fusion
+      real (kind=RKIND), pointer :: config_frazil_ice_density
+      real (kind=RKIND), pointer :: config_frazil_fractional_thickness_limit
+      real (kind=RKIND), pointer :: config_frazil_maximum_depth
+      real (kind=RKIND), pointer :: config_specific_heat_sea_water
+      real (kind=RKIND), pointer :: config_frazil_sea_ice_reference_salinity
+      real (kind=RKIND), pointer :: config_frazil_land_ice_reference_salinity
+      real (kind=RKIND), pointer :: config_frazil_maximum_freezing_temperature
+      logical, pointer :: config_frazil_use_surface_pressure
+      logical, pointer :: config_frazil_in_open_ocean
+      logical, pointer :: config_frazil_under_land_ice
 
       real (kind=RKIND) :: newFrazilIceThickness, newThicknessWeightedSaltContent
       real (kind=RKIND) :: sumNewFrazilIceThickness, sumNewThicknessWeightedSaltContent
@@ -364,7 +370,10 @@ contains
       real (kind=RKIND), pointer, dimension(:)     :: accumulatedLandIceFrazilMassNew
       real (kind=RKIND), pointer, dimension(:)     :: accumulatedLandIceFrazilMassOld
       real (kind=RKIND), pointer, dimension(:)     :: ssh
+      real (kind=RKIND), pointer, dimension(:,:)   :: zMid
       real (kind=RKIND), pointer, dimension(:,:)   :: layerThickness
+      real (kind=RKIND), pointer, dimension(:,:)   :: density
+      real (kind=RKIND), pointer, dimension(:,:)   :: pressure
       real (kind=RKIND), pointer, dimension(:,:,:) :: activeTracers
 
       integer, dimension(:), pointer :: maxLevelCell
@@ -406,11 +415,28 @@ contains
       call mpas_pool_get_array(statePool, 'accumulatedLandIceFrazilMass', accumulatedLandIceFrazilMassOld, 1)
       call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
       call mpas_pool_get_array(tracersPool, 'activeTracers', activeTracers, 1)
+      call mpas_pool_get_array(diagnosticsPool, 'zMid', zMid)
+      call mpas_pool_get_array(diagnosticsPool, 'density', density)
+      call mpas_pool_get_array(diagnosticsPool, 'pressure', pressure)
       call mpas_pool_get_array(forcingPool, 'frazilTemperatureTendency', frazilTemperatureTendency)
       call mpas_pool_get_array(forcingPool, 'frazilSalinityTendency', frazilSalinityTendency)
       call mpas_pool_get_array(forcingPool, 'frazilLayerThicknessTendency', frazilLayerThicknessTendency)
       call mpas_pool_get_array(forcingPool, 'frazilSurfacePressure', frazilSurfacePressure)
       call mpas_pool_get_array(forcingPool, 'landIceMask', landIceMask)
+
+      ! get configure parameters
+      call mpas_pool_get_config(ocnConfigs, 'config_frazil_in_open_ocean', config_frazil_in_open_ocean)
+      call mpas_pool_get_config(ocnConfigs, 'config_frazil_under_land_ice', config_frazil_under_land_ice)
+      call mpas_pool_get_config(ocnConfigs, 'config_frazil_maximum_depth', config_frazil_maximum_depth)
+      call mpas_pool_get_config(ocnConfigs, 'config_frazil_fractional_thickness_limit', config_frazil_fractional_thickness_limit)
+      call mpas_pool_get_config(ocnConfigs, 'config_specific_heat_sea_water', config_specific_heat_sea_water)
+      call mpas_pool_get_config(ocnConfigs, 'config_frazil_heat_of_fusion', config_frazil_heat_of_fusion)
+      call mpas_pool_get_config(ocnConfigs, 'config_frazil_ice_density', config_frazil_ice_density)
+      call mpas_pool_get_config(ocnConfigs, 'config_frazil_sea_ice_reference_salinity', config_frazil_sea_ice_reference_salinity)
+      call mpas_pool_get_config(ocnConfigs, 'config_frazil_land_ice_reference_salinity', config_frazil_land_ice_reference_salinity)
+      call mpas_pool_get_config(ocnConfigs, 'config_frazil_use_surface_pressure', config_frazil_use_surface_pressure)
+      call mpas_pool_get_config(ocnConfigs, 'config_frazil_maximum_freezing_temperature', &
+                                config_frazil_maximum_freezing_temperature)
 
       ! get time step in units of seconds
       timeStep = mpas_get_clock_timestep(domain % clock, ierr=err)
@@ -425,13 +451,7 @@ contains
       nCells = nCellsArray( 2 )
 
       ! loop over all columns
-      !$omp parallel
-      !$omp do schedule(runtime) &
-      !$omp private(underLandIce, kBottomFrazil, columnTemperatureMin, k, sumNewFrazilIceThickness, &
-      !$omp         sumNewThicknessWeightedSaltContent, oceanFreezingTemperature, potential, &
-      !$omp         freezingEnergy, meltingEnergy, frazilSalinity, newFrazilIceThickness, &
-      !$omp         newThicknessWeightedSaltContent, meltedFrazilIceThickness, &
-      !$omp         meltedThicknessWeightedSaltContent)
+      !$omp do schedule(runtime)
       do iCell=1,nCells
 
         underLandIce = .false.
@@ -587,16 +607,13 @@ contains
 
       enddo   ! do iCell = 1, nCells
       !$omp end do
-      !$omp end parallel
 
       if ( config_frazil_use_surface_pressure ) then
-        !$omp parallel
         !$omp do schedule(runtime)
         do iCell = 1, nCells
            frazilSurfacePressure(iCell) = accumulatedFrazilIceMassNew(iCell) * gravity
         end do
         !$omp end do
-        !$omp end parallel
       end if
 
       call mpas_timer_stop("frazil")
@@ -618,8 +635,11 @@ contains
    subroutine ocn_frazil_forcing_init(err)!{{{
 
       integer, intent(out) :: err !< Output: error flag
+      logical, pointer :: config_use_frazil_ice_formation
 
       err = 0
+
+      call mpas_pool_get_config(ocnConfigs, 'config_use_frazil_ice_formation', config_use_frazil_ice_formation)
 
       frazilFormationOn = .false.
 

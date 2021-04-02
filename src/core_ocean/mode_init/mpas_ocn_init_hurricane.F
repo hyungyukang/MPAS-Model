@@ -27,7 +27,6 @@ module ocn_init_hurricane
    use mpas_dmpar
 
    use ocn_constants
-   use ocn_config
    use ocn_init_vertical_grids
    use ocn_init_cell_markers
 
@@ -83,10 +82,10 @@ contains
 
     type (block_type), pointer :: block_ptr
     type (mpas_pool_type), pointer :: meshPool
-    type (mpas_pool_type), pointer :: forcingPool
     type (mpas_pool_type), pointer :: statePool
     type (mpas_pool_type), pointer :: tracersPool
     type (mpas_pool_type), pointer :: verticalMeshPool
+    type (mpas_pool_type), pointer :: diagnosticsPool
 
     ! local variables
     integer :: iCell, k, idx, iEdge, iVertex
@@ -96,6 +95,20 @@ contains
     real (kind=RKIND), parameter :: eps=1.0e-12
     real (kind=RKIND), parameter :: pi = 4.0_RKIND*ATAN(1.0_RKIND)
 
+    ! Define config variable pointers
+    character (len=StrKIND), pointer :: config_init_configuration, config_vertical_grid
+    integer, pointer :: config_hurricane_vert_levels
+    real (kind=RKIND), pointer :: config_hurricane_min_depth
+    real (kind=RKIND), pointer :: config_hurricane_max_depth
+    logical, pointer :: config_hurricane_use_gaussian_hump
+    real (kind=RKIND), pointer :: config_hurricane_gaussian_lon_center
+    real (kind=RKIND), pointer :: config_hurricane_gaussian_lat_center
+    real (kind=RKIND), pointer :: config_hurricane_gaussian_width
+    real (kind=RKIND), pointer :: config_hurricane_gaussian_hump_amplitude
+    real (kind=RKIND), pointer :: config_hurricane_gaussian_slr_amp
+    logical, pointer :: config_use_wetting_drying
+    real (kind=RKIND), pointer :: config_drying_min_cell_height
+
     ! Define dimension pointers
     integer, pointer :: nCellsSolve, nEdgesSolve, nVerticesSolve, nVertLevels, nVertLevelsP1
     integer, pointer :: index_temperature, index_salinity
@@ -104,7 +117,6 @@ contains
     logical, pointer :: on_a_sphere
     integer, dimension(:), pointer :: maxLevelCell
     real (kind=RKIND), dimension(:), pointer :: ssh
-    real (kind=RKIND), dimension(:), pointer :: bottomDrag
     real (kind=RKIND), dimension(:), pointer :: refBottomDepth, refZMid, &
          vertCoordMovementWeights, bottomDepth, bottomDepthObserved, &
          fCell, fEdge, fVertex, &
@@ -115,7 +127,26 @@ contains
 
     iErr = 0
 
+    call mpas_pool_get_config(ocnConfigs, 'config_init_configuration', config_init_configuration)
+
     if(config_init_configuration .ne. trim('hurricane')) return
+
+    ! Get config flag settings
+    call mpas_pool_get_config(ocnConfigs, 'config_vertical_grid', config_vertical_grid)
+    call mpas_pool_get_config(ocnConfigs, 'config_hurricane_vert_levels', config_hurricane_vert_levels)
+    call mpas_pool_get_config(ocnConfigs, 'config_hurricane_min_depth', config_hurricane_min_depth)
+    call mpas_pool_get_config(ocnConfigs, 'config_hurricane_max_depth', config_hurricane_max_depth)
+
+    call mpas_pool_get_config(ocnConfigs, 'config_hurricane_use_gaussian_hump', config_hurricane_use_gaussian_hump)
+    call mpas_pool_get_config(ocnConfigs, 'config_hurricane_gaussian_lon_center', config_hurricane_gaussian_lon_center)
+    call mpas_pool_get_config(ocnConfigs, 'config_hurricane_gaussian_lat_center', config_hurricane_gaussian_lat_center)
+    call mpas_pool_get_config(ocnConfigs, 'config_hurricane_gaussian_width', config_hurricane_gaussian_width)
+    call mpas_pool_get_config(ocnConfigs, 'config_hurricane_gaussian_hump_amplitude', config_hurricane_gaussian_hump_amplitude)
+    call mpas_pool_get_config(ocnConfigs, 'config_hurricane_gaussian_slr_amp', config_hurricane_gaussian_slr_amp)
+
+    ! wetting and drying parameters
+    call mpas_pool_get_config(ocnConfigs, 'config_drying_min_cell_height', config_drying_min_cell_height)
+    call mpas_pool_get_config(ocnConfigs, 'config_use_wetting_drying', config_use_wetting_drying)
 
     ! Determine vertical grid for configuration
     call mpas_pool_get_subpool(domain % blocklist % structs, 'mesh', meshPool)
@@ -181,8 +212,8 @@ contains
     do while(associated(block_ptr))
        call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
        call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
-       call mpas_pool_get_subpool(block_ptr % structs, 'forcing', forcingPool)
        call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
+       call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
        call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
 
        call mpas_pool_get_dimension(meshPool, 'nCellsSolve', nCellsSolve)
@@ -243,13 +274,18 @@ contains
 
           bottomDepth(iCell) = -1.0_RKIND*bottomDepthObserved(iCell)
 
-          ! sea level rise adjustment
-          bottomDepth(iCell) = bottomDepth(iCell) + config_hurricane_sea_level_rise_adjustment
-
           ! enforce minimum and maximum bottom depth
           bottomDepth(iCell) = max(bottomDepth(iCell), config_hurricane_min_depth)
           bottomDepth(iCell) = min(bottomDepth(iCell), globalMaxBottomDepth)
 
+          !! Flatten out Bermuda
+          !if ((lonCell(iCell) > (-66.0_RKIND+360.0_RKIND)*pi/180.0_RKIND .and. &
+          !     lonCell(iCell) < (-62.0_RKIND+360.0_RKIND)*pi/180.0_RKIND)  .and. &
+          !    (latCell(iCell) >  30.0_RKIND*pi/180.0_RKIND .and. &
+          !     latCell(iCell) <  34.0_RKIND*pi/180.0_RKIND)) then
+          !
+          !  bottomDepth(iCell) = globalMaxBottomDepth
+          !end if
         end do
 
         if (config_use_wetting_drying) then
@@ -271,7 +307,15 @@ contains
             end if
           end do
 
+          ! shift coordinates to accomodate wetting and drying
+          do k = 1, nVertLevels
+            refBottomDepth(k) = refBottomDepth(k) - globalMinBottomDepth
+          end do
+
           do iCell = 1, nCellsSolve
+
+            bottomDepth(iCell) = bottomDepth(iCell) - globalMinBottomDepth
+            ssh(iCell) = ssh(iCell) + globalMinBottomDepth
 
             ! make sure depth is thick enough via ssh = TOTAL_DEPTH - bottomDepth
             ssh(iCell) = - bottomDepth(iCell) + &
@@ -350,24 +394,6 @@ contains
        do iVertex = 1, nVerticesSolve
          fVertex(iVertex) = 2.0_RKIND * omega * sin(latVertex(iVertex))
        end do
-
-       ! Set depth-variable drag
-       if (config_use_variable_drag) then
-         call mpas_pool_get_array(forcingPool, 'bottomDrag', bottomDrag)
-         do iCell = 1, nCellsSolve
-           if (bottomDepth(iCell) <= config_hurricane_land_z_limit) then
-             bottomDrag(iCell) = config_hurricane_land_drag
-           else if (config_hurricane_land_z_limit < bottomDepth(iCell) .and. bottomDepth(iCell) < config_hurricane_marsh_z_limit) then
-             bottomDrag(iCell) = config_hurricane_marsh_drag
-           else if (config_hurricane_marsh_z_limit <= bottomDepth(iCell)) then
-             bottomDrag(iCell) = config_hurricane_channel_drag
-           else
-             call mpas_log_write('Default value for drag is not selected' &
-               // ' properly for bottomDepth of $r in cell $i!', &
-             realArgs=(/bottomDepth(iCell)/), intArgs=(/iCell/))
-           end if
-         end do
-       end if
 
 
        block_ptr => block_ptr % next

@@ -153,10 +153,7 @@ contains
       !
       ! compute a boundary mask to enforce insulating boundary conditions in the horizontal
       !
-      !$omp parallel
-      !$omp do schedule(runtime) &
-      !$omp private(invAreaCell, i, iEdge, cell1, cell2, r_tmp, k, iTracer, &
-      !$omp         tracer_turb_flux, flux)
+      !$omp do schedule(runtime)
       do iCell = 1, nCells
         invAreaCell = 1.0_RKIND / areaCell(iCell)
         do i = 1, nEdgesOnCell(iCell)
@@ -181,7 +178,6 @@ contains
         end do
       end do
       !$omp end do
-      !$omp end parallel
 
       call mpas_timer_stop("tracer del2")
 

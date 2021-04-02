@@ -65,7 +65,7 @@ module ocn_tracer_advection_std
 !-----------------------------------------------------------------------
    subroutine ocn_tracer_advection_std_tend(tracers, adv_coefs, adv_coefs_3rd, nAdvCellsForEdge, advCellsForEdge, &!{{{
                                              normalThicknessFlux, w, layerThickness, verticalCellSize, dt, meshPool, &
-                                             tend, maxLevelCell, maxLevelEdgeTop, &
+                                             scratchPool, tend, maxLevelCell, maxLevelEdgeTop, &
                                              highOrderAdvectionMask, edgeSignOnCell)
 
       real (kind=RKIND), dimension(:,:,:), intent(in) :: tracers !< Input: current tracer values
@@ -79,6 +79,7 @@ module ocn_tracer_advection_std
       real (kind=RKIND), dimension(:,:), intent(in) :: verticalCellSize !< Input: Distance between vertical interfaces of a cell
       real (kind=RKIND), intent(in) :: dt !< Input: Timestep
       type (mpas_pool_type), intent(in) :: meshPool !< Input: Mesh information
+      type (mpas_pool_type), intent(in) :: scratchPool !< Input: Scratch fields
       real (kind=RKIND), dimension(:,:,:), intent(inout) :: tend !< Input/Output: Tracer tendency
       integer, dimension(:), pointer :: maxLevelCell !< Input: Index to max level at cell center
       integer, dimension(:), pointer :: maxLevelEdgeTop !< Input: Index to max level at edge with non-land cells on both sides
@@ -94,10 +95,9 @@ module ocn_tracer_advection_std
       real (kind=RKIND) :: tracer_weight, invAreaCell1
       real (kind=RKIND) :: verticalWeightK, verticalWeightKm1
       real (kind=RKIND), dimension(:), pointer :: dvEdge, areaCell, verticalDivergenceFactor
+      real (kind=RKIND), dimension(:,:), pointer :: tracer_cur, high_order_horiz_flux, high_order_vert_flux
 
-      real (kind=RKIND), dimension(:,:), allocatable :: tracer_cur
-      real (kind=RKIND), dimension(:,:), allocatable :: high_order_horiz_flux
-      real (kind=RKIND), dimension(:,:), allocatable :: high_order_vert_flux
+      type (field2DReal), pointer :: highOrderHorizFluxField, tracerCurField, highOrderVertFluxField
 
       real (kind=RKIND), parameter :: eps = 1.e-10_RKIND
 
@@ -120,14 +120,22 @@ module ocn_tracer_advection_std
       allocate(verticalDivergenceFactor(nVertLevels))
       verticalDivergenceFactor = 1.0_RKIND
 
-      allocate(high_order_horiz_flux(nVertLevels, nEdges), &
-               tracer_cur(nVertLevels, nCells), &
-               high_order_vert_flux(nVertLevels, nCells))
+      call mpas_pool_get_field(scratchPool, 'highOrderHorizFlux', highOrderHorizFluxField)
+      call mpas_pool_get_field(scratchPool, 'tracerValue', tracerCurField, 1)
+      call mpas_pool_get_field(scratchPool, 'highOrderVertFlux', highOrderVertFluxField)
+
+      call mpas_allocate_scratch_field(highOrderHorizFluxField, .true.)
+      call mpas_allocate_scratch_field(tracerCurField, .true.)
+      call mpas_allocate_scratch_field(highOrderVertFluxField, .true.)
+      call mpas_threading_barrier()
+
+      high_order_horiz_flux => highOrderHorizFluxField % array
+      tracer_cur => tracerCurField % array
+      high_order_vert_flux => highOrderVertFluxField % array
 
       ! Loop over tracers. One tracer is advected at a time. It is copied into a temporary array in order to improve locality
       do iTracer = 1, num_tracers
         ! Initialize variables for use in this iTracer iteration
-        !$omp parallel
         !$omp do schedule(runtime)
         do iCell = 1, nCells
            tracer_cur(:, iCell) = tracers(iTracer, :, iCell)
@@ -225,10 +233,13 @@ module ocn_tracer_advection_std
           end do ! k loop
         end do ! iCell loop
         !$omp end do
-        !$omp end parallel
       end do ! iTracer loop
 
-      deallocate(tracer_cur, high_order_horiz_flux, high_order_vert_flux)
+      call mpas_threading_barrier()
+      call mpas_deallocate_scratch_field(highOrderHorizFluxField, .true.)
+      call mpas_deallocate_scratch_field(tracerCurField, .true.)
+      call mpas_deallocate_scratch_field(highOrderVertFluxField, .true.)
+
       deallocate(verticalDivergenceFactor)
 
    end subroutine ocn_tracer_advection_std_tend!}}}

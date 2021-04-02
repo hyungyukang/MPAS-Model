@@ -147,7 +147,7 @@ def process_test_setup(test_tag, config_file, work_dir, model_runtime,
 # }}}
 
 
-def process_test_clean(test_tag, work_dir):  # {{{
+def process_test_clean(test_tag, work_dir, suite_script):  # {{{
     dev_null = open('/dev/null', 'a')
 
     # Process test attributes
@@ -304,13 +304,15 @@ def clean_suite(suite_tag, work_dir):  # {{{
     for child in suite_tag:
         # Process <test> children within the <regression_suite>
         if child.tag == 'test':
-            process_test_clean(child, work_dir)
+            process_test_clean(child, work_dir, regression_script)
 # }}}
 
 
-def get_test_case_procs(suite_tag):  # {{{
+def summarize_suite(suite_tag):  # {{{
 
-    testcases = {}
+    max_procs = 1
+    max_threads = 1
+    max_cores = 1
 
     for child in suite_tag:
         if child.tag == 'test':
@@ -365,36 +367,9 @@ def get_test_case_procs(suite_tag):  # {{{
                 name = case.attrib['name']
                 cases.append(name)
 
-            prereqs = list()
-            for config_prereq in config_root.iter('prerequisite'):
-                prereq = dict()
-                for tag in ['core', 'configuration', 'resolution', 'test']:
-                    prereq[tag] = config_prereq.attrib[tag]
-
-                # Make sure the prerequisite is already in the test suite
-                found = False
-                for other_name, other_test in testcases.items():
-                    match = [prereq[tag] == other_test[tag] for tag in
-                             ['core', 'configuration', 'resolution', 'test']]
-                    if all(match):
-                        found = True
-                        prereq['name'] = other_name
-                        break
-
-                if not found:
-                    raise ValueError(
-                        'Prerequisite of {} does not precede it in the test '
-                        'suite: {} {} {} {}'.format(
-                            test_name, prereq['core'], prereq['configuration'],
-                            prereq['resolution'], prereq['test']))
-
-                prereqs.append(prereq)
-
             del config_root
             del config_tree
 
-            procs = 1
-            threads = 1
             # Loop over all files in test_path that have the .xml extension.
             for file in os.listdir('{}'.format(test_path)):
                 if fnmatch.fnmatch(file, '*.xml'):
@@ -420,33 +395,19 @@ def get_test_case_procs(suite_tag):  # {{{
                                 except (KeyError, ValueError):
                                     threads = 1
 
+                                cores = threads * procs
+
+                                if procs > max_procs:
+                                    max_procs = procs
+
+                                if threads > max_threads:
+                                    max_threads = threads
+
+                                if cores > max_cores:
+                                    max_cores = cores
+
                     del config_root
                     del config_tree
-            testcases[test_name] = {'core': test_core,
-                                    'configuration': test_configuration,
-                                    'resolution': test_resolution,
-                                    'test': test_test,
-                                    'path': test_path,
-                                    'procs': procs,
-                                    'threads': threads,
-                                    'prereqs': prereqs}
-
-    return testcases  # }}}
-
-
-def summarize_suite(testcases):  # {{{
-
-    max_procs = 1
-    max_threads = 1
-    max_cores = 1
-    for name in testcases:
-        procs = testcases[name]['procs']
-        threads = testcases[name]['threads']
-        cores = threads * procs
-
-        max_procs = max(max_procs, procs)
-        max_threads = max(max_threads, threads)
-        max_cores = max(max_cores, cores)
 
     print("\n")
     print(" Summary of test cases:")
@@ -456,7 +417,7 @@ def summarize_suite(testcases):  # {{{
 # }}}
 
 
-def main ():  # {{{
+if __name__ == "__main__":
     # Define and process input arguments
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
@@ -534,15 +495,14 @@ def main ():  # {{{
         if args.setup:
             print("\n")
             print("Setting Up Test Cases:")
-            testcases = get_test_case_procs(suite_root)
             setup_suite(suite_root, args.work_dir, args.model_runtime,
                         args.config_file, args.baseline_dir, args.verbose)
-            summarize_suite(testcases)
+            summarize_suite(suite_root)
             if args.verbose:
                 cmd = ['cat',
                        args.work_dir + '/manage_regression_suite.py.out']
                 print('\nCase setup output:')
-                print(subprocess.check_output(cmd).decode('utf-8'))
+                print(subprocess.check_output(cmd))
             write_history = True
 
     # Write the history of this command to the command_history file, for
@@ -573,10 +533,5 @@ def main ():  # {{{
         history_file.write('**************************************************'
                            '*********************\n')
         history_file.close()
-# }}}
-
-
-if __name__ == "__main__":
-    main()
 
 # vim: foldmethod=marker ai ts=4 sts=4 et sw=4 ft=python

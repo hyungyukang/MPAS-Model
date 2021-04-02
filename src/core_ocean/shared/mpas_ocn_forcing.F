@@ -26,7 +26,6 @@ module ocn_forcing
    use mpas_log
    use mpas_dmpar
    use ocn_constants
-   use ocn_diagnostics_variables
 
    implicit none
    private
@@ -96,9 +95,10 @@ contains
 !
 !-----------------------------------------------------------------------
 
-    subroutine ocn_forcing_build_fraction_absorbed_array(meshPool, statePool, forcingPool, err, timeLevelIn)!{{{
+    subroutine ocn_forcing_build_fraction_absorbed_array(meshPool, statePool, diagnosticsPool, forcingPool, err, timeLevelIn)!{{{
         type (mpas_pool_type), intent(in) :: meshPool !< Input: Mesh information
         type (mpas_pool_type), intent(in) :: statePool !< Input: State information
+        type (mpas_pool_type), intent(in) :: diagnosticsPool !< Input: Diagnostics information
         type (mpas_pool_type), intent(inout) :: forcingPool !< Input/Output: Forcing information
         integer, intent(out) :: err !< Output: Error code
         integer, intent(in), optional :: timeLevelIn
@@ -111,11 +111,13 @@ contains
 
         real (kind=RKIND) :: zTop, zBot, transmissionCoeffTop, transmissionCoeffBot
 
+        real (kind=RKIND), dimension(:), pointer :: surfaceFluxAttenuationCoefficient
+        real (kind=RKIND), dimension(:), pointer :: surfaceFluxAttenuationCoefficientRunoff
         real (kind=RKIND), dimension(:,:), pointer :: layerThickness, fractionAbsorbed, fractionAbsorbedRunoff
 
         integer :: iCell, k, timeLevel, nCells
 
-        integer, dimension(:), pointer :: minLevelCell, maxLevelCell, nCellsArray
+        integer, dimension(:), pointer :: maxLevelCell, nCellsArray
 
         err = 0
 
@@ -127,10 +129,13 @@ contains
 
         call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
 
-        call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
         call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
 
         call mpas_pool_get_array(statePool, 'layerThickness', layerThickness, timeLevel)
+
+        call mpas_pool_get_array(diagnosticsPool, 'surfaceFluxAttenuationCoefficient', surfaceFluxAttenuationCoefficient)
+        call mpas_pool_get_array(diagnosticsPool, 'surfaceFluxAttenuationCoefficientRunoff',  &
+                                                   surfaceFluxAttenuationCoefficientRunoff)
 
         call mpas_pool_get_array(forcingPool, 'fractionAbsorbed', fractionAbsorbed)
         call mpas_pool_get_array(forcingPool, 'fractionAbsorbedRunoff', fractionAbsorbedRunoff)
@@ -139,10 +144,10 @@ contains
 
         do iCell = 1, nCells
            zTop = 0.0_RKIND
-           transmissionCoeffTop = ocn_forcing_transmission(zTop, sfcFlxAttCoeff(iCell))
-           do k = minLevelCell(iCell), maxLevelCell(iCell)
+           transmissionCoeffTop = ocn_forcing_transmission(zTop, surfaceFluxAttenuationCoefficient(iCell))
+           do k = 1, maxLevelCell(iCell)
               zBot = zTop - layerThickness(k,iCell)
-              transmissionCoeffBot = ocn_forcing_transmission(zBot, sfcFlxAttCoeff(iCell))
+              transmissionCoeffBot = ocn_forcing_transmission(zBot, surfaceFluxAttenuationCoefficient(iCell))
 
               fractionAbsorbed(k, iCell) = transmissionCoeffTop - transmissionCoeffBot
 
@@ -156,7 +161,7 @@ contains
         do iCell = 1, nCells
            zTop = 0.0_RKIND
            transmissionCoeffTop = ocn_forcing_transmission(zTop, surfaceFluxAttenuationCoefficientRunoff(iCell))
-           do k = minLevelCell(iCell), maxLevelCell(iCell)
+           do k = 1, maxLevelCell(iCell)
               zBot = zTop - layerThickness(k,iCell)
               transmissionCoeffBot = ocn_forcing_transmission(zBot, surfaceFluxAttenuationCoefficientRunoff(iCell))
 

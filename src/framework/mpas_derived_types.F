@@ -31,6 +31,12 @@ module mpas_derived_types
    use pio_types
 
    use ESMF
+   use ESMF_BaseMod
+   use ESMF_Stubs
+   use ESMF_CalendarMod
+   use ESMF_ClockMod
+   use ESMF_TimeMod
+   use ESMF_TimeIntervalMod
 
 #include "mpas_attlist_types.inc"
 

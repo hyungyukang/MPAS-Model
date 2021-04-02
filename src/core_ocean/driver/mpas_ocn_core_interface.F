@@ -17,9 +17,7 @@ module ocn_core_interface
 
    use ocn_forward_mode
    use ocn_analysis_mode
-#ifndef EXCLUDE_INIT_MODE
    use ocn_init_mode
-#endif
 
    private
 
@@ -114,9 +112,7 @@ module ocn_core_interface
       logical, pointer :: initModeActive
       logical, pointer :: thicknessFilterActive
       logical, pointer :: splitTimeIntegratorActive
-      logical, pointer :: semiImplicitTimePKGActive
       logical, pointer :: windStressBulkPKGActive
-      logical, pointer :: variableBottomDragPKGActive
       logical, pointer :: tracerBudgetActive
       logical, pointer :: landIcePressurePKGActive
       logical, pointer :: landIceFluxesPKGActive
@@ -125,7 +121,6 @@ module ocn_core_interface
       logical, pointer :: frazilIceActive
       logical, pointer :: tidalForcingActive
       logical, pointer :: tidalPotentialForcingPKGActive
-      logical, pointer :: vegetationDragPKGActive
       logical, pointer :: inSituEOSActive
       logical, pointer :: variableShortwaveActive
       logical, pointer :: gmActive
@@ -157,7 +152,6 @@ module ocn_core_interface
       logical, pointer :: config_use_tidal_potential_forcing
       logical, pointer :: config_use_GM
       logical, pointer :: config_use_Redi
-      logical, pointer :: config_use_vegetation_drag
       logical, pointer :: config_use_time_varying_atmospheric_forcing
       logical, pointer :: config_use_time_varying_land_ice_forcing
 
@@ -166,7 +160,6 @@ module ocn_core_interface
       character (len=StrKIND), pointer :: config_pressure_gradient_type
       character (len=StrKIND), pointer :: config_sw_absorption_type
 
-      logical, pointer :: config_use_variable_drag
       logical, pointer :: config_use_bulk_wind_stress
       logical, pointer :: config_use_bulk_thickness_flux
       logical, pointer :: config_compute_active_tracer_budgets
@@ -198,6 +191,7 @@ module ocn_core_interface
 
       !
       ! test for integration scheme
+      ! (TDR: this makes no sense, if split or unsplit then splitTimeIntegratorActive = .true.)
       !
       call mpas_pool_get_package(packagePool, 'splitTimeIntegratorActive', splitTimeIntegratorActive)
       call mpas_pool_get_config(configPool, 'config_time_integrator', config_time_integrator)
@@ -206,12 +200,6 @@ module ocn_core_interface
             .or. config_time_integrator == trim('unsplit_explicit') &
             .or. config_time_integrator == trim('semi_implicit') ) then
             splitTimeIntegratorActive = .true.
-         end if
-      endif
-      call mpas_pool_get_package(packagePool, 'semiImplicitTimePKGActive', semiImplicitTimePKGActive)
-      if ( forwardModeActive ) then
-         if (config_time_integrator == trim('semi_implicit') ) then
-            semiImplicitTimePKGActive = .true.
          end if
       endif
 
@@ -242,14 +230,6 @@ module ocn_core_interface
       call mpas_pool_get_config(configPool, 'config_use_bulk_wind_stress', config_use_bulk_wind_stress)
       if ( config_use_bulk_wind_stress ) then
          windStressBulkPKGActive = .true.
-      end if
-
-      !
-      ! test for variable bottom drag of momentum, variableBottomDragPKG
-      call mpas_pool_get_package(packagePool, 'variableBottomDragPKGActive', variableBottomDragPKGActive)
-      call mpas_pool_get_config(configPool, 'config_use_variable_drag', config_use_variable_drag)
-      if ( config_use_variable_drag ) then
-        variableBottomDragPKGActive = .true.
       end if
 
       !
@@ -319,15 +299,6 @@ module ocn_core_interface
       end if
 
       !
-      ! test for use of vegetation drag, vegetationDragPKGActive
-      !
-      call mpas_pool_get_package(packagePool, 'vegetationDragPKGActive', vegetationDragPKGActive)
-      call mpas_pool_get_config(configPool, 'config_use_vegetation_drag', config_use_vegetation_drag)
-      if (config_use_vegetation_drag) then
-         vegetationDragPKGActive = .true.
-      end if
-
-      !
       ! test for use of gm
       !
       call mpas_pool_get_package(packagePool, 'gmActive', gmActive)
@@ -363,11 +334,9 @@ module ocn_core_interface
       !
       ! if in init mode, validate configuration
       !
-#ifndef EXCLUDE_INIT_MODE
       if ( initModeActive ) then
          call ocn_init_mode_validate_configuration(configPool, packagePool, iocontext, ierr)
       endif
-#endif
 
       !
       ! iterate over tracer groups
@@ -541,10 +510,8 @@ module ocn_core_interface
          ierr = ocn_forward_mode_setup_clock(core_clock, configs)
       else if ( trim(config_ocean_run_mode) == 'analysis' ) then
          ierr = ocn_analysis_mode_setup_clock(core_clock, configs)
-#ifndef EXCLUDE_INIT_MODE
       else if ( trim(config_ocean_run_mode) == 'init' ) then
          ierr = ocn_init_mode_setup_clock(core_clock, configs)
-#endif
       end if
 
 
@@ -620,6 +587,7 @@ module ocn_core_interface
       character(len=StrKIND), intent(out) :: stream
       integer :: ierr
 
+      logical, pointer :: config_do_restart
       character(len=StrKIND), pointer :: config_ocean_run_mode
 
       ierr = 0

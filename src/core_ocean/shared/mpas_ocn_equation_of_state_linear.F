@@ -24,7 +24,6 @@ module ocn_equation_of_state_linear
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
-   use ocn_config
    use mpas_dmpar
    use mpas_log
 
@@ -172,7 +171,6 @@ contains
 
       if (trim(displacementType) == 'surfaceDisplaced') then
 
-         !$omp parallel
          !$omp do schedule(runtime) private(k)
          do iCell = 1, nCells
          do k = 1, nVertLevels
@@ -187,11 +185,9 @@ contains
          end do
          end do
          !$omp end do
-         !$omp end parallel
 
       else  ! all other displacement types
 
-         !$omp parallel
          !$omp do schedule(runtime) private(k)
          do iCell = 1, nCells
          do k = 1, nVertLevels
@@ -206,7 +202,6 @@ contains
          end do
          end do
          !$omp end do
-         !$omp end parallel
 
       endif
 
@@ -310,7 +305,6 @@ contains
 
       if (trim(displacementType) == 'surfaceDisplaced') then
 
-         !$omp parallel
          !$omp do schedule(runtime) private(k)
          do iCell = 1, nCells
          do k = 1, nVertLevels
@@ -331,11 +325,9 @@ contains
          end do
          end do
          !$omp end do
-         !$omp end parallel
 
       else  ! all other displacement types
 
-         !$omp parallel
          !$omp do schedule(runtime) private(k)
          do iCell = 1, nCells
          do k = 1, nVertLevels
@@ -356,7 +348,6 @@ contains
          end do
          end do
          !$omp end do
-         !$omp end parallel
 
       endif
 
@@ -396,6 +387,13 @@ contains
       !
       !-----------------------------------------------------------------
 
+      real (kind=RKIND), pointer ::    &
+         config_eos_linear_densityref, &! linear options extracted
+         config_eos_linear_alpha,      &!  from input namelist
+         config_eos_linear_beta,       &
+         config_eos_linear_Tref,       &
+         config_eos_linear_Sref
+
       !-----------------------------------------------------------------
 
       !*** Initialize error flag
@@ -407,6 +405,17 @@ contains
       !*** Needed both to rename and because scalar pointers can
       !*** cause problems for some compilers
       !***
+
+      call mpas_pool_get_config(ocnConfigs, 'config_eos_linear_densityref', &
+                                             config_eos_linear_densityref)
+      call mpas_pool_get_config(ocnConfigs, 'config_eos_linear_alpha', &
+                                             config_eos_linear_alpha)
+      call mpas_pool_get_config(ocnConfigs, 'config_eos_linear_beta', &
+                                             config_eos_linear_beta)
+      call mpas_pool_get_config(ocnConfigs, 'config_eos_linear_Tref', &
+                                             config_eos_linear_Tref)
+      call mpas_pool_get_config(ocnConfigs, 'config_eos_linear_Sref', &
+                                             config_eos_linear_Sref)
 
       ocnEqStateLinearRhoRef = config_eos_linear_densityref
       ocnEqStateLinearAlpha  = config_eos_linear_alpha

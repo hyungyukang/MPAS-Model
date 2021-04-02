@@ -25,8 +25,7 @@ module ocn_moc_streamfunction
    use mpas_stream_manager
 
    use ocn_constants
-   use ocn_config
-   use ocn_diagnostics_variables
+   use ocn_diagnostics_routines
 
    implicit none
    private
@@ -117,6 +116,11 @@ contains
       ! the variable used to discriminate cells into Bins (either the y-value or the latitude)
       real (kind=RKIND), dimension(:), pointer :: binVariable, binBoundaryMocStreamfunction
 
+      !number of latitude bins specified in the config
+      integer, pointer :: config_AM_mocStreamfunction_num_bins
+      !smallest and highest latitude specified in the config
+      real (kind=RKIND), pointer :: config_AM_mocStreamfunction_min_bin, config_AM_mocStreamfunction_max_bin
+
       !determines if the simulation was run on a sphere or on a plane
       logical, pointer :: on_a_sphere
 
@@ -125,12 +129,13 @@ contains
       integer :: currentRegion, i, iCell
 
       !! region arrays/variables
-      character (len=StrKIND), dimension(:), pointer :: regionGroupNames
+      character (len=STRKIND), dimension(:), pointer :: regionGroupNames
       integer, dimension(:, :), pointer :: regionCellMasks, regionsInGroup
       integer, dimension(:), pointer ::  nRegionsInGroup
       integer, pointer :: nRegions, nRegionGroups, maxRegionsInGroup, nCellsSolve
       real (kind=RKIND), dimension(:,:), pointer :: minMaxLatRegion
       real (kind=RKIND), dimension(:)  , pointer :: minLatRegionLocal, maxLatRegionLocal, tminLatRegionLocal, tmaxLatRegionLocal
+      character (len=STRKIND), pointer :: additionalRegion
 
       !! region preliminary variables
       integer :: regionGroupNumber, regionsInAddGroup
@@ -143,6 +148,10 @@ contains
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'nRegionGroups', nRegionGroups)
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'maxRegionsInGroup', maxRegionsInGroup)
 
+      !! region config for moc
+      call mpas_pool_get_config(domain % configs, 'config_AM_mocStreamfunction_region_group', &
+                                additionalRegion)
+
       !! get region values
       call mpas_pool_get_subpool(domain % blocklist % structs, 'regions', regionPool)
       call mpas_pool_get_array(regionPool, 'regionsInGroup', regionsInGroup)
@@ -152,7 +161,7 @@ contains
       !!! region preliminaries
       regionGroupNumber=0
       do i = 1, nRegionGroups
-         if (regionGroupNames(i) .eq. config_AM_mocStreamfunction_region_group) then
+         if (regionGroupNames(i) .eq. additionalRegion) then
             regionGroupNumber = i
          end if
       end do
@@ -180,6 +189,13 @@ contains
       maxBin = -1.0e34_RKIND
 
       call mpas_pool_get_subpool(domain % blocklist % structs, 'mocStreamfunctionAM', mocStreamfunctionAMPool)
+
+      call mpas_pool_get_config(domain % configs, 'config_AM_mocStreamfunction_num_bins', &
+                                config_AM_mocStreamfunction_num_bins)
+      call mpas_pool_get_config(domain % configs, 'config_AM_mocStreamfunction_min_bin', &
+                                config_AM_mocStreamfunction_min_bin)
+      call mpas_pool_get_config(domain % configs, 'config_AM_mocStreamfunction_max_bin', &
+                                config_AM_mocStreamfunction_max_bin)
 
       call mpas_pool_get_array(mocStreamfunctionAMPool, 'minMaxLatRegion', minMaxLatRegion)
 
@@ -315,6 +331,7 @@ contains
       type (mpas_pool_type), pointer :: mocStreamfunctionAMPool
       type (dm_info) :: dminfo
       type (block_type), pointer :: block
+      type (mpas_pool_type), pointer :: diagnosticsPool
       type (mpas_pool_type), pointer :: meshPool
       type (mpas_pool_type), pointer :: statePool
       type (mpas_pool_type), pointer :: regionPool
@@ -327,8 +344,9 @@ contains
       real (kind=RKIND), dimension(:), pointer :: latCell
       real (kind=RKIND), dimension(:), pointer ::  areaCell, binBoundaryMocStreamfunction
       real (kind=RKIND), dimension(:,:), pointer :: mocStreamvalLatAndDepth, mocStreamValLatAndDepthTotal
-      real (kind=RKIND), dimension(:,:), pointer :: mocStreamvalLatAndDepthGM
+      real (kind=RKIND), dimension(:,:), pointer :: vertVelocityTop
       real (kind=RKIND), dimension(:,:), pointer :: sumVertBinVelocity
+      character (len=STRKIND), pointer :: verticalVelocityArrayName, normalVelocityArrayName
 
       !!!! TRANSECT VARIABLES !!!!
       integer, pointer :: nEdgesSolve, num_tracers
@@ -344,6 +362,7 @@ contains
       character (len=STRKIND), dimension(:), pointer :: transectNames, transectGroupNames
       integer, dimension(:), pointer ::  nTransectsInGroup
       integer, pointer :: nTransects, nTransectGroups, maxTransectsInGroup
+      character (len=STRKIND), pointer :: additionalTransect
       integer :: transectGroupNumber, transectsInAddGroup
       !!!! END TRANSECT VARIABLES !!!!
 
@@ -352,11 +371,12 @@ contains
       integer :: currentRegion, i
       real (kind=RKIND), dimension(:,:,:), pointer :: mocStreamValLatAndDepthRegionLocal, &
                          mocStreamvalLatAndDepthRegion, mocStreamValLatAndDepthRegionTotal, &
-                         sumVertBinVelocityRegion, mocStreamvalLatAndDepthRegionGM
+                         sumVertBinVelocityRegion
       integer, dimension(:, :), pointer :: regionCellMasks, regionVertexMasks, regionsInGroup
       character (len=STRKIND), dimension(:), pointer :: regionNames, regionGroupNames
       integer, dimension(:), pointer ::  nRegionsInGroup
       integer, pointer :: nRegions, nRegionGroups, maxRegionsInGroup
+      character (len=STRKIND), pointer :: additionalRegion
       integer :: regionGroupNumber, regionsInAddGroup
 
       !!!! END REGION VARIABLES
@@ -369,6 +389,10 @@ contains
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'nRegionGroups', nRegionGroups)
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'maxRegionsInGroup', maxRegionsInGroup)
 
+      !! region config for moc
+      call mpas_pool_get_config(domain % configs, 'config_AM_mocStreamfunction_region_group', &
+                                additionalRegion)
+
       !! get region values
       call mpas_pool_get_subpool(domain % blocklist % structs, 'regions', regionPool)
       call mpas_pool_get_array(regionPool, 'regionsInGroup', regionsInGroup)
@@ -378,7 +402,7 @@ contains
 
       regionGroupNumber=0
       do i = 1, nRegionGroups
-         if (regionGroupNames(i) .eq. config_AM_mocStreamfunction_region_group) then
+         if (regionGroupNames(i) .eq. additionalRegion) then
             regionGroupNumber = i
          end if
       end do
@@ -408,6 +432,9 @@ contains
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'nTransectGroups', nTransectGroups)
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'maxTransectsInGroup', maxTransectsInGroup)
 
+      !!!! Transect config for MOC
+      call mpas_pool_get_config(domain % configs, 'config_AM_mocStreamfunction_transect_group', &
+                                additionalTransect)
       !! get transect values
       call mpas_pool_get_subpool(domain % blocklist % structs, 'transects', transectPool)
       call mpas_pool_get_array(transectPool, 'transectsInGroup', transectsInGroup)
@@ -417,7 +444,7 @@ contains
 
       transectGroupNumber=0
       do i = 1, nTransectGroups
-         if (transectGroupNames(i) .eq. config_AM_mocStreamfunction_transect_group) then
+         if (transectGroupNames(i) .eq. additionalTransect) then
             transectGroupNumber = i
          end if
       end do
@@ -455,10 +482,21 @@ contains
       allocate(sumVertBinVelocity(nMocStreamfunctionBinsUsed + 1, nVertLevels))
       allocate(mocStreamValLatAndDepthTotal(nMocStreamfunctionBinsUsed + 1, nVertLevels))
 
+      mocStreamValLatAndDepthLocal = 0.0_RKIND
+      mocStreamValLatAndDepthTotal = 0.0_RKIND
+      sumVertBinVelocity = 0.0_RKIND
+
+      call mpas_pool_get_config(domain % configs, 'config_AM_mocStreamfunction_vertical_velocity_value', &
+                                verticalVelocityArrayName)
+
+      call mpas_pool_get_config(domain % configs, 'config_AM_mocStreamfunction_normal_velocity_value', &
+                                normalVelocityArrayName)
+
       block => domain % blocklist
       do while (associated(block))
          call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
          call mpas_pool_get_subpool(block % structs, 'mocStreamfunctionAM', mocStreamfunctionAMPool)
+         call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
 
          call mpas_pool_get_array(mocStreamfunctionAMPool, 'binBoundaryMocStreamfunction', binBoundaryMocStreamfunction)
 
@@ -467,6 +505,7 @@ contains
 
          call mpas_pool_get_dimension(block % dimensions, 'nCellsSolve', nCellsSolve)
 
+         call mpas_pool_get_array(diagnosticsPool, verticalVelocityArrayName, vertVelocityTop)
          call mpas_pool_get_array(meshPool, 'latCell', latCell)
          call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
 
@@ -478,7 +517,11 @@ contains
          call mpas_pool_get_array(transectPool,'transectEdgeMaskSigns',transectEdgeMaskSigns)
          call mpas_pool_get_array(transectPool,'transectEdgeMasks',transectEdgeMasks)
          call mpas_pool_get_subpool(block % structs, 'state', statePool)
-         call mpas_pool_get_array(statePool, 'normalVelocity', normalVelocity, timeLevel)
+         if (trim(normalVelocityArrayName)=="normalVelocity") then
+            call mpas_pool_get_array(statePool, trim(normalVelocityArrayName), normalVelocity, timeLevel)
+         else
+            call mpas_pool_get_array(diagnosticsPool, trim(normalVelocityArrayName), normalVelocity, timeLevel)
+         end if
          call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
          call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
          call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
@@ -487,13 +530,6 @@ contains
 
          !!!! TRANSECT CALCULATION
          sumTransport = 0.0_RKIND
-         mocStreamValLatAndDepthLocal = 0.0_RKIND
-         mocStreamValLatAndDepthTotal = 0.0_RKIND
-         sumVertBinVelocity = 0.0_RKIND
-         mocStreamValLatAndDepthRegionLocal = 0.0_RKIND
-         mocStreamValLatAndDepthRegionTotal = 0.0_RKIND
-         sumVertBinVelocityRegion = 0.0_RKIND
-
          do iTransect = 1,transectsInAddGroup
             currentTransect = transectsInGroup(iTransect, transectGroupNumber)
             do iEdge = 1,nEdgesSolve
@@ -554,111 +590,6 @@ contains
 
      call mpas_pool_get_array(mocStreamfunctionAMPool, 'mocStreamvalLatAndDepthRegion', mocStreamvalLatAndDepthRegion)
      mocStreamvalLatAndDepthRegion = mocStreamvalLatAndDepthRegionTotal * m3ps_to_Sv
-
-     if(config_use_GM) THEN !compute GM bolus contribution to the streamfunction
-       block => domain % blocklist
-       do while (associated(block))
-           call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-           call mpas_pool_get_subpool(block % structs, 'mocStreamfunctionAM', mocStreamfunctionAMPool)
-
-           call mpas_pool_get_array(mocStreamfunctionAMPool, 'binBoundaryMocStreamfunction', binBoundaryMocStreamfunction)
-
-           binWidth = (binBoundaryMocStreamfunction(nMocStreamfunctionBinsUsed + 1) - binBoundaryMocStreamfunction(1)) &
-           / nMocStreamfunctionBinsUsed
-
-           call mpas_pool_get_dimension(block % dimensions, 'nCellsSolve', nCellsSolve)
-
-           call mpas_pool_get_array(meshPool, 'latCell', latCell)
-           call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
-
-           call mpas_pool_get_array(regionPool, 'regionCellMasks', regionCellMasks)
-
-           !!!! TRANSECT DOMAINSPLIT VARIABLES
-           call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
-           call mpas_pool_get_dimension(block % dimensions, 'nEdgesSolve', nEdgesSolve)
-           call mpas_pool_get_array(transectPool,'transectEdgeMaskSigns',transectEdgeMaskSigns)
-           call mpas_pool_get_array(transectPool,'transectEdgeMasks',transectEdgeMasks)
-           normalVelocity => normalGMBolusVelocity
-           call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
-           call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
-           call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-           call mpas_pool_get_array(statePool, 'layerThickness', layerThickness, timeLevel)
-
-           !!!! TRANSECT CALCULATION
-           sumTransport = 0.0_RKIND
-           mocStreamValLatAndDepthLocal = 0.0_RKIND
-           mocStreamValLatAndDepthTotal = 0.0_RKIND
-           sumVertBinVelocity = 0.0_RKIND
-           mocStreamValLatAndDepthRegionLocal = 0.0_RKIND
-           mocStreamValLatAndDepthRegionTotal = 0.0_RKIND
-           sumVertBinVelocityRegion = 0.0_RKIND
-
-           do iTransect = 1,transectsInAddGroup
-              currentTransect = transectsInGroup(iTransect, transectGroupNumber)
-              do iEdge = 1,nEdgesSolve
-                 c1 = cellsOnEdge(1,iEdge)
-                 c2 = cellsOnEdge(2,iEdge)
-                 do k = 1, maxLevelEdgeTop(iEdge)
-                    sumTransport(k,iTransect) = sumTransport(k,iTransect) + &
-                       transectEdgeMaskSigns(currentTransect,iEdge) &
-                       * transectEdgeMasks(currentTransect, iEdge) &
-                       * normalVelocity(k,iEdge)*dvEdge(iEdge) &
-                       * 0.5_RKIND*(layerThickness(k,c1) + layerThickness(k,c2))
-                 end do
-              end do
-              do k = 2, nVertLevels
-                 mocStreamValLatAndDepthRegionLocal(1, k, iTransect) = &
-                    mocStreamValLatAndDepthRegionLocal(1, k - 1, iTransect) &
-                    + sumTransport(k - 1, iTransect)
-              end do
-           end do
-
-           !!!! END TRANSECT CALCULATION
-
-           do iCell = 1,nCellsSolve
-              iBin = MAX(int((latCell(iCell) - binBoundaryMocStreamfunction(1)) / binWidth), 2)
-              do k = 1,maxLevelCell(iCell)
-                 do i = 1, regionsInAddGroup
-                    currentRegion = regionsInGroup(i, regionGroupNumber)
-                    sumVertBinVelocityRegion(iBin, k, i) = sumVertBinVelocityRegion(iBin, k, i) + (vertGMBolusVelocityTop(k, iCell) * &
-                          areaCell(iCell) * regionCellMasks(currentRegion, iCell))
-                 end do
-                 sumVertBinVelocity(iBin, k) = sumVertBinVelocity(iBin, k) + (vertGMBolusVelocityTop(k, iCell) * areaCell(iCell))
-              end do
-           end do
-
-           do i = 1, regionsInAddGroup
-              do k = 1,nVertLevels
-                 do iBin = 2, nMocStreamfunctionBinsUsed + 1
-                    mocStreamValLatAndDepthLocal(iBin, k) = mocStreamValLatAndDepthLocal(iBin-1, k) &
-                       + sumVertBinVelocity(iBin, k)
-                    mocStreamValLatAndDepthRegionLocal(iBin, k, i) = mocStreamValLatAndDepthRegionLocal(iBin-1, k, i) &
-                       + sumVertBinVelocityRegion(iBin, k, i)
-                 end do
-              end do
-           end do
-
-           block => block % next
-       end do
-
-       call mpas_dmpar_sum_real_array(dminfo, nVertLevels * (nMocStreamfunctionBinsUsed + 1), mocStreamValLatAndDepthLocal, &
-           mocStreamvalLatAndDepthTotal)
-
-       call mpas_dmpar_sum_real_array(dminfo, nVertLevels * (nMocStreamfunctionBinsUsed + 1) * maxRegionsInGroup, &
-           mocStreamValLatAndDepthRegionLocal, mocStreamvalLatAndDepthRegionTotal)
-
-       call mpas_pool_get_subpool(domain % blocklist % structs, 'mocStreamfunctionAM', mocStreamfunctionAMPool)
-       call mpas_pool_get_array(mocStreamfunctionAMPool, 'mocStreamvalLatAndDepthGM', mocStreamvalLatAndDepthGM)
-       mocStreamvalLatAndDepthGM = mocStreamvalLatAndDepthTotal * m3ps_to_Sv
-
-       call mpas_pool_get_array(mocStreamfunctionAMPool, 'mocStreamvalLatAndDepthRegionGM', mocStreamvalLatAndDepthRegionGM)
-       mocStreamvalLatAndDepthRegionGM = mocStreamvalLatAndDepthRegionTotal * m3ps_to_Sv
-
-       !Add GM bolus contribution to resolved streamfunction to create total streamfunction
-       mocStreamvalLatAndDepthRegion = mocStreamvalLatAndDepthRegion + mocStreamvalLatAndDepthRegionGM
-       mocStreamvalLatAndDepth = mocStreamvalLatAndDepth + mocStreamvalLatAndDepthGM
-
-     endif !config_use_GM
 
      deallocate(mocStreamvalLatAndDepthTotal)
      deallocate(mocStreamvalLatAndDepthLocal)

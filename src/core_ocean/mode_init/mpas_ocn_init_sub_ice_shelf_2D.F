@@ -23,11 +23,8 @@ module ocn_init_sub_ice_shelf_2D
    use mpas_pool_routines
    use mpas_constants
    use mpas_dmpar
-   use mpas_io
 
    use ocn_constants
-   use ocn_config
-   use ocn_diagnostics_variables
    use ocn_init_vertical_grids
    use ocn_init_cell_markers
 
@@ -93,12 +90,19 @@ module ocn_init_sub_ice_shelf_2D
 
      integer :: iCell, k, idx
 
+     ! Define config variable pointers
+     character (len=StrKIND), pointer :: config_init_configuration, config_vertical_grid
+     real (kind=RKIND), pointer :: config_sub_ice_shelf_2D_bottom_depth, &
+          config_sub_ice_shelf_2D_cavity_thickness, config_sub_ice_shelf_2D_edge_width, config_sub_ice_shelf_2D_temperature, &
+          config_sub_ice_shelf_2D_surface_salinity, config_sub_ice_shelf_2D_bottom_salinity, &
+          config_sub_ice_shelf_2D_y1, config_sub_ice_shelf_2D_y2,config_sub_ice_shelf_2D_slope_height
+
      ! Define dimension pointers
      integer, pointer :: nCellsSolve, nEdgesSolve, nVertLevels, nVertLevelsP1, nCells
      integer, pointer :: index_temperature, index_salinity
 
      ! Define variable pointers
-     integer, dimension(:), pointer :: minLevelCell, maxLevelCell, landIceMask
+     integer, dimension(:), pointer :: maxLevelCell, modifySSHMask, landIceMask
      real (kind=RKIND), dimension(:), pointer :: xCell, yCell,refBottomDepth, refZMid, &
           vertCoordMovementWeights, bottomDepth, &
           fCell, fEdge, fVertex, dcEdge, refLayerThickness
@@ -109,11 +113,25 @@ module ocn_init_sub_ice_shelf_2D
 
      logical, pointer :: on_a_sphere
 
+     type (mpas_pool_type), pointer :: diagnosticsPool
      real(kind=RKIND), dimension(:), pointer :: landIceFraction, ssh
+     real (kind=RKIND), dimension(:,:), pointer :: zMid
 
      iErr = 0
 
+     call mpas_pool_get_config(ocnConfigs, 'config_init_configuration', config_init_configuration)
      if(config_init_configuration .ne. trim('sub_ice_shelf_2D')) return
+
+     call mpas_pool_get_config(ocnConfigs, 'config_vertical_grid', config_vertical_grid)
+     call mpas_pool_get_config(ocnConfigs, 'config_sub_ice_shelf_2D_bottom_depth',config_sub_ice_shelf_2D_bottom_depth)
+     call mpas_pool_get_config(ocnConfigs, 'config_sub_ice_shelf_2D_cavity_thickness', config_sub_ice_shelf_2D_cavity_thickness)
+     call mpas_pool_get_config(ocnConfigs, 'config_sub_ice_shelf_2D_edge_width', config_sub_ice_shelf_2D_edge_width)
+     call mpas_pool_get_config(ocnConfigs, 'config_sub_ice_shelf_2D_temperature', config_sub_ice_shelf_2D_temperature)
+     call mpas_pool_get_config(ocnConfigs, 'config_sub_ice_shelf_2D_surface_salinity', config_sub_ice_shelf_2D_surface_salinity)
+     call mpas_pool_get_config(ocnConfigs, 'config_sub_ice_shelf_2D_bottom_salinity', config_sub_ice_shelf_2D_bottom_salinity)
+     call mpas_pool_get_config(ocnConfigs, 'config_sub_ice_shelf_2D_y1', config_sub_ice_shelf_2D_y1)
+     call mpas_pool_get_config(ocnConfigs, 'config_sub_ice_shelf_2D_y2', config_sub_ice_shelf_2D_y2)
+     call mpas_pool_get_config(ocnConfigs, 'config_sub_ice_shelf_2D_slope_height', config_sub_ice_shelf_2D_slope_height)
 
      ! points 1 and 2 are where angles on ice shelf are located.
      ! point 3 is at the surface.
@@ -181,6 +199,7 @@ module ocn_init_sub_ice_shelf_2D
         call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
         call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'forcing', forcingPool)
+        call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
 
         call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
 
@@ -189,7 +208,6 @@ module ocn_init_sub_ice_shelf_2D
         call mpas_pool_get_array(meshPool, 'refBottomDepth', refBottomDepth)
         call mpas_pool_get_array(meshPool, 'vertCoordMovementWeights', vertCoordMovementWeights)
         call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
-        call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
         call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
 
         call mpas_pool_get_array(verticalMeshPool, 'refZMid', refZMid)
@@ -199,6 +217,7 @@ module ocn_init_sub_ice_shelf_2D
         call mpas_pool_get_array(forcingPool, 'landIceMask', landIceMask)
 
         call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
+        call mpas_pool_get_array(diagnosticsPool, 'modifySSHMask', modifySSHMask)
         call ocn_mark_north_boundary(meshPool, yMaxGlobal, dcEdgeMinGlobal, iErr)
         call ocn_mark_south_boundary(meshPool, yMinGlobal, dcEdgeMinGlobal, iErr)
 
@@ -207,14 +226,10 @@ module ocn_init_sub_ice_shelf_2D
            refBottomDepth(k) = config_sub_ice_shelf_2D_bottom_depth * interfaceLocations(k+1)
         end do
 
-        ! Compute refLayerThickness
-        call ocn_compute_z_level_layerThickness(refLayerThickness, refBottomDepth, 0.0_RKIND, &
-                                                refBottomDepth(nVertLevels), 1,               &
-                                                nVertLevels, nVertLevels, iErr)
-
-        ! Compute refZMid
-        call ocn_compute_zMid_from_layerThickness(refZMid, refLayerThickness, 0.0_RKIND, 1, &
-                                                  nVertLevels, nVertLevels, iErr)
+        ! Compute refLayerThickness and refZMid
+        call ocn_compute_layerThickness_zMid_from_bottomDepth(refLayerThickness,refZMid, &
+             refBottomDepth,refBottomDepth(nVertLevels), &
+             nVertLevels,nVertLevels,iErr)
 
         ! Set vertCoordMovementWeights
         vertCoordMovementWeights(:) = 1.0_RKIND
@@ -223,7 +238,7 @@ module ocn_init_sub_ice_shelf_2D
 
         if(associated(landIceFraction)) &
           landIceFraction(:) = 0.0_RKIND
-        modifyLandIcePressureMask(:) = 0
+        modifySSHMask(:) = 0
         if(associated(landIceMask)) &
           landIceMask(:) = 0
 
@@ -241,11 +256,9 @@ module ocn_init_sub_ice_shelf_2D
            ssh(iCell) = -config_sub_ice_shelf_2D_bottom_depth + totalSubIceThickness
 
            if(ssh(iCell) < 0.0_RKIND) then
-              modifyLandIcePressureMask(iCell) = 1
+              modifySSHMask(iCell) = 1
            end if
         end do
-
-        minLevelCell(:) = 1
 
         do iCell = 1, nCells
            if (yCell(iCell) < y3 ) then
@@ -267,27 +280,28 @@ module ocn_init_sub_ice_shelf_2D
 
      ! compute the vertical grid (layerThickness, restingThickness, maxLevelCell, zMid) based on ssh,
      ! bottomDepth and refBottomDepth
-      call ocn_init_vertical_grid(domain, iErr=iErr)
+     call ocn_init_ssh_and_landIcePressure_vertical_grid(domain, iErr)
 
-      if(iErr .ne. 0) then
-        call mpas_log_write( 'ocn_init_vertical_grid failed.', MPAS_LOG_CRIT)
+     if(iErr .ne. 0) then
+        call mpas_log_write( 'ocn_init_ssh_and_landIcePressure_vertical_grid failed.', MPAS_LOG_CRIT)
         call mpas_dmpar_finalize(domain % dminfo)
-      end if
+     end if
 
      block_ptr => domain % blocklist
      do while(associated(block_ptr))
         call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
+        call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
         call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
 
         call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
-        call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
-        call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
 
         call mpas_pool_get_dimension(tracersPool, 'index_temperature', index_temperature)
         call mpas_pool_get_dimension(tracersPool, 'index_salinity', index_salinity)
 
         call mpas_pool_get_array(tracersPool, 'activeTracers', activeTracers, 1)
+
+        call mpas_pool_get_array(diagnosticsPool, 'zMid', zMid)
 
         ! compute active tracer fields
         ! If we are constructing an initial guess (rather than reading ssh in from a stream), these are reference activeTracers
@@ -296,29 +310,22 @@ module ocn_init_sub_ice_shelf_2D
            ! Set temperature
            idx = index_temperature
            do k = 1, nVertLevels
-              if (k >= minLevelCell(iCell) .and. k <= maxLevelCell(iCell)) then
-                 activeTracers(idx, k, iCell) = config_sub_ice_shelf_2D_temperature
-              else
-                 activeTracers(idx, k, iCell) = MPAS_REAL_FILLVAL
-              end if
+              activeTracers(idx, k, iCell) = config_sub_ice_shelf_2D_temperature
            end do
 
            ! Set up salinity stratification
            idx = index_salinity
            do k = 1, nVertLevels
-              if (k >= minLevelCell(iCell) .and. k <= maxLevelCell(iCell)) then
-                 activeTracers(idx, k, iCell) = surfaceSalinity + (bottomSalinity - surfaceSalinity) &
-                                                                * (zMid(k,iCell)/(-config_sub_ice_shelf_2D_bottom_depth))
-              else
-                 activeTracers(idx, k, iCell) = MPAS_REAL_FILLVAL
-              end if
+              activeTracers(idx, k, iCell) = surfaceSalinity + (bottomSalinity - surfaceSalinity) &
+                                                             * (zMid(k,iCell)/(-config_sub_ice_shelf_2D_bottom_depth))
            end do
         end do
 
         block_ptr => block_ptr % next
      end do
 
-     ! compute the land-ice pressure, also computing density along the way.
+     ! compute or update the land-ice pressure (or possibly SSH), also computing density along the way
+     ! If this is the initial guess, the vertical grid and activeTracers may also be recomputed based on SSH
      call ocn_init_ssh_and_landIcePressure_balance(domain, iErr)
 
      if(iErr .ne. 0) then

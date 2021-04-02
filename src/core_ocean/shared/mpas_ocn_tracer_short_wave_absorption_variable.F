@@ -19,7 +19,6 @@ module ocn_tracer_short_wave_absorption_variable
    use mpas_forcing
    use mpas_stream_manager
    use ocn_constants
-   use ocn_config
    use ocn_framework_forcing
 
    implicit none
@@ -72,8 +71,7 @@ contains
 !-----------------------------------------------------------------------
 
    subroutine ocn_tracer_short_wave_absorption_variable_tend(meshPool, swForcingPool, forcingPool, index_temperature, & !{{{
-                                  layerThickness, penetrativeTemperatureFlux, penetrativeTemperatureFluxOBL, tend, &
-                                  bottomLayerShortwaveTemperatureFlux, err)
+                                  layerThickness, penetrativeTemperatureFlux, penetrativeTemperatureFluxOBL, tend, err)
 
       !-----------------------------------------------------------------
       !
@@ -92,9 +90,6 @@ contains
 
       real (kind=RKIND), dimension(:), intent(out) :: &
         penetrativeTemperatureFluxOBL
-
-      real (kind=RKIND), dimension(:), intent(out) :: &
-        bottomLayerShortwaveTemperatureFlux
 
       real (kind=RKIND), dimension(:,:), intent(in) :: layerThickness !< Input: Layer thicknesses
 
@@ -129,13 +124,15 @@ contains
 
       integer, dimension(:), pointer :: maxLevelCell
 
+      real (kind=RKIND), pointer :: config_surface_buoyancy_depth
       real (kind=RKIND) :: depth
       real (kind=RKIND), dimension(:), pointer :: refBottomDepth
       real (kind=RKIND), dimension(:), allocatable :: weights
       real (kind=RKIND), dimension(:), pointer :: chlorophyllA, zenithAngle, clearSkyRadiation
+      character (len=StrKIND), pointer :: config_sw_absorption_type
       real (kind=RKIND), dimension(4) :: Avals, Kvals
       real (kind=RKIND) :: cloudRatio ! cloud Ratio = 1 - incident_sfc_sw_radiation/clearSkyRadiation
-      real (kind=RKIND) :: fluxRemaining ! amount of incident solar left to be distributed
+
       err = 0
 
       call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
@@ -143,6 +140,7 @@ contains
 
       call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
       call mpas_pool_get_array(meshPool, 'refBottomDepth', refBottomDepth)
+      call mpas_pool_get_config(ocnConfigs, 'config_surface_buoyancy_depth', config_surface_buoyancy_depth)
 
       allocate(weights(nVertLevels+1))
       weights = 0.0_RKIND
@@ -150,6 +148,7 @@ contains
       Avals(:)=0.0_RKIND
       Kvals(:)=0.0_RKIND
 
+      call mpas_pool_get_config(ocnConfigs, 'config_sw_absorption_type', config_sw_absorption_type)
       call mpas_pool_get_array(swForcingPool,'chlorophyllData',chlorophyllA)
 
       call mpas_pool_get_array(swForcingPool,'zenithAngle',zenithAngle)
@@ -157,11 +156,9 @@ contains
 
       nCells = nCellsArray( 3 )
 
-      !$omp parallel
-      !$omp do schedule(runtime) private(fluxRemaining, depth, cloudRatio, k, depLev, Avals, Kvals, weights)
+      !$omp do schedule(runtime)
       do iCell = 1, nCells
         depth = 0.0_RKIND
-        fluxRemaining = 1.0_RKIND
         cloudRatio = min(1.0_RKIND, 1.0_RKIND - penetrativeTemperatureFlux(iCell)/(hflux_factor*(1.0E-15_RKIND + &
                                                      clearSkyRadiation(iCell))))
         cloudRatio = max(0.0_RKIND, cloudRatio)
@@ -174,16 +171,7 @@ contains
           call ocn_get_variable_sw_fraction(depth, weights(k+1), Avals, Kvals)
           tend(index_temperature, k, iCell) = tend(index_temperature, k, iCell) + penetrativeTemperatureFlux(iCell) &
                                             * (weights(k) - weights(k+1) )
-          fluxRemaining = fluxRemaining - (weights(k) - weights(k+1))
         end do
-
-        ! based on coupled testing we simply log the shortwave temperature flux incident on the bottom of the ocean
-        k = maxLevelCell(iCell)
-        if(k > 0 .and. fluxRemaining > 0.0_RKIND) then
-           bottomLayerShortwaveTemperatureFlux(iCell) = penetrativeTemperatureFlux(iCell) * fluxRemaining
-        else
-           bottomLayerShortwaveTemperatureFlux(iCell) = 0.0_RKIND
-        end if
 
         depth = 0.0_RKIND
         do k=1,maxLevelCell(iCell)
@@ -200,23 +188,6 @@ contains
 
       end do
       !$omp end do
-      !$omp end parallel
-
-      if(config_enable_shortwave_energy_fixer) then!
-#ifndef CPRPGI!
-         !$omp parallel!
-         !$omp do schedule(runtime) private(k)
-#endif!
-         do iCell = 1, nCells
-            k = maxLevelCell(iCell)
-            tend(index_temperature, k, iCell) = tend(index_temperature, k, iCell) + &
-                bottomLayerShortwaveTemperatureFlux(iCell)
-         end do!
-#ifndef CPRPGI!
-         !$omp end do!
-         !$omp end parallel!
-#endif
-      end if
 
       deallocate(weights)
 
@@ -244,7 +215,11 @@ contains
 
       integer, intent(out) :: err !< Output: error flag
 
+      character (len=StrKIND), pointer :: config_sw_absorption_type
+
       err = 0
+
+      call mpas_pool_get_config(ocnConfigs, 'config_sw_absorption_type', config_sw_absorption_type)
 
       select case ( trim(config_sw_absorption_type) )
       case ('ohlmann00')
@@ -278,9 +253,14 @@ contains
 
    type(domain_type) :: domain
 
+   logical, pointer :: &
+        config_do_restart
+
    character(len=strKIND) :: &
         forcingIntervalMonthly,  &
         forcingReferenceTimeMonthly
+
+   call MPAS_pool_get_config(domain % configs, 'config_do_restart', config_do_restart)
 
    forcingIntervalMonthly = "0000-01-00_00:00:00"
    forcingReferenceTimeMonthly = "0000-01-01_00:00:00"
@@ -360,8 +340,17 @@ contains
         type (MPAS_timeInterval_type) :: timeStepSW
         type (MPAS_clock_type) :: simulationClock
 
+        logical,pointer :: config_use_activeTracers_surface_bulk_forcing
         logical, intent(in) :: firstTimeStep
+        character(len=strKind), pointer :: config_sw_absorption_type
+        character(len=strKind), pointer :: config_dt
         real(kind=RKIND) :: dt
+
+
+        call MPAS_pool_get_config(domain%configs, 'config_use_activeTracers_surface_bulk_forcing', &
+                                  config_use_activeTracers_surface_bulk_forcing)
+        call MPAS_pool_get_config(domain%configs, 'config_sw_absorption_type', config_sw_absorption_type)
+        call MPAS_pool_get_config(domain%configs, 'config_dt', config_dt)
 
         call mpas_set_timeInterval(timeStepSW,timeString=config_dt)
         call mpas_get_timeInterval(timeStepSW,dt=dt)
@@ -498,6 +487,11 @@ contains
    subroutine ocn_shortwave_forcing_write_restart(domain)!{{{
 
       type(domain_type) :: domain
+
+      character(len=strKind), pointer :: config_sw_absorption_type
+
+
+      call MPAS_pool_get_config(domain % configs, "config_sw_absorption_type", config_sw_absorption_type)
 
       if( trim(config_sw_absorption_type) == 'ohlmann00'  ) then
           call MPAS_forcing_write_restart_times(forcingGroupHead)

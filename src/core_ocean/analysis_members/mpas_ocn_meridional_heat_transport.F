@@ -27,8 +27,7 @@ module ocn_meridional_heat_transport
    use mpas_stream_manager
 
    use ocn_constants
-   use ocn_config
-   use ocn_diagnostics_variables
+   use ocn_diagnostics_routines
 
    implicit none
    private
@@ -120,6 +119,11 @@ contains
       ! the variable used to discriminate cells into Bins (either the y-value or the latitude)
       real (kind=RKIND), dimension(:), pointer ::  binBoundaryMerHeatTrans, binVariable
 
+      !number of latitude bins specified in the config
+      integer, pointer :: config_AM_meridionalHeatTransport_num_bins
+      !smallest and highest latitude specified in the config
+      real (kind=RKIND), pointer :: config_AM_meridionalHeatTransport_min_bin, config_AM_meridionalHeatTransport_max_bin
+
       !determines if the simulation was run on a sphere or on a plane
       logical, pointer :: on_a_sphere
 
@@ -135,6 +139,7 @@ contains
       integer, pointer :: nRegions, nRegionGroups, maxRegionsInGroup, nCellsSolve
       real (kind=RKIND), dimension(:), pointer :: minLatRegionLocal, maxLatRegionLocal, &
                                                   minLatRegionGlobal, maxLatRegionGlobal
+      character (len=STRKIND), pointer :: additionalRegion
 
       !! region preliminary variables
       integer :: regionGroupNumber, regionsInAddGroup, regionGroupOffset
@@ -147,6 +152,10 @@ contains
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'nRegionGroups', nRegionGroups)
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'maxRegionsInGroup', maxRegionsInGroup)
 
+      !! region config for MHT
+      call mpas_pool_get_config(domain % configs, 'config_AM_meridionalHeatTransport_region_group', &
+                                additionalRegion)
+
       !! get region values
       call mpas_pool_get_subpool(domain % blocklist % structs, 'regions', regionPool)
       call mpas_pool_get_array(regionPool, 'regionsInGroup', regionsInGroup)
@@ -156,11 +165,11 @@ contains
       regionGroupOffset = 1
       regionGroupNumber = 0
 
-      if(config_AM_meridionalHeatTransport_region_group /= '') then
+      if(additionalRegion /= '') then
          !!! region preliminaries
          !!! figure out the region group number that matches the configured additional region's name
          do i = 1, nRegionGroups
-            if (regionGroupNames(i) .eq. config_AM_meridionalHeatTransport_region_group) then
+            if (regionGroupNames(i) .eq. additionalRegion) then
                regionGroupNumber = i
                !!! determine offset to compensate for several region groups in the
                !!! regions file
@@ -171,7 +180,7 @@ contains
          end do
       end if
 
-      if(config_AM_meridionalHeatTransport_region_group /= '') then
+      if(additionalRegion /= '') then
          regionsInAddGroup = nRegionsInGroup(regionGroupNumber)
          allocate(minLatRegionLocal(maxRegionsInGroup))
          allocate(maxLatRegionLocal(maxRegionsInGroup))
@@ -190,6 +199,13 @@ contains
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'nMerHeatTransBins', nMerHeatTransBins)
       call mpas_pool_get_subpool(domain % blocklist % structs, 'meridionalHeatTransportAM', meridionalHeatTransportAMPool)
 
+      call mpas_pool_get_config(domain % configs, 'config_AM_meridionalHeatTransport_num_bins', &
+                                config_AM_meridionalHeatTransport_num_bins)
+      call mpas_pool_get_config(domain % configs, 'config_AM_meridionalHeatTransport_min_bin', &
+                                config_AM_meridionalHeatTransport_min_bin)
+      call mpas_pool_get_config(domain % configs, 'config_AM_meridionalHeatTransport_max_bin', &
+                                config_AM_meridionalHeatTransport_max_bin)
+
       nMerHeatTransBinsUsed = config_AM_meridionalHeatTransport_num_bins
 
       call mpas_pool_get_array(meridionalHeatTransportAMPool, 'binBoundaryMerHeatTrans', binBoundaryMerHeatTrans)
@@ -201,7 +217,7 @@ contains
          call mpas_pool_get_config(meshPool, 'on_a_sphere', on_a_sphere)
 
          ! Get region-specific variables from pools
-         if(config_AM_meridionalHeatTransport_region_group /= '') then
+         if(additionalRegion /= '') then
             call mpas_pool_get_dimension(block % dimensions, 'nCellsSolve', nCellsSolve)
             call mpas_pool_get_array(regionPool, 'regionCellMasks', regionCellMasks)
          end if
@@ -217,7 +233,7 @@ contains
          maxBin = max(maxBin, maxval(binVariable) )
 
          ! If using regions, iterate through groups and add as needed
-         if(config_AM_meridionalHeatTransport_region_group /= '') then
+         if(additionalRegion /= '') then
             do i = 1, regionsInAddGroup
                curRegion = regionsInGroup(i, regionGroupNumber)
                do iCell = 1, nCellsSolve
@@ -313,6 +329,8 @@ contains
       type (mpas_pool_type), pointer :: statePool
       type (mpas_pool_type), pointer :: tracersPool
       type (mpas_pool_type), pointer :: meshPool
+      type (mpas_pool_type), pointer :: scratchPool
+      type (mpas_pool_type), pointer :: diagnosticsPool
       ! REGION POOL
       type (mpas_pool_type), pointer :: regionPool
 
@@ -325,6 +343,7 @@ contains
       real (kind=RKIND) :: div_huT
       real (kind=RKIND), dimension(:), pointer ::  areaCell, binVariable, binBoundaryMerHeatTrans, dvEdge
       real (kind=RKIND), dimension(:), pointer ::  merHeatTransLat
+      real (kind=RKIND), dimension(:,:), pointer :: layerThicknessEdge, normalTransportVelocity
       real (kind=RKIND), dimension(:,:), pointer :: merHeatTransLatZ
       real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers
       real (kind=RKIND), dimension(:,:), allocatable :: mht_meridional_integral
@@ -343,6 +362,7 @@ contains
       integer, dimension(:, :), pointer :: regionCellMasks, regionVertexMasks, regionsInGroup
       integer, dimension(:), pointer ::  nRegionsInGroup
       integer, pointer :: nRegions, nRegionGroups, maxRegionsInGroup
+      character (len=STRKIND), pointer :: additionalRegion
       integer :: regionGroupNumber, regionsInAddGroup
       real (kind=RKIND), dimension(:,:,:), allocatable :: mht_meridional_integral_region
       !!!! END REGION VARIABLES
@@ -367,6 +387,10 @@ contains
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'nRegionGroups', nRegionGroups)
       call mpas_pool_get_dimension(domain % blocklist % dimensions, 'maxRegionsInGroup', maxRegionsInGroup)
 
+      !! region config for MHT
+      call mpas_pool_get_config(domain % configs, 'config_AM_meridionalHeatTransport_region_group', &
+                                additionalRegion)
+
       !! get region values
       call mpas_pool_get_subpool(domain % blocklist % structs, 'regions', regionPool)
       call mpas_pool_get_array(regionPool, 'regionsInGroup', regionsInGroup)
@@ -380,11 +404,11 @@ contains
       regionGroupNumber = 0
 
       !! if a region is selected, set up region group offsets etc
-      if(config_AM_meridionalHeatTransport_region_group /= '') then
+      if(additionalRegion /= '') then
          !!! region preliminaries
          !!! figure out the region group number that matches the configured additional region's name
          do i = 1, nRegionGroups
-            if (regionGroupNames(i) .eq. config_AM_meridionalHeatTransport_region_group) then
+            if (regionGroupNames(i) .eq. additionalRegion) then
                regionGroupNumber = i
                !!! determine offset to compensate for several region groups in the
                !!! regions file
@@ -395,7 +419,7 @@ contains
          end do
       end if
 
-      if(config_AM_meridionalHeatTransport_region_group /= '') then
+      if(additionalRegion /= '') then
          regionsInAddGroup = nRegionsInGroup(regionGroupNumber)
       end if
       !!!! end region initialization
@@ -406,7 +430,7 @@ contains
       allocate(mht_meridional_integral(nVertLevels,nMerHeatTransBinsUsed))
 
       !! allocate region-specific arrays
-      if(config_AM_meridionalHeatTransport_region_group /= '') then
+      if(additionalRegion /= '') then
 !         allocate(totalSumMerHeatTransLatZRegion(nVertLevels, nMerHeatTransBinsUsed + 1, maxRegionsInGroup))
          allocate(sumMerHeatTransRegion(nMerHeatTransVariables, nVertLevels, nMerHeatTransBinsUsed, maxRegionsInGroup))
          allocate(totalSumMerHeatTransRegion(nMerHeatTransVariables, nVertLevels, nMerHeatTransBinsUsed, maxRegionsInGroup))
@@ -414,7 +438,7 @@ contains
       end if
 
       sumMerHeatTrans = 0.0_RKIND
-      if(config_AM_meridionalHeatTransport_region_group /= '') then
+      if(additionalRegion /= '') then
          sumMerHeatTransRegion = 0.0_RKIND
          totalSumMerHeatTrans = 0.0_RKIND
       end if
@@ -423,6 +447,8 @@ contains
       do while (associated(block))
          call mpas_pool_get_subpool(block % structs, 'state', statePool)
          call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
+         call mpas_pool_get_subpool(block % structs, 'scratch', scratchPool)
+         call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
          call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
 
          call mpas_pool_get_dimension(block % dimensions, 'nCellsSolve', nCellsSolve)
@@ -438,8 +464,10 @@ contains
          call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
          call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
          call mpas_pool_get_array(tracersPool, 'activeTracers', activeTracers, timeLevel)
+         call mpas_pool_get_array(diagnosticsPool, 'layerThicknessEdge', layerThicknessEdge)
+         call mpas_pool_get_array(diagnosticsPool, 'normalTransportVelocity', normalTransportVelocity)
 
-         if(config_AM_meridionalHeatTransport_region_group /= '') then
+         if(additionalRegion /= '') then
             call mpas_pool_get_array(regionPool, 'regionCellMasks', regionCellMasks)
          end if
 
@@ -470,7 +498,7 @@ contains
                      div_huT = 0.0_RKIND
                      do i = 1, nEdgesOnCell(iCell)
                         iEdge = edgesOnCell(i, iCell)
-                        div_huT = div_huT - layerThickEdge(k, iEdge) * normalTransportVelocity(k, iEdge) &
+                        div_huT = div_huT - layerThicknessEdge(k, iEdge) * normalTransportVelocity(k, iEdge) &
                              * 0.5_RKIND * (activeTracers(indexTemperature,k,cellsOnEdge(1,iEdge)) &
                              + activeTracers(indexTemperature,k,cellsOnEdge(2,iEdge))) &
                              * edgeSignOnCell(i, iCell) * dvEdge(iEdge)
@@ -478,7 +506,7 @@ contains
                      sumMerHeatTrans(iField,k,iBin) = sumMerHeatTrans(iField,k,iBin) + div_huT
 
                      !!!!! region-specific MHT
-                     if(config_AM_meridionalHeatTransport_region_group /= '') then
+                     if(additionalRegion /= '') then
                         do i = 1, regionsInAddGroup
                            curRegion = regionsInGroup(i, regionGroupNumber)
                            sumMerHeatTransRegion(iField,k,iBin,curRegion) = sumMerHeatTrans(iField,k,iBin) * &
@@ -503,7 +531,7 @@ contains
                                      sumMerHeatTrans, totalSumMerHeatTrans)
 
       !!!! Region version
-      if(config_AM_meridionalHeatTransport_region_group /= '') then
+      if(additionalRegion /= '') then
          do i = 1, regionsInAddGroup
             curRegion = regionsInGroup(i, regionGroupNumber)
             call mpas_dmpar_sum_real_array(dminfo, nVertLevels*nMerHeatTransBinsUsed*nMerHeatTransVariables, &
@@ -526,7 +554,7 @@ contains
          call mpas_pool_get_array(meridionalHeatTransportAMPool, 'meridionalHeatTransportLat', merHeatTransLat)
          call mpas_pool_get_array(meridionalHeatTransportAMPool, 'meridionalHeatTransportLatZ', merHeatTransLatZ)
 
-         if(config_AM_meridionalHeatTransport_region_group /= '') then
+         if(additionalRegion /= '') then
             call mpas_pool_get_array(meridionalHeatTransportAMPool, 'merHeatTransLatRegion', merHeatTransLatRegion)
             call mpas_pool_get_array(meridionalHeatTransportAMPool, 'merHeatTransLatZRegion', merHeatTransLatZRegion)
          end if
@@ -540,7 +568,7 @@ contains
                iField = 1
                mht_meridional_integral(k,iBin) = totalSumMerHeatTrans(iField,k,iBin)*rho_sw*cp_sw*1.0e-15_RKIND
                ! compute MHT per bin for regions
-               if(config_AM_meridionalHeatTransport_region_group /= '') then
+               if(additionalRegion /= '') then
                   do i = 1, regionsInAddGroup
                      curRegion = regionsInGroup(i, regionGroupNumber)
                      mht_meridional_integral_region(k,iBin,curRegion) = totalSumMerHeatTransRegion(iField,k,iBin,curRegion) &
@@ -557,7 +585,7 @@ contains
          do iBin = 2, nMerHeatTransBinsUsed+1
             merHeatTransLatZ(:,iBin) = merHeatTransLatZ(:,iBin-1) + mht_meridional_integral(:,iBin-1)
             ! integrate MHT for regions
-            if(config_AM_meridionalHeatTransport_region_group /= '') then
+            if(additionalRegion /= '') then
                do i = 1, regionsInAddGroup
                   curRegion = regionsInGroup(i, regionGroupNumber)
                   merHeatTransLatZRegion(:,iBin,curRegion) = merHeatTransLatZRegion(:,iBin-1,curRegion) +&
@@ -572,7 +600,7 @@ contains
          do iBin = 1, nMerHeatTransBinsUsed+1
             merHeatTransLat(iBin) = sum(merHeatTransLatZ(:,iBin))
             ! sum up MHT for regions
-            if(config_AM_meridionalHeatTransport_region_group /= '') then
+            if(additionalRegion /= '') then
                do i = 1, regionsInAddGroup
                   curRegion = regionsInGroup(i, regionGroupNumber)
                   merHeatTransLatRegion(iBin,curRegion) = sum(merHeatTransLatZRegion(:,iBin,curRegion))
@@ -591,7 +619,7 @@ contains
       deallocate(mht_meridional_integral)
 
       !!!! region clean-up
-      if(config_AM_meridionalHeatTransport_region_group /= '') then
+      if(additionalRegion /= '') then
          deallocate(totalSumMerHeatTransRegion)
          deallocate(sumMerHeatTransRegion)
       end if

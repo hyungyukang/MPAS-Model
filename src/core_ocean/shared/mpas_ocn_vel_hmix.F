@@ -24,12 +24,12 @@ module ocn_vel_hmix
 
    use mpas_timer
    use mpas_derived_types
-   use mpas_log
+   use mpas_pool_routines
+   use mpas_threading
    use ocn_vel_hmix_del2
    use ocn_vel_hmix_leith
    use ocn_vel_hmix_del4
    use ocn_constants
-   use ocn_config
 
    implicit none
    private
@@ -56,8 +56,7 @@ module ocn_vel_hmix
    !
    !--------------------------------------------------------------------
 
-   logical :: &
-      hmixOff  ! on/off switch for horizontal velocity mixing
+   logical :: hmixOn
 
 !***********************************************************************
 
@@ -80,58 +79,88 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_vel_hmix_tend(div, relVort, tend, err)!{{{
+   subroutine ocn_vel_hmix_tend(meshPool, scratchPool, divergence, relativeVorticity, normalVelocity, tangentialVelocity, &
+                                viscosity, tend, err)!{{{
 
       !-----------------------------------------------------------------
+      !
       ! input variables
+      !
       !-----------------------------------------------------------------
+
+      type (mpas_pool_type), intent(in) :: &
+         meshPool          !< Input: mesh information
+
+      type (mpas_pool_type), intent(inout) :: scratchPool !< Input: scratch variables
 
       real (kind=RKIND), dimension(:,:), intent(in) :: &
-         div,           &!< [in] velocity divergence
-         relVort         !< [in] relative vorticity
+         divergence    !< Input: velocity divergence
+
+      real (kind=RKIND), dimension(:,:), intent(in) :: &
+         relativeVorticity     !< Input: relative vorticity
+
+      real (kind=RKIND), dimension(:,:), intent(in) :: &
+         normalVelocity     !< Input: velocity normal to an edge
+
+      real (kind=RKIND), dimension(:,:), intent(in) :: &
+         tangentialVelocity     !< Input: velocity, tangent to an edge
 
       !-----------------------------------------------------------------
+      !
       ! input/output variables
+      !
       !-----------------------------------------------------------------
 
       real (kind=RKIND), dimension(:,:), intent(inout) :: &
-         tend            !< [inout] accumulated velocity tendency
+         viscosity     !< Input: viscosity
+
+      real (kind=RKIND), dimension(:,:), intent(inout) :: &
+         tend          !< Input/Output: velocity tendency
 
       !-----------------------------------------------------------------
+      !
       ! output variables
+      !
       !-----------------------------------------------------------------
 
-      integer, intent(out) :: err !< [out] error flag
+      integer, intent(out) :: err !< Output: error flag
 
       !-----------------------------------------------------------------
+      !
       ! local variables
+      !
       !-----------------------------------------------------------------
 
-      integer :: &
-         err1     ! local error flag
+      integer :: err1
 
-      ! End preamble
       !-----------------------------------------------------------------
-      ! Begin code
-
-      !*** Initialize return error code and viscosity
-      !*** exit early if not turned on, otherwise start relevant timer
-
-      err = 0
-      if (hmixOff) return
-      call mpas_timer_start("vel hmix")
-
+      !
       ! call relevant routines for computing tendencies
       ! note that the user can choose multiple options and the
       !   tendencies will be added together
+      !
+      !-----------------------------------------------------------------
 
-      call ocn_vel_hmix_del2_tend(div, relVort, tend, err1)
+      if(.not.hmixOn) return
+
+      call mpas_timer_start("vel hmix")
+
+      viscosity = 0.0_RKIND
+      err = 0
+
+      call ocn_vel_hmix_del2_tend(meshPool, divergence, relativeVorticity, viscosity, tend, err1)
       err = ior(err1, err)
 
-      call ocn_vel_hmix_leith_tend(div, relVort, tend, err1)
+      call ocn_vel_hmix_del2_tensor_tend(meshPool, normalVelocity, tangentialVelocity, viscosity, scratchPool, tend, err1)
       err = ior(err1, err)
 
-      call ocn_vel_hmix_del4_tend(div, relVort, tend, err1)
+      call ocn_vel_hmix_leith_tend(meshPool, divergence, relativeVorticity, viscosity, tend, err1)
+      err = ior(err1, err)
+
+      call ocn_vel_hmix_del4_tend(meshPool, scratchPool, divergence, relativeVorticity, tend, err1)
+      err = ior(err1, err)
+
+      call ocn_vel_hmix_del4_tensor_tend(meshPool, normalVelocity, tangentialVelocity, viscosity, scratchPool, tend, err1)
       err = ior(err1, err)
 
       call mpas_timer_stop("vel hmix")
@@ -157,43 +186,31 @@ contains
 
    subroutine ocn_vel_hmix_init(err)!{{{
 
-      !-----------------------------------------------------------------
-      ! output variables
-      !-----------------------------------------------------------------
-
-      integer, intent(out) :: err !< [out] error flag
+   !--------------------------------------------------------------------
 
       !-----------------------------------------------------------------
-      ! local variables
+      !
+      ! call individual init routines for each parameterization
+      !
       !-----------------------------------------------------------------
 
-      integer :: err1, err2, err3 ! local error flags
+      integer, intent(out) :: err !< Output: error flag
 
-      ! End preamble
-      !-----------------------------------------------------------------
-      ! Begin code
+      integer :: err1, err2, err3
 
-      !*** set error code and defaults
-      err = 0
-      hmixOff = .false.
+      logical, pointer :: config_disable_vel_hmix
 
-      !*** call individual init routines
+      call mpas_pool_get_config(ocnConfigs, 'config_disable_vel_hmix', config_disable_vel_hmix)
+
+      hmixOn = .true.
 
       call ocn_vel_hmix_del2_init(err1)
-      if (err1 /= 0) call mpas_log_write( &
-         'Error encountered initializing vel_hmix_del2', MPAS_LOG_ERR)
-
       call ocn_vel_hmix_leith_init(err2)
-      if (err2 /= 0) call mpas_log_write( &
-         'Error encountered initializing vel_hmix_leith', MPAS_LOG_ERR)
-
       call ocn_vel_hmix_del4_init(err3)
-      if (err3 /= 0) call mpas_log_write( &
-         'Error encountered initializing vel_hmix_del4', MPAS_LOG_ERR)
 
       err = ior(ior(err1, err2),err3)
 
-      if (config_disable_vel_hmix) hmixOff = .true.
+      if(config_disable_vel_hmix) hmixOn = .false.
 
    !--------------------------------------------------------------------
 

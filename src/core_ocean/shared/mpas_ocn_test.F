@@ -30,8 +30,6 @@ module ocn_test
    use mpas_tensor_operations
 
    use ocn_constants
-   use ocn_config
-   use ocn_diagnostics_variables
 
    implicit none
    private
@@ -140,6 +138,8 @@ contains
       integer, intent(out) :: err !< Output: error flag
 
       type (mpas_pool_type), pointer :: scratchPool, meshPool
+      logical, pointer :: config_test_tensors
+      character (len=StrKIND), pointer :: config_tensor_test_function
 
       type (field2DInteger), pointer :: edgeSignOnCellField
       type (field2DReal), pointer :: edgeTangentVectorsField
@@ -157,7 +157,11 @@ contains
       type (field3DReal), pointer :: divTensorLonLatRCellSolutionField
       type (field3DReal), pointer :: outerProductEdgeField
 
+      call mpas_pool_get_config(domain % configs, 'config_test_tensors', config_test_tensors)
+
       if (.not.config_test_tensors) return
+
+      call mpas_pool_get_config(domain % configs, 'config_tensor_test_function', config_tensor_test_function)
 
       call mpas_pool_get_subpool(domain % blocklist % structs, 'scratch', scratchPool)
       call mpas_pool_get_subpool(domain % blocklist % structs, 'mesh', meshPool)
@@ -247,7 +251,7 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_init_gm_test_functions(meshPool, scratchPool)!{{{
+   subroutine ocn_init_gm_test_functions(diagnosticsPool, meshPool, scratchPool)!{{{
 
       !-----------------------------------------------------------------
       !
@@ -264,6 +268,7 @@ contains
       !
       !-----------------------------------------------------------------
 
+      type (mpas_pool_type), intent(inout) :: diagnosticsPool  !< Input: diagnostic fields derived from State
       type (mpas_pool_type), intent(in) :: scratchPool !< Input: scratch variables
 
       !-----------------------------------------------------------------
@@ -278,20 +283,16 @@ contains
 
       real(kind=RKIND) :: zTop, config_gm_analytic_temperature2, config_gm_analytic_temperature3, config_gm_analytic_ymax, &
          config_gm_analytic_bottom_depth, L, R, c1, c2, zMax, zBot
+      real (kind=RKIND), pointer :: config_GM_constant_gravWaveSpeed, config_GM_kappa, config_eos_linear_alpha
 
       real(kind=RKIND), dimension(:), pointer   :: bottomDepth, refBottomDepthTopOfCell, yCell, yEdge
+      real(kind=RKIND), dimension(:,:), pointer :: yRelativeSlopeSolution, yGMStreamFuncSolution, yGMBolusVelocitySolution, zMid
 
-      ! Scratch Arrays
-      ! yGMStreamFuncSolution: GM stream function reconstructured to the cell centers,
-      !                        for analytic solution
-      !                 units: m^2
-      real(kind=RKIND), dimension(:,:), allocatable :: yGMStreamFuncSolution
-      ! yGMBolusVelocitySolution: Bolus velocity in Gent-McWilliams eddy parameterization,
-      !                           y-direction, for analytic solution
-      !                    units: m s
-      real(kind=RKIND), dimension(:,:), allocatable :: yGMBolusVelocitySolution
+      type (field2DReal), pointer :: yRelativeSlopeSolutionField, yGMStreamFuncSolutionField, yGMBolusVelocitySolutionField
 
-      integer :: nVertLevels
+      call mpas_pool_get_config(ocnConfigs, 'config_eos_linear_alpha', config_eos_linear_alpha)
+      call mpas_pool_get_config(ocnConfigs, 'config_GM_constant_gravWaveSpeed',config_GM_constant_gravWaveSpeed)
+      call mpas_pool_get_config(ocnConfigs, 'config_GM_kappa',config_GM_kappa)
 
       call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
       call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
@@ -300,10 +301,16 @@ contains
       call mpas_pool_get_array(meshPool, 'yEdge',yEdge)
       call mpas_pool_get_array(meshPool, 'bottomDepth',bottomDepth)
 
-      nVertLevels = maxval(maxLevelCell)
+      call mpas_pool_get_array(diagnosticsPool, 'zMid', zMid)
 
-      allocate(yGMStreamFuncSolution(nVertLevels + 1, nCells), &
-               yGMBolusVelocitySolution(nVertLevels, nCells))
+      ! move solution variables to diagnostics pool to include them in output.
+      call mpas_pool_get_field(scratchPool, 'yRelativeSlopeSolution',yRelativeSlopeSolutionField)
+      call mpas_pool_get_field(scratchPool, 'yGMStreamFuncSolution',yGMStreamFuncSolutionField)
+      call mpas_pool_get_field(scratchPool, 'yGMBolusVelocitySolution',yGMBolusVelocitySolutionField)
+
+      yRelativeSlopeSolution   => yRelativeSlopeSolutionField % array
+      yGMStreamFuncSolution    => yGMStreamFuncSolutionField % array
+      yGMBolusVelocitySolution => yGMBolusVelocitySolutionField % array
 
       ! These are flags that must match your initial conditions settings.  See gm_analytic initial condition in mode_init.
       config_gm_analytic_temperature2 = 10
@@ -317,12 +324,11 @@ contains
       zBot = zMax
 
       L = config_GM_constant_gravWaveSpeed * sqrt(rho_sw * zMax / gravity / config_eos_linear_alpha / config_gm_analytic_temperature3)
-      R = - config_GM_constant_kappa * config_gm_analytic_temperature2 * zMax / config_gm_analytic_temperature3 &
+      R = - config_GM_kappa * config_gm_analytic_temperature2 * zMax / config_gm_analytic_temperature3 &
         / config_gm_analytic_ymax
       c1 = R*(1-exp(-zBot/L))/(exp(zBot/L) - exp(-zBot/L))
       c2 = R-c1
 
-      !$omp parallel
       !$omp do schedule(runtime) private(k, zTop)
       do iCell = 1, nCells
 
@@ -345,10 +351,6 @@ contains
 
       end do
       !$omp end do
-      !$omp end parallel
-
-      deallocate(yGMStreamFuncSolution, &
-                 yGMBolusVelocitySolution)
 
    end subroutine ocn_init_gm_test_functions!}}}
 

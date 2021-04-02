@@ -1,22 +1,13 @@
 .SUFFIXES: .F .c .o
 
-ifeq "$(EXCLUDE_INIT_MODE)" "true"
-CPPLOCALFLAGS = -DEXCLUDE_INIT_MODE
-$(info "EXCLUDE_INIT_MODE found")
-endif
 
 OCEAN_SHARED_INCLUDES = -I$(PWD)/../framework -I$(PWD)/../external/esmf_time_f90 -I$(PWD)/../operators
-OCEAN_SHARED_INCLUDES += -I$(PWD)/BGC -I$(PWD)/shared -I$(PWD)/analysis_members -I$(PWD)/cvmix/src/shared -I$(PWD)/mode_forward -I$(PWD)/mode_analysis
-ifneq "$(EXCLUDE_INIT_MODE)" "true"
-	OCEAN_SHARED_INCLUDES += -I$(PWD)/mode_init
-endif
+OCEAN_SHARED_INCLUDES += -I$(PWD)/BGC -I$(PWD)/shared -I$(PWD)/analysis_members -I$(PWD)/cvmix -I$(PWD)/mode_forward -I$(PWD)/mode_analysis -I$(PWD)/mode_init
 
 all: shared libcvmix analysis_members libBGC
 	(cd mode_forward; $(MAKE) FCINCLUDES="$(FCINCLUDES) $(OCEAN_SHARED_INCLUDES)" all )
 	(cd mode_analysis; $(MAKE) FCINCLUDES="$(FCINCLUDES) $(OCEAN_SHARED_INCLUDES)" all )
-ifneq "$(EXCLUDE_INIT_MODE)" "true"
 	(cd mode_init; $(MAKE) FCINCLUDES="$(FCINCLUDES) $(OCEAN_SHARED_INCLUDES)" all )
-endif
 	(cd driver; $(MAKE) FCINCLUDES="$(FCINCLUDES) $(OCEAN_SHARED_INCLUDES)" all )
 	if [ -e libdycore.a ]; then \
 		($(RM) libdycore.a) \
@@ -24,23 +15,21 @@ endif
 	ar -ru libdycore.a `find . -type f -name "*.o"`
 
 core_reg:
-	$(CPP) $(CPPFLAGS) $(CPPLOCALFLAGS) $(CPPINCLUDES) Registry.xml > Registry_processed.xml
+	$(CPP) $(CPPFLAGS) $(CPPINCLUDES) Registry.xml > Registry_processed.xml
 
 core_input_gen:
 	if [ ! -e default_inputs ]; then  mkdir default_inputs; fi
 	(cd default_inputs; $(NL_GEN) ../Registry_processed.xml namelist.ocean )
 	(cd default_inputs; $(NL_GEN) ../Registry_processed.xml namelist.ocean.forward mode=forward )
 	(cd default_inputs; $(NL_GEN) ../Registry_processed.xml namelist.ocean.analysis mode=analysis )
+	(cd default_inputs; $(NL_GEN) ../Registry_processed.xml namelist.ocean.init mode=init )
 	(cd default_inputs; $(ST_GEN) ../Registry_processed.xml streams.ocean stream_list.ocean. mutable )
 	(cd default_inputs; $(ST_GEN) ../Registry_processed.xml streams.ocean.forward stream_list.ocean.forward. mutable mode=forward )
 	(cd default_inputs; $(ST_GEN) ../Registry_processed.xml streams.ocean.analysis stream_list.ocean.analysis. mutable mode=analysis )
-ifneq "$(EXCLUDE_INIT_MODE)" "true"
-	(cd default_inputs; $(NL_GEN) ../Registry_processed.xml namelist.ocean.init mode=init )
 	(cd default_inputs; $(ST_GEN) ../Registry_processed.xml streams.ocean.init stream_list.ocean.init. mutable mode=init )
-endif
 
 gen_includes:
-	$(CPP) $(CPPFLAGS) $(CPPLOCALFLAGS) $(CPPINCLUDES) Registry.xml > Registry_processed.xml
+	$(CPP) $(CPPFLAGS) $(CPPINCLUDES) Registry.xml > Registry_processed.xml
 	(if [ ! -d inc ]; then mkdir -p inc; fi) # To generate *.inc files
 	(cd inc; $(REG_PARSE) < ../Registry_processed.xml )
 
@@ -50,26 +39,32 @@ post_build:
 	( cp $(ROOT_DIR)/default_inputs/namelist.ocean $(ROOT_DIR)/namelist.ocean )
 	( cp $(ROOT_DIR)/default_inputs/namelist.ocean.forward $(ROOT_DIR)/namelist.ocean.forward )
 	( cp $(ROOT_DIR)/default_inputs/namelist.ocean.analysis $(ROOT_DIR)/namelist.ocean.analysis )
+	( cp $(ROOT_DIR)/default_inputs/namelist.ocean.init $(ROOT_DIR)/namelist.ocean.init )
 	( cp $(ROOT_DIR)/default_inputs/streams.ocean $(ROOT_DIR)/streams.ocean )
 	( cp $(ROOT_DIR)/default_inputs/streams.ocean.forward $(ROOT_DIR)/streams.ocean.forward )
 	( cp $(ROOT_DIR)/default_inputs/streams.ocean.analysis $(ROOT_DIR)/streams.ocean.analysis )
-ifneq "$(EXCLUDE_INIT_MODE)" "true"
-	( cp $(ROOT_DIR)/default_inputs/namelist.ocean.init $(ROOT_DIR)/namelist.ocean.init )
 	( cp $(ROOT_DIR)/default_inputs/streams.ocean.init $(ROOT_DIR)/streams.ocean.init )
-endif
 
-libcvmix:
-	if [ -e cvmix/.git ]; then \
-		(cd cvmix/src/shared; make all FC="$(FC)" FCFLAGS="$(FFLAGS)" FINCLUDES="$(FINCLUDES)") \
+cvmix_source: get_cvmix.sh
+	(/bin/bash ./get_cvmix.sh)
+	(cd cvmix)
+
+BGC_source: get_BGC.sh
+	(/bin/bash ./get_BGC.sh)
+	(cd BGC)
+
+libcvmix: cvmix_source
+	if [ -d cvmix ]; then \
+		(cd cvmix; make all FC="$(FC)" FCFLAGS="$(FFLAGS)" FINCLUDES="$(FINCLUDES)") \
 	else \
-		(pwd ; echo "Missing core_ocean/cvmix/.git, did you forget to 'git submodule update --init --recursive' ?"; exit 1) \
+		(exit 1) \
 	fi
 
-libBGC:
-	if [ -e BGC/.git ]; then \
+libBGC: BGC_source
+	if [ -d BGC ]; then \
 		(cd BGC; make all FC="$(FC)" FCFLAGS="$(FFLAGS)" FINCLUDES="$(FINCLUDES)") \
 	else \
-		(echo "Missing core_ocean/BGC/.git, did you forget to 'git submodule update --init --recursive' ?"; exit 1) \
+		(exit 1) \
 	fi
 
 shared: libcvmix libBGC
@@ -79,13 +74,13 @@ analysis_members: libcvmix shared
 	( cd analysis_members; $(MAKE) FCINCLUDES="$(FCINCLUDES) $(OCEAN_SHARED_INCLUDES)" CPPFLAGS="$(CPPFLAGS)" CPPINCLUDES="$(CPPINCLUDES)" all ) 
 
 clean:
-	if [ -e cvmix/.git ]; then \
-		(cd cvmix/src/shared; make clean) \
+	if [ -d cvmix ]; then \
+		(cd cvmix; make clean) \
 	fi
 	if [ -d inc ]; then \
 		($(RM) -r inc) \
 	fi
-	if [ -e BGC/.git ]; then \
+	if [ -d BGC ]; then \
 		(cd BGC; make clean) \
 	fi
 	(cd mode_forward; $(MAKE) clean)

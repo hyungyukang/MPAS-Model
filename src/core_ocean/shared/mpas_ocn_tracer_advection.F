@@ -33,7 +33,6 @@ module ocn_tracer_advection
    use ocn_tracer_advection_mono
 
    use ocn_constants
-   use ocn_config
 
    implicit none
    private
@@ -68,7 +67,7 @@ module ocn_tracer_advection
 
    subroutine ocn_tracer_advection_tend(tracers, normalThicknessFlux, w,       &
                                         layerThickness, dt, meshPool,          &
-                                        tend,    &
+                                        scratchPool, diagnosticsPool, tend,    &
                                         tracerGroupName)!{{{
 
       !*** Input/Output parameters
@@ -90,6 +89,10 @@ module ocn_tracer_advection
          dt                  !< [in] Time step
       type (mpas_pool_type), intent(in) :: &
          meshPool            !< [in] Mesh information
+      type (mpas_pool_type), intent(in) :: &
+         scratchPool         !< [in] Scratch fields
+      type (mpas_pool_type), intent(in) :: &
+         diagnosticsPool     !< [in] Diagnostic fields
       character (len=*), intent(in) :: &
          tracerGroupName     !< [in] Tracer name to check if active tracers
 
@@ -102,9 +105,7 @@ module ocn_tracer_advection
          advCoefs, advCoefs3rd ! advection coefficients
 
       integer, dimension(:), pointer, contiguous :: &
-         minLevelCell,    &! index of min level at each cell
          maxLevelCell,    &! index of max level at each cell
-         minLevelEdgeBot, &! min level at edge with both cells active
          maxLevelEdgeTop, &! max level at edge with both cells active
          nAdvCellsForEdge  ! number of advective cells for each edge
       integer, dimension(:,:), pointer, contiguous :: &!
@@ -124,9 +125,7 @@ module ocn_tracer_advection
       ! extract pool variables
       call mpas_pool_get_array(meshPool, 'advCoefs', advCoefs)
       call mpas_pool_get_array(meshPool, 'advCoefs3rd', advCoefs3rd)
-      call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
       call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-      call mpas_pool_get_array(meshPool, 'minLevelEdgeBot', minLevelEdgeBot)
       call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
       call mpas_pool_get_array(meshPool, 'highOrderAdvectionMask', &
                                           highOrderAdvectionMask)
@@ -143,16 +142,15 @@ module ocn_tracer_advection
                                              normalThicknessFlux, w, dt,       &
                                              advCoefs, advCoefs3rd,            &
                                              nAdvCellsForEdge, advCellsForEdge,&
-                                             minLevelCell, maxLevelCell,       &
-                                             minLevelEdgeBot, maxLevelEdgeTop, &
+                                             maxLevelCell, maxLevelEdgeTop,    &
                                              highOrderAdvectionMask,           &
                                              edgeSignOnCell, meshPool,         &
-                                             computeBudgets)
+                                             diagnosticsPool, computeBudgets)
 
       else
          call ocn_tracer_advection_std_tend(tracers, advCoefs, advCoefs3rd, &
             nAdvCellsForEdge, advCellsForEdge, normalThicknessFlux, w, layerThickness, &
-            layerThickness, dt, meshPool, tend, maxLevelCell, maxLevelEdgeTop, &
+            layerThickness, dt, meshPool, scratchPool, tend, maxLevelCell, maxLevelEdgeTop, &
             highOrderAdvectionMask, edgeSignOnCell)
       endif
 
@@ -183,24 +181,57 @@ module ocn_tracer_advection
 
       integer :: errTmp ! temporary error flag
 
+      ! pointer variables needed to extract options from config
+      logical, pointer ::        &
+         disableTracerAdvection, &! flag to disable advection
+         checkMonotonicity,      &! flag to check monotonicity
+         useMonotone,            &! flag to choose monotone scheme
+         computeBudgetDiags       ! flag to compute active tracer budgets
+
+      integer, pointer :: &
+         horzAdvOrder,    &! choice of horizontal advection order
+         vertAdvOrder,    &! choice of vertical advection order
+         numHalos          ! width of halo region
+
+      real (kind=RKIND), pointer :: &
+         coef3rdOrder  ! coefficient for blending high-order horz adv terms
+
       ! end preamble
       !-------------
       ! begin code
 
       err = 0 ! initialize error code to success
 
+      ! extract options from config
+      call mpas_pool_get_config(ocnConfigs,'config_num_halos', numHalos)
+      call mpas_pool_get_config(ocnConfigs,'config_disable_tr_adv', &
+                                            disableTracerAdvection)
+      call mpas_pool_get_config(ocnConfigs,'config_check_tracer_monotonicity', &
+                                            checkMonotonicity)
+      call mpas_pool_get_config(ocnConfigs,'config_horiz_tracer_adv_order', &
+                                            horzAdvOrder)
+      call mpas_pool_get_config(ocnConfigs,'config_vert_tracer_adv_order', &
+                                            vertAdvOrder)
+      call mpas_pool_get_config(ocnConfigs,'config_coef_3rd_order', &
+                                            coef3rdOrder)
+      call mpas_pool_get_config(ocnConfigs,'config_monotonic', &
+                                            useMonotone)
+      call mpas_pool_get_config(ocnConfigs, &
+                                'config_compute_active_tracer_budgets', &
+                                 computeBudgetDiags)
+
       ! set some basic flags for options
-      tracerAdvOn = .not. config_disable_tr_adv
-      monotonicOn = config_monotonic
-      budgetDiagsOn = config_compute_active_tracer_budgets
+      tracerAdvOn = .not. disableTracerAdvection
+      monotonicOn = useMonotone
+      budgetDiagsOn = computeBudgetDiags
 
       ! set all other options from submodule initialization routines
-      call ocn_tracer_advection_std_init(config_horiz_tracer_adv_order, &
-                     config_vert_tracer_adv_order, config_coef_3rd_order, &
-                     config_check_tracer_monotonicity, errTmp)
-      call ocn_tracer_advection_mono_init(config_num_halos, config_horiz_tracer_adv_order,    &
-                                          config_vert_tracer_adv_order, config_coef_3rd_order, &
-                                          config_check_tracer_monotonicity, err)
+      call ocn_tracer_advection_std_init(horzAdvOrder, vertAdvOrder,      &
+                                         coef3rdOrder, checkMonotonicity, &
+                                         errTmp)
+      call ocn_tracer_advection_mono_init(numHalos, horzAdvOrder,    &
+                                          vertAdvOrder, coef3rdOrder, &
+                                          checkMonotonicity, err)
 
       ! if an error is returned from init routines, write an error
       ! message and return a non-zero error code

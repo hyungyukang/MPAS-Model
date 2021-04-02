@@ -119,7 +119,6 @@ contains
 
       err = 0
 
-      !$omp parallel
       !$omp do schedule(runtime) private(iLevel, iTracer)
       do iCell=1,nCellsSolve
          do iLevel=1,maxLevelCell(iCell)
@@ -132,7 +131,6 @@ contains
          enddo
       enddo
       !$omp end do
-      !$omp end parallel
 
    !--------------------------------------------------------------------
 

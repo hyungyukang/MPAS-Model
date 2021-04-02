@@ -14,7 +14,6 @@
  use mpas_dmpar
  use mpas_kind_types
  use mpas_pool_routines
- use mpas_io_units
 
  use mpas_atmphys_utilities
  use mpas_atmphys_vars
@@ -115,7 +114,7 @@
  character(len=StrKIND) :: lutype
  character(len=StrKIND):: mess
 
- integer:: land_unit
+ integer,parameter:: land_unit = 15
  integer,parameter:: open_ok   = 0
  integer,parameter:: max_cats  = 100
  integer,parameter:: max_seas  = 12
@@ -171,11 +170,6 @@
 
 !reads in the landuse properties from landuse.tbl:
  if(dminfo % my_proc_id == IO_NODE) then
-    !get a unit to open init file:
-    call mpas_new_unit(land_unit)
-    if ( land_unit < 0 ) &
-       call physics_error_fatal('landuse_init_forMPAS: All file units are taken.  Change maxUnits in mpas_io_units.F')
-
     open(land_unit,file='LANDUSE.TBL',action='READ',status='OLD',iostat=istat)
     if(istat /= open_ok) &
        call physics_error_fatal('subroutine landuse_init_forMPAS: ' // &
@@ -216,9 +210,6 @@
 !      enddo
 !      if(is .lt. luseas) call mpas_log_write('')
     enddo
-
-    close(land_unit)  
-    call mpas_release_unit(land_unit)
 
 !defines the index isurban as a function of sfc_input_data:
     sfc_input_select: select case(trim(lutype))
