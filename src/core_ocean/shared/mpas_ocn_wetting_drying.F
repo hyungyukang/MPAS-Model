@@ -28,7 +28,9 @@ module ocn_wetting_drying
    use mpas_io_units
 
    use ocn_constants
+   use ocn_config
    use ocn_diagnostics
+   use ocn_diagnostics_variables
    use ocn_gm
 
    implicit none
@@ -118,7 +120,6 @@ contains
       real (kind=RKIND), dimension(:), pointer :: lonCell, latCell
       real (kind=RKIND) :: minThickness, layerThick
       character (len=StrKIND) :: debugFilename
-      character (len=StrKIND), pointer :: config_time_integrator
 
       !-----------------------------------------------------------------
       !
@@ -137,7 +138,6 @@ contains
       call mpas_pool_get_array(tendPool, 'layerThickness', layerThicknessTend)
       call mpas_pool_get_array(statePool, 'sshSubcycle', sshSubcycleNew, 2)
       call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
-      call mpas_pool_get_config(ocnConfigs, 'config_time_integrator', config_time_integrator)
       call mpas_pool_get_array(meshPool, 'lonCell', lonCell)
       call mpas_pool_get_array(meshPool, 'latCell', latCell)
 
@@ -239,14 +239,9 @@ contains
       type (mpas_pool_type), pointer :: meshPool
       type (mpas_pool_type), pointer :: statePool
       type (mpas_pool_type), pointer :: provisStatePool
-      type (mpas_pool_type), pointer :: diagnosticsPool
       real (kind=RKIND), dimension(:, :), pointer :: layerThicknessCur
       real (kind=RKIND), dimension(:, :), pointer :: layerThicknessProvis
-      real (kind=RKIND), dimension(:, :), pointer :: layerThicknessEdge
-      real (kind=RKIND), dimension(:, :), pointer :: normalTransportVelocity
       real (kind=RKIND), dimension(:, :), pointer :: normalVelocity
-      real (kind=RKIND), dimension(:, :), pointer :: wettingVelocity
-      type (field2DReal), pointer :: wettingVelocityField
 
       integer, dimension(:), pointer :: maxLevelEdgeTop
       integer, dimension(:), pointer :: maxLevelEdgeBot
@@ -255,16 +250,12 @@ contains
 
       err = 0
 
-     call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
      call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
      call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
      call mpas_pool_get_subpool(block % structs, 'state', statePool)
      call mpas_pool_get_subpool(block % structs, 'provis_state', provisStatePool)
 
-     call mpas_pool_get_array(diagnosticsPool, 'normalTransportVelocity', normalTransportVelocity)
      call mpas_pool_get_array(statePool, 'normalVelocity', normalVelocity, 1)
-     call mpas_pool_get_array(diagnosticsPool, 'layerThicknessEdge', layerThicknessEdge)
-     call mpas_pool_get_array(diagnosticsPool, 'wettingVelocity', wettingVelocity)
      ! use thickness at n because constraint is h_n + dt*T_h > h_min
      call mpas_pool_get_array(statePool, 'layerThickness', layerThicknessCur, 1)
      call mpas_pool_get_array(provisStatePool, 'layerThickness', layerThicknessProvis, 1)
@@ -273,21 +264,22 @@ contains
      call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
      call mpas_pool_get_array(meshPool, 'maxLevelEdgeBot', maxLevelEdgeBot)
 
-
+     !$omp parallel
      !$omp do schedule(runtime)
      do iEdge = 1, nEdges
        wettingVelocity(:, iEdge) = 0.0_RKIND
      end do
      !$omp end do
-     call mpas_threading_barrier()
+     !$omp end parallel
 
      ! ensure cells stay wet by selectively damping cells with a damping tendency to make sure tendency doesn't dry cells
 
-     call ocn_wetting_drying_wettingVelocity(meshPool, layerThicknessEdge, layerThicknessCur, layerThicknessProvis, &
+     call ocn_wetting_drying_wettingVelocity(meshPool, layerThickEdge, layerThicknessCur, layerThicknessProvis, &
                                              normalTransportVelocity, rkSubstepWeight, wettingVelocity, err)
 
      ! prevent drying from happening with selective wettingVelocity
-     !$omp do schedule(runtime)
+     !$omp parallel
+     !$omp do schedule(runtime) private(k)
      do iEdge = 1, nEdges
        do k = 1, maxLevelEdgeBot(iEdge)
          if (abs(normalTransportVelocity(k,iEdge) + wettingVelocity(k,iEdge)) < eps)  then
@@ -307,7 +299,7 @@ contains
        end do
      end do
      !$omp end do
-     call mpas_threading_barrier()
+     !$omp end parallel
 
    end subroutine ocn_prevent_drying_rk4 !}}}
 
@@ -389,14 +381,7 @@ contains
       real (kind=RKIND), dimension(:), pointer :: dvEdge
       real (kind=RKIND), dimension(:), pointer :: areaCell
 
-      real (kind=RKIND), pointer :: config_drying_min_cell_height, config_drying_safety_height
-      logical, pointer :: config_zero_drying_velocity
-
       err = 0
-
-      call mpas_pool_get_config(ocnConfigs, 'config_drying_min_cell_height', config_drying_min_cell_height)
-      call mpas_pool_get_config(ocnConfigs, 'config_zero_drying_velocity', config_zero_drying_velocity)
-      call mpas_pool_get_config(ocnConfigs, 'config_drying_safety_height', config_drying_safety_height)
 
       call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
       call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
@@ -408,10 +393,9 @@ contains
       call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
       call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
 
-      call mpas_threading_barrier()
-
       ! need predicted transport velocity to limit drying flux
-      !$omp do schedule(runtime) private(invAreaCell, i, iEdge, k)
+      !$omp parallel
+      !$omp do schedule(runtime) private(invAreaCell, i, iEdge, k, divOutFlux, layerThickness)
       do iCell = 1, nCells
         invAreaCell = 1.0_RKIND / areaCell(iCell)
         ! can switch with maxLevelEdgeBot(iEdge)
@@ -454,8 +438,7 @@ contains
         end do
       end do
       !$omp end do
-
-      call mpas_threading_barrier()
+      !$omp end parallel
 
    end subroutine ocn_wetting_drying_wettingVelocity !}}}
 

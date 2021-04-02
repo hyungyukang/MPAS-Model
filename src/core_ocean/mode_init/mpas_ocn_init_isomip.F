@@ -28,6 +28,8 @@ module ocn_init_isomip
    use mpas_dmpar
 
    use ocn_constants
+   use ocn_config
+   use ocn_diagnostics_variables
    use ocn_init_vertical_grids
    use ocn_init_cell_markers
 
@@ -81,41 +83,12 @@ contains
       type (domain_type), intent(inout) :: domain
       integer, intent(out) :: iErr
 
-      ! Define config variable pointers
-      character (len=StrKIND), pointer :: config_init_configuration, &
-        config_isomip_vertical_level_distribution
-
-      real (kind=RKIND), pointer :: config_isomip_bottom_depth, &
-        config_isomip_temperature, &
-        config_isomip_salinity, &
-        config_isomip_restoring_temperature, &
-        config_isomip_restoring_salinity, &
-        config_isomip_temperature_piston_velocity, &
-        config_isomip_salinity_piston_velocity, &
-        config_isomip_coriolis_parameter, &
-        config_isomip_southern_boundary, &
-        config_isomip_northern_boundary, &
-        config_isomip_western_boundary, &
-        config_isomip_eastern_boundary, &
-        config_isomip_angle, &
-        config_isomip_y1, &
-        config_isomip_z1, &
-        config_isomip_ice_fraction1, &
-        config_isomip_y2, &
-        config_isomip_z2, &
-        config_isomip_ice_fraction2, &
-        config_isomip_y3, &
-        config_isomip_z3, &
-        config_isomip_ice_fraction3, &
-        config_isomip_effective_density
-
       logical, pointer :: on_a_sphere
 
       type (mpas_pool_type), pointer :: meshPool
       type (mpas_pool_type), pointer :: statePool
       type (mpas_pool_type), pointer :: verticalMeshPool
       type (mpas_pool_type), pointer :: forcingPool
-      type (mpas_pool_type), pointer :: diagnosticsPool
       type (mpas_pool_type), pointer :: tracersPool
       type (mpas_pool_type), pointer :: scratchPool
       type (mpas_pool_type), pointer :: tracersSurfaceRestoringFieldsPool
@@ -127,7 +100,7 @@ contains
       integer, pointer :: index_temperature, index_salinity, index_tracer1
 
       ! Define variable pointers
-      integer, dimension(:), pointer :: maxLevelCell, modifySSHMask, landIceMask
+      integer, dimension(:), pointer :: minLevelCell, maxLevelCell, landIceMask
       real (kind=RKIND), dimension(:), pointer :: xCell, yCell,refBottomDepth, &
                                                   vertCoordMovementWeights, bottomDepth, &
                                                   fCell, fEdge, fVertex, dcEdge, &
@@ -135,7 +108,7 @@ contains
                                                   refLayerThickness, refZMid, &
                                                   ssh
       !real (kind=RKIND), dimension(:), pointer :: temperatureRestore, salinityRestore, maskRestore
-      real (kind=RKIND), dimension(:,:), pointer :: layerThickness, restingThickness, zMid
+      real (kind=RKIND), dimension(:,:), pointer :: layerThickness, restingThickness
       real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers, debugTracers
       real (kind=RKIND), dimension(:, :), pointer ::    activeTracersPistonVelocity, activeTracersSurfaceRestoringValue
 
@@ -152,33 +125,7 @@ contains
 
       iErr = 0
 
-      call mpas_pool_get_config(ocnConfigs, 'config_init_configuration', config_init_configuration)
-
       if(trim(config_init_configuration) .ne. trim('isomip')) return
-
-      ! Setup configuration
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_vertical_level_distribution', config_isomip_vertical_level_distribution)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_bottom_depth', config_isomip_bottom_depth)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_temperature', config_isomip_temperature)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_salinity', config_isomip_salinity)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_restoring_temperature', config_isomip_restoring_temperature)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_restoring_salinity', config_isomip_restoring_salinity)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_temperature_piston_velocity', config_isomip_temperature_piston_velocity)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_salinity_piston_velocity', config_isomip_salinity_piston_velocity)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_coriolis_parameter', config_isomip_coriolis_parameter)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_southern_boundary', config_isomip_southern_boundary)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_northern_boundary', config_isomip_northern_boundary)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_western_boundary', config_isomip_western_boundary)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_eastern_boundary', config_isomip_eastern_boundary)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_y1', config_isomip_y1)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_z1', config_isomip_z1)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_ice_fraction1', config_isomip_ice_fraction1)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_y2', config_isomip_y2)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_z2', config_isomip_z2)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_ice_fraction2', config_isomip_ice_fraction2)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_y3', config_isomip_y3)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_z3', config_isomip_z3)
-      call mpas_pool_get_config(ocnConfigs, 'config_isomip_ice_fraction3', config_isomip_ice_fraction3)
 
       call mpas_pool_get_subpool(domain % blocklist % structs, 'mesh', meshPool)
 
@@ -250,7 +197,6 @@ contains
         call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
         call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'forcing', forcingPool)
-        call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
         call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
 
         call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
@@ -261,6 +207,7 @@ contains
         call mpas_pool_get_array(meshPool, 'refBottomDepth', refBottomDepth)
         call mpas_pool_get_array(meshPool, 'vertCoordMovementWeights', vertCoordMovementWeights)
         call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
+        call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
         call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
         call mpas_pool_get_array(meshPool, 'fCell', fCell)
         call mpas_pool_get_array(meshPool, 'fEdge', fEdge)
@@ -278,9 +225,6 @@ contains
         call mpas_pool_get_array(forcingPool, 'landIceSurfaceTemperature', landIceSurfaceTemperature)
         call mpas_pool_get_array(forcingPool, 'landIceMask', landIceMask)
 
-        call mpas_pool_get_array(diagnosticsPool, 'zMid', zMid)
-        call mpas_pool_get_array(diagnosticsPool, 'modifySSHMask', modifySSHMask)
-
         call mpas_pool_get_array(verticalMeshPool, 'restingThickness', restingThickness)
         call mpas_pool_get_array(verticalMeshPool, 'refLayerThickness', refLayerThickness)
         call mpas_pool_get_array(verticalMeshPool, 'refZMid', refZMid)
@@ -292,6 +236,7 @@ contains
         call mpas_pool_get_array(tracersSurfaceRestoringFieldsPool, 'activeTracersSurfaceRestoringValue', &
             activeTracersSurfaceRestoringValue, 1)
 
+        minLevelCell(:) = 1
 
         ! flat bottom
         maxLevelCell(:) = nVertLevels
@@ -314,10 +259,14 @@ contains
             refBottomDepth(k) = refBottomDepth(k-1) + columnThicknessFraction(k)*abs(config_isomip_bottom_depth)
         end do
 
-        ! Compute refLayerThickness and refZMid
-        call ocn_compute_layerThickness_zMid_from_bottomDepth(refLayerThickness,refZMid, &
-             refBottomDepth,refBottomDepth(nVertLevels), &
-             nVertLevels,nVertLevels,iErr)
+        ! Compute refLayerThickness
+        call ocn_compute_z_level_layerThickness(refLayerThickness, refBottomDepth, 0.0_RKIND, &
+                                                refBottomDepth(nVertLevels), 1,               &
+                                                nVertLevels, nVertLevels, iErr)
+
+        ! Compute refZMid
+        call ocn_compute_zMid_from_layerThickness(refZMid, refLayerThickness, 0.0_RKIND, 1, &
+                                                  nVertLevels, nVertLevels, iErr)
 
         fCell(:) = config_isomip_coriolis_parameter
         fEdge(:) = config_isomip_coriolis_parameter
@@ -325,7 +274,7 @@ contains
 
         landIceFraction(:) = 0.0_RKIND
         landIceSurfaceTemperature(:) = -25.0_RKIND !doesn't matter because ice is insulating
-        modifySSHMask(:) = 0
+        modifyLandIcePressureMask(:) = 0
         landIceMask(:) = 0
 
 
@@ -352,7 +301,7 @@ contains
           end if
 
           if(ssh(iCell) < 0.0_RKIND) then
-            modifySSHMask(iCell) = 1
+            modifyLandIcePressureMask(iCell) = 1
           end if
 
           if(.not. associated(activeTracers)) then
@@ -398,26 +347,24 @@ contains
 
       ! compute the vertical grid (layerThickness, restingThickness, maxLevelCell, zMid)
       !  based on ssh, bottomDepth and refBottomDepth
-      call ocn_init_ssh_and_landIcePressure_vertical_grid(domain, iErr)
+      call ocn_init_vertical_grid(domain, iErr=iErr)
 
       if(iErr .ne. 0) then
-        call mpas_log_write( 'ocn_init_ssh_and_landIcePressure_vertical_grid failed.', MPAS_LOG_CRIT)
-        return
+        call mpas_log_write( 'ocn_init_vertical_grid failed.', MPAS_LOG_CRIT)
+        call mpas_dmpar_finalize(domain % dminfo)
       end if
 
-      ! compute or update the land-ice pressure (or possibly SSH), also computing density along the way
-      ! If this is the initial guess, the vertical grid and activeTracers may also be recomputed based on SSH
+      ! compute the land-ice pressure, also computing density along the way.
       call ocn_init_ssh_and_landIcePressure_balance(domain, iErr)
 
       if(iErr .ne. 0) then
          call mpas_log_write( 'ocn_init_ssh_and_landIcePressure_balance failed.', MPAS_LOG_CRIT)
-         return
+         call mpas_dmpar_finalize(domain % dminfo)
       end if
 
       block_ptr => domain % blocklist
       do while(associated(block_ptr))
         call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
-        call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
 
         call ocn_compute_Haney_number(domain, iErr)
 

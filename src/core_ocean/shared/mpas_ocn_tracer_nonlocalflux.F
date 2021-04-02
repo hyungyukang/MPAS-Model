@@ -25,6 +25,7 @@ module ocn_tracer_nonlocalflux
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
+   use ocn_config
 
    implicit none
    private
@@ -128,6 +129,7 @@ contains
 
       nCells = nCellsArray( 1 )
 
+      !$omp parallel
       !$omp do schedule(runtime) private(k, iTracer, fluxTopOfCell, fluxBottomOfCell)
       do iCell = 1, nCells
         do k = 2, maxLevelCell(iCell)-1
@@ -158,6 +160,7 @@ contains
 
       end do
       !$omp end do
+      !$omp end parallel
 
       call mpas_timer_stop('non-local flux')
 
@@ -183,12 +186,8 @@ contains
    !--------------------------------------------------------------------
 
       integer, intent(out) :: err !< Output: error flag
-      logical, pointer :: config_disable_tr_nonlocalflux, config_use_cvmix_kpp
 
       err = 0
-
-      call mpas_pool_get_config(ocnConfigs, 'config_disable_tr_nonlocalflux', config_disable_tr_nonlocalflux)
-      call mpas_pool_get_config(ocnConfigs, 'config_use_cvmix_kpp', config_use_cvmix_kpp)
 
       nonLocalFluxOn = .true.
 

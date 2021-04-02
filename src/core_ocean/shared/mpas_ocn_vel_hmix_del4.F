@@ -21,12 +21,10 @@
 module ocn_vel_hmix_del4
 
    use mpas_timer
-   use mpas_derived_types
-   use mpas_pool_routines
-   use mpas_threading
-   use mpas_vector_operations
-   use mpas_matrix_operations
+   use mpas_log
    use ocn_constants
+   use ocn_config
+   use ocn_mesh
 
    implicit none
    private
@@ -53,7 +51,12 @@ module ocn_vel_hmix_del4
    !
    !--------------------------------------------------------------------
 
-   logical :: hmixDel4On       !< local flag to determine whether del4 chosen
+   logical :: &
+      hmixDel4Off      !< on/off flag to determine whether del4 chosen
+
+   real (kind=RKIND) :: &
+      viscDel4,         &!< biharmonic viscosity coefficient
+      divFactor          !< factor for divergence term
 
 !***********************************************************************
 
@@ -63,7 +66,7 @@ contains
 !
 !  routine ocn_vel_hmix_del4_tend
 !
-!> \brief   Computes tendency term for biharmonic horizontal momentum mixing
+!> \brief   Computes tendency for biharmonic horizontal momentum mixing
 !> \author  Mark Petersen, Doug Jacobsen, Todd Ringler
 !> \date    September 2011
 !> \details
@@ -77,196 +80,214 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_vel_hmix_del4_tend(meshPool, scratchPool, divergence, relativeVorticity, tend, err)!{{{
+   subroutine ocn_vel_hmix_del4_tend(div, relVort, tend, err)!{{{
 
       !-----------------------------------------------------------------
-      !
       ! input variables
-      !
       !-----------------------------------------------------------------
 
       real (kind=RKIND), dimension(:,:), intent(in) :: &
-         divergence      !< Input: velocity divergence
-
-      type (mpas_pool_type), intent(in) :: scratchPool !< Input: scratch variables
-
-      real (kind=RKIND), dimension(:,:), intent(in) :: &
-         relativeVorticity       !< Input: relative vorticity
-
-      type (mpas_pool_type), intent(in) :: &
-         meshPool           !< Input: mesh information
+         div,           &!< [in] velocity divergence
+         relVort         !< [in] relative vorticity
 
       !-----------------------------------------------------------------
-      !
       ! input/output variables
-      !
       !-----------------------------------------------------------------
 
       real (kind=RKIND), dimension(:,:), intent(inout) :: &
-         tend       !< Input/Output: velocity tendency
+         tend            !< [inout] accumulated velocity tendency
 
       !-----------------------------------------------------------------
-      !
       ! output variables
-      !
       !-----------------------------------------------------------------
 
-      integer, intent(out) :: err !< Output: error flag
+      integer, intent(out) :: err !< [out] error flag
 
       !-----------------------------------------------------------------
-      !
       ! local variables
-      !
       !-----------------------------------------------------------------
 
-      integer :: iEdge, cell1, cell2, vertex1, vertex2, k, i
-      integer :: iCell, iVertex, nEdges, nCells, nVertices
-      integer, pointer :: nVertLevels, vertexDegree
-      integer, dimension(:), pointer :: nEdgesArray, nCellsArray, nVerticesArray
+      integer ::                      &
+         iEdge, iCell, iVertex, k, i, &! loop counters 
+         cell1, cell2,     &! neighbor cell addresses across edge
+         vertex1, vertex2, &! neighbor vertex addresses along edge
+         nEdges, nCells, nVertices ! num edges,cells,vertices incl halos
 
-      integer, dimension(:), pointer :: maxLevelEdgeTop, maxLevelVertexTop, &
-            maxLevelCell, nEdgesOnCell
-      integer, dimension(:,:), pointer :: cellsOnEdge, verticesOnEdge, edgeMask, edgesOnVertex, edgesOnCell, edgeSignOnVertex, &
-                                          edgeSignOnCell
+      real (kind=RKIND) :: &
+         uDiff,            &! diffusion operator temporary
+         areaCellInv,      &! 1/area of cell
+         areaTriInv,       &! 1/area of triangle
+         dcEdgeInv,        &! 1/dcEdge
+         dvEdgeInv,        &! 1/dvEdge
+         visc4              ! scaled biharmonic viscosity coeff
 
+      ! Scratch Arrays
+      real (kind=RKIND), dimension(:,:), allocatable :: &
+         del2div,     &!
+         del2relVort, &!
+         del2u
 
-      real (kind=RKIND) :: u_diffusion, invAreaCell1, invAreaCell2, invAreaTri1, &
-            invAreaTri2, invDcEdge, invDvEdge, r_tmp
-      real (kind=RKIND), dimension(:), pointer :: dcEdge, dvEdge, areaTriangle, &
-            meshScalingDel4, areaCell
+      ! End preamble
+      !-----------------------------------------------------------------
+      ! Begin code
 
-      real (kind=RKIND), dimension(:,:), pointer :: delsq_divergence, delsq_relativeVorticity, delsq_u
-      type (field2DReal), pointer :: delsq_uField, delsq_divergenceField, delsq_relativeVorticityField
-
-      real (kind=RKIND), pointer :: config_mom_del4, config_mom_del4_div_factor
+      !*** initialize error code and return if not selected
+      !*** otherwise start timer
 
       err = 0
-
-      if(.not.hmixDel4On) return
-
+      if (hmixDel4Off) return
       call mpas_timer_start("vel del4")
 
-      call mpas_pool_get_config(ocnConfigs, 'config_mom_del4', config_mom_del4)
-      call mpas_pool_get_config(ocnConfigs, 'config_mom_del4_div_factor', config_mom_del4_div_factor)
+      !*** allocate temporaries
 
-      call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
-      call mpas_pool_get_dimension(meshPool, 'nEdgesArray', nEdgesArray)
-      call mpas_pool_get_dimension(meshPool, 'nVerticesArray', nVerticesArray)
-      call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
-      call mpas_pool_get_dimension(meshPool, 'vertexDegree', vertexDegree)
+      allocate(del2u(nVertLevels, nEdgesAll + 1), &
+               del2div(nVertLevels, nCellsAll + 1), &
+               del2relVort(nVertLevels, nVerticesAll + 1))
+      !$acc enter data create(del2u, del2div, del2relVort)
 
-      call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
-      call mpas_pool_get_array(meshPool, 'maxLevelVertexTop', maxLevelVertexTop)
-      call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-      call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
-      call mpas_pool_get_array(meshPool, 'verticesOnEdge', verticesOnEdge)
-      call mpas_pool_get_array(meshPool, 'dcEdge', dcEdge)
-      call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
-      call mpas_pool_get_array(meshPool, 'areaTriangle', areaTriangle)
-      call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
-      call mpas_pool_get_array(meshPool, 'meshScalingDel4', meshScalingDel4)
-      call mpas_pool_get_array(meshPool, 'edgeMask', edgeMask)
-      call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
-      call mpas_pool_get_array(meshPool, 'edgesOnVertex', edgesOnVertex)
-      call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
-      call mpas_pool_get_array(meshPool, 'edgeSignOnVertex', edgeSignOnVertex)
-      call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
+      nEdges = nEdgesHalo(2)
 
-      call mpas_pool_get_field(scratchPool, 'delsq_u', delsq_uField)
-      call mpas_pool_get_field(scratchPool, 'delsq_divergence', delsq_divergenceField)
-      call mpas_pool_get_field(scratchPool, 'delsq_relativeVorticity', delsq_relativeVorticityField)
-      call mpas_allocate_scratch_field(delsq_uField, .true., .false.)
-      call mpas_allocate_scratch_field(delsq_divergenceField, .true., .false.)
-      call mpas_allocate_scratch_field(delsq_relativeVorticityField, .true., .false.)
-
-      delsq_u => delsq_uField % array
-      delsq_divergence => delsq_divergenceField % array
-      delsq_relativeVorticity => delsq_relativeVorticityField % array
-
-      nEdges = nEdgesArray( 3 )
-
-      !Compute delsq_u
-      !$omp do schedule(runtime)
+      !Compute Laplacian of velocity
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(cellsOnEdge, verticesOnEdge, maxLevelEdgeTop, &
+      !$acc            dvEdge, dcEdge, del2u, div, relVort) &
+      !$acc    private(k, cell1, cell2, vertex1, vertex2, &
+      !$acc            dcEdgeInv, dvEdgeInv)
+#else
+      !$omp parallel
+      !$omp do schedule(runtime) &
+      !$omp    private(k, cell1, cell2, vertex1, vertex2, &
+      !$omp            dcEdgeInv, dvEdgeInv)
+#endif
       do iEdge = 1, nEdges
-         delsq_u(:, iEdge) = 0.0_RKIND
+         del2u(:, iEdge) = 0.0_RKIND
          cell1 = cellsOnEdge(1,iEdge)
          cell2 = cellsOnEdge(2,iEdge)
 
          vertex1 = verticesOnEdge(1,iEdge)
          vertex2 = verticesOnEdge(2,iEdge)
 
-         invDcEdge = 1.0_RKIND / dcEdge(iEdge)
-         invDvEdge = 1.0_RKIND / max(dvEdge(iEdge), 0.25_RKIND*dcEdge(iEdge))
+         dcEdgeInv = 1.0_RKIND / dcEdge(iEdge)
+         dvEdgeInv = 1.0_RKIND / max(dvEdge(iEdge), 0.25_RKIND*dcEdge(iEdge))
 
          do k=1,maxLevelEdgeTop(iEdge)
             ! Compute \nabla^2 u = \nabla divergence + k \times \nabla relativeVorticity
-            delsq_u(k, iEdge) = ( divergence(k,cell2)  - divergence(k,cell1) ) * invDcEdge  &
-                               -( relativeVorticity(k,vertex2) - relativeVorticity(k,vertex1)) * invDvEdge
+            del2u(k,iEdge) = (div(k,cell2) - div(k,cell1))*dcEdgeInv &
+                            -(relVort(k,vertex2) - relVort(k,vertex1))*&
+                                                           dvEdgeInv
          end do
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
+      !$omp end parallel
+#endif
 
-      nVertices = nVerticesArray( 2 )
+      nVertices = nVerticesHalo(1)
 
-      ! Compute delsq_relativeVorticity
-      !$omp do schedule(runtime)
+      ! Compute del2 of relative vorticity
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(edgesOnVertex, maxLevelVertexTop, dcEdge, &
+      !$acc            areaTriangle, edgeSignOnVertex, del2u, &
+      !$acc            del2relVort) &
+      !$acc    private(i, k, iEdge, areaTriInv)
+#else
+      !$omp parallel
+      !$omp do schedule(runtime) private(i, k, iEdge, areaTriInv)
+#endif
       do iVertex = 1, nVertices
-         delsq_relativeVorticity(:, iVertex) = 0.0_RKIND
-         invAreaTri1 = 1.0_RKIND / areaTriangle(iVertex)
+         del2relVort(:, iVertex) = 0.0_RKIND
+         areaTriInv = 1.0_RKIND/areaTriangle(iVertex)
          do i = 1, vertexDegree
             iEdge = edgesOnVertex(i, iVertex)
             do k = 1, maxLevelVertexTop(iVertex)
-               delsq_relativeVorticity(k, iVertex) = delsq_relativeVorticity(k, iVertex) + edgeSignOnVertex(i, iVertex) &
-                                                   * dcEdge(iEdge) * delsq_u(k, iEdge) * invAreaTri1
+               del2relVort(k,iVertex) = del2relVort(k,iVertex) &
+                                      + edgeSignOnVertex(i,iVertex) &
+                                       *dcEdge(iEdge)*del2u(k,iEdge)*areaTriInv
             end do
          end do
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
+      !$omp end parallel
+#endif
 
-      nCells = nCellsArray( 2 )
+      nCells = nCellsHalo(1)
 
-      ! Compute delsq_divergence
-      !$omp do schedule(runtime)
+      ! Compute del2 of divergence
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(nEdgesOnCell, edgesOnCell, maxLevelCell, dvEdge,&
+      !$acc            edgeSignOnCell, areaCell, del2u, del2div) &
+      !$acc    private(i, k, iEdge, areaCellInv)
+#else
+      !$omp parallel
+      !$omp do schedule(runtime) private(i, k, iEdge, areaCellInv)
+#endif
       do iCell = 1, nCells
-         delsq_divergence(:, iCell) = 0.0_RKIND
-         invAreaCell1 = 1.0_RKIND / areaCell(iCell)
+         del2div(:, iCell) = 0.0_RKIND
+         areaCellInv = 1.0_RKIND / areaCell(iCell)
          do i = 1, nEdgesOnCell(iCell)
             iEdge = edgesOnCell(i, iCell)
             do k = 1, maxLevelCell(iCell)
-               delsq_divergence(k, iCell) = delsq_divergence(k, iCell) - edgeSignOnCell(i, iCell) * dvEdge(iEdge) &
-                                          * delsq_u(k, iEdge) * invAreaCell1
+               del2div(k,iCell) = del2div(k,iCell) - &
+                                  edgeSignOnCell(i,iCell)*dvEdge(iEdge) &
+                                 *del2u(k,iEdge)*areaCellInv
             end do
          end do
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
+      !$omp end parallel
+#endif
 
-      nEdges = nEdgesArray( 1 )
+      ! Compute final tendency \kappa \nabla^4 u
+      ! as  \nabla div(\nabla^2 u) + k \times 
+      !     \nabla ( k \cross curl(\nabla^2 u) )
 
-      ! Compute - \kappa \nabla^4 u
-      ! as  \nabla div(\nabla^2 u) + k \times \nabla ( k \cross curl(\nabla^2 u) )
-      !$omp do schedule(runtime)
-      do iEdge = 1, nEdges
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(cellsOnEdge, verticesOnEdge, maxLevelEdgeTop, &
+      !$acc            dcEdge, dvEdge, meshScalingDel4, edgeMask, &
+      !$acc            del2div, del2relVort, tend) &
+      !$acc private(k, cell1, cell2, vertex1, vertex2, &
+      !$acc         dcEdgeInv, dvEdgeInv, visc4, uDiff)
+#else
+      !$omp parallel
+      !$omp do schedule(runtime) &
+      !$omp private(k, cell1, cell2, vertex1, vertex2, &
+      !$omp         dcEdgeInv, dvEdgeInv, visc4, uDiff)
+#endif
+      do iEdge = 1, nEdgesOwned
          cell1 = cellsOnEdge(1,iEdge)
          cell2 = cellsOnEdge(2,iEdge)
          vertex1 = verticesOnEdge(1,iEdge)
          vertex2 = verticesOnEdge(2,iEdge)
 
-         invDcEdge = 1.0_RKIND / dcEdge(iEdge)
-         invDvEdge = 1.0_RKIND / dvEdge(iEdge)
-         r_tmp = config_mom_del4 * meshScalingDel4(iEdge)
+         dcEdgeInv = 1.0_RKIND / dcEdge(iEdge)
+         dvEdgeInv = 1.0_RKIND / dvEdge(iEdge)
+         visc4 = viscDel4*meshScalingDel4(iEdge)
 
-         do k=1,maxLevelEdgeTop(iEdge)
-            u_diffusion = config_mom_del4_div_factor*(delsq_divergence(k,cell2) - delsq_divergence(k,cell1)) * invDcEdge  &
-                        - (delsq_relativeVorticity(k,vertex2) - delsq_relativeVorticity(k,vertex1) ) * invDvEdge
+         do k=1, maxLevelEdgeTop(iEdge)
+            uDiff = divFactor*(del2div(k,cell2) - del2div(k,cell1))* &
+                                                          dcEdgeInv  &
+                  - (del2relVort(k,vertex2) - del2relVort(k,vertex1))* &
+                                                          dvEdgeInv
 
-            tend(k,iEdge) = tend(k,iEdge) - edgeMask(k, iEdge) * u_diffusion * r_tmp
+            tend(k,iEdge) = tend(k,iEdge) - &
+                            edgeMask(k,iEdge)*uDiff*visc4
          end do
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
+      !$omp end parallel
+#endif
 
-      call mpas_deallocate_scratch_field(delsq_uField, .true.)
-      call mpas_deallocate_scratch_field(delsq_divergenceField, .true.)
-      call mpas_deallocate_scratch_field(delsq_relativeVorticityField, .true.)
+      !$acc exit data delete(del2u, del2div, del2relVort)
+      deallocate(del2u, &
+                 del2div, &
+                 del2relVort)
 
       call mpas_timer_stop("vel del4")
 
@@ -289,29 +310,36 @@ contains
 
    subroutine ocn_vel_hmix_del4_init(err)!{{{
 
-   integer, intent(out) :: err !< Output: error flag
+      !-----------------------------------------------------------------
+      ! output variables
+      !-----------------------------------------------------------------
 
-   !--------------------------------------------------------------------
-   !
-   ! set some local module variables based on input config choices
-   !
-   !--------------------------------------------------------------------
+      integer, intent(out) :: err !< [out] error flag
 
-   real (kind=RKIND), pointer :: config_mom_del4
-   logical, pointer :: config_use_mom_del4
+      ! End preamble
+      !-----------------------------------------------------------------
+      ! Begin code
 
-   err = 0
+      !*** initialize return error code and set module variable defaults
 
-   call mpas_pool_get_config(ocnConfigs, 'config_mom_del4', config_mom_del4)
-   call mpas_pool_get_config(ocnConfigs, 'config_use_mom_del4', config_use_mom_del4)
+      err = 0
+      hmixDel4Off = .true.
+      viscDel4    = 0.0_RKIND
+      divFactor   = 1.0_RKIND
 
-   hmixDel4On = .false.
+      !*** reset module variables based on input configuration
 
-   if ( config_mom_del4 > 0.0_RKIND ) then
-      hmixDel4On = .true.
-   endif
-
-   if(.not.config_use_mom_del4) hmixDel4On = .false.
+      if (config_use_mom_del4) then
+         hmixDel4Off = .false.
+         viscDel4    = config_mom_del4
+         divFactor   = config_mom_del4_div_factor
+         if ( config_mom_del4 <= 0.0_RKIND ) then
+            call mpas_log_write( &
+               'vel_hmix_del4_init: config_mom_del4 must be > 0 ', &
+               MPAS_LOG_ERR)
+            err = -1
+         endif
+      endif
 
    !--------------------------------------------------------------------
 

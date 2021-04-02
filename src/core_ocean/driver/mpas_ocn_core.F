@@ -31,7 +31,10 @@ module ocn_core
 
    use ocn_forward_mode
    use ocn_analysis_mode
+   use ocn_config
+#ifndef EXCLUDE_INIT_MODE
    use ocn_init_mode
+#endif
 
    implicit none
    private
@@ -59,7 +62,6 @@ module ocn_core
       character(len=*), intent(out) :: startTimeStamp
       integer :: ierr
 
-      character (len=StrKIND), pointer :: config_ocean_run_mode
       integer :: numThreads
 
       ierr = 0
@@ -76,8 +78,10 @@ module ocn_core
          ierr = ocn_forward_mode_init(domain, startTimeStamp)
       else if ( trim(config_ocean_run_mode) == 'analysis' ) then
          ierr = ocn_analysis_mode_init(domain, startTimeStamp)
+#ifndef EXCLUDE_INIT_MODE
       else if ( trim(config_ocean_run_mode) == 'init' ) then
          ierr = ocn_init_mode_init(domain, startTimeStamp)
+#endif
       end if
 
    end function ocn_core_init!}}}
@@ -101,18 +105,16 @@ module ocn_core
 
       integer :: iErr
 
-      character(len=StrKIND), pointer :: config_ocean_run_mode
-
       iErr = 0
-
-      call mpas_pool_get_config(domain % configs, 'config_ocean_run_mode', config_ocean_run_mode)
 
       if ( trim(config_ocean_run_mode) == 'forward' ) then
          ierr = ocn_forward_mode_run(domain)
       else if ( trim(config_ocean_run_mode) == 'analysis' ) then
          ierr = ocn_analysis_mode_run(domain)
+#ifndef EXCLUDE_INIT_MODE
       else if ( trim(config_ocean_run_mode) == 'init' ) then
          ierr = ocn_init_mode_run(domain)
+#endif
       end if
 
    end function ocn_core_run!}}}
@@ -134,18 +136,16 @@ module ocn_core
       type (domain_type), intent(inout) :: domain
       integer :: ierr
 
-      character(len=StrKIND), pointer :: config_ocean_run_mode
-
       ierr = 0
-
-      call mpas_pool_get_config(domain % configs, 'config_ocean_run_mode', config_ocean_run_mode)
 
       if ( trim(config_ocean_run_mode) == 'forward' ) then
          ierr = ocn_forward_mode_finalize(domain)
       else if (trim(config_ocean_run_mode) == 'analysis' ) then
          ierr = ocn_analysis_mode_finalize(domain)
+#ifndef EXCLUDE_INIT_MODE
       else if (trim(config_ocean_run_mode) == 'init' ) then
          ierr = ocn_init_mode_finalize(domain)
+#endif
       end if
 
    end function ocn_core_finalize!}}}

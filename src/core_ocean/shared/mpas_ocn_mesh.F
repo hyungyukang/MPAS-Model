@@ -62,6 +62,11 @@ module ocn_mesh
    integer, public, dimension(:), pointer :: &
       nEdgesOnEdge, &! number of edges connected to each edge point
       nEdgesOnCell, &! number of edges associated with each cell center
+      minLevelCell, &! max ocean level at bottom of cell
+      minLevelEdgeTop, &! max ocean level at top    of edge column
+      minLevelEdgeBot, &! max ocean level at bottom of edge column
+      minLevelVertexTop, &! max ocean level at top    of each vertex
+      minLevelVertexBot, &! max ocean level at bottom of each vertex
       maxLevelCell, &! max ocean level at bottom of cell
       maxLevelEdgeTop, &! max ocean level at top    of edge column
       maxLevelEdgeBot, &! max ocean level at bottom of edge column
@@ -227,8 +232,6 @@ contains
       !*** end of preamble, begin code
       !***
 
-      !$omp master
-
       blockCount = 0
       block => domain%blocklist
       do while (associated(block))
@@ -309,6 +312,16 @@ contains
                                   nEdgesOnEdge)
          call mpas_pool_get_array(meshPool, 'nEdgesOnCell', &
                                   nEdgesOnCell)
+         call mpas_pool_get_array(meshPool, 'minLevelCell', &
+                                  minLevelCell)
+         call mpas_pool_get_array(meshPool, 'minLevelEdgeTop', &
+                                  minLevelEdgeTop)
+         call mpas_pool_get_array(meshPool, 'minLevelEdgeBot', &
+                                  minLevelEdgeBot)
+         call mpas_pool_get_array(meshPool, 'minLevelVertexTop', &
+                                  minLevelVertexTop)
+         call mpas_pool_get_array(meshPool, 'minLevelVertexBot', &
+                                  minLevelVertexBot)
          call mpas_pool_get_array(meshPool, 'maxLevelCell', &
                                   maxLevelCell)
          call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', &
@@ -521,6 +534,11 @@ contains
          !$acc                   nVerticesHalo,            &
          !$acc                   nEdgesOnEdge,             &
          !$acc                   nEdgesOnCell,             &
+         !$acc                   minLevelCell,             &
+         !$acc                   minLevelEdgeTop,          &
+         !$acc                   minLevelEdgeBot,          &
+         !$acc                   minLevelVertexTop,        &
+         !$acc                   minLevelVertexBot,        &
          !$acc                   maxLevelCell,             &
          !$acc                   maxLevelEdgeTop,          &
          !$acc                   maxLevelEdgeBot,          &
@@ -593,9 +611,6 @@ contains
          block => block%next
       end do
 
-      !$omp end master
-      !$omp barrier
-
 !-------------------------------------------------------------------------------
 
    end subroutine ocn_meshCreate !}}}
@@ -635,9 +650,6 @@ contains
 
       err = 0
 
-      !$omp barrier
-      !$omp master
-
       ! First remove data from the device. Must remove components first,
       ! then remove the mesh type itself.
 
@@ -658,6 +670,11 @@ contains
       !$acc                  nVerticesHalo,     &
       !$acc                  nEdgesOnEdge,      &
       !$acc                  nEdgesOnCell,      &
+      !$acc                  minLevelCell,      &
+      !$acc                  minLevelEdgeTop,   &
+      !$acc                  minLevelEdgeBot,   &
+      !$acc                  minLevelVertexTop, &
+      !$acc                  minLevelVertexBot, &
       !$acc                  maxLevelCell,      &
       !$acc                  maxLevelEdgeTop,   &
       !$acc                  maxLevelEdgeBot,   &
@@ -747,6 +764,11 @@ contains
 
       nullify (nEdgesOnEdge, &
                nEdgesOnCell, &
+               minLevelCell, &
+               minLevelEdgeTop, &
+               minLevelEdgeBot, &
+               minLevelVertexTop, &
+               minLevelVertexBot, &
                maxLevelCell, &
                maxLevelEdgeTop, &
                maxLevelEdgeBot, &
@@ -820,8 +842,6 @@ contains
                   edgeSignOnVertex, &
                   highOrderAdvectionMask)
 
-      !$omp end master
-
 !-------------------------------------------------------------------------------
 
    end subroutine ocn_meshDestroy !}}}
@@ -873,8 +893,6 @@ contains
       !***
       !*** end of preamble, begin code
       !***
-
-      !$omp master
 
       ! already check during create that there should only be one block
       block => domain%blocklist
@@ -1044,9 +1062,11 @@ contains
       end do
       end do
 
+      ! Allocatable array was updated in ocn_init_routines_setup_sign_and_index_fields.  Now the
+      ! pointer needs to be udpated
       do n = 1, nCellsAll+1
       do k = 1, maxEdges
-         edgeSignOnCell(k, n) = real(edgeSignOnCellTmp(k, n), RKIND)
+         edgeSignOnCellTmp(k, n) = int(edgeSignOnCell(k, n))
       end do
       end do
 
@@ -1066,10 +1086,12 @@ contains
       end do
       end do
 
+      ! Allocatable array was updated in ocn_init_routines_setup_sign_and_index_fields.  Now the
+      ! pointer needs to be udpated
       do n = 1, nVerticesAll+1
       do k = 1, vertexDegree
-         edgeSignOnVertex(k, n) = &
-            real(edgeSignOnVertexTmp(k, n), RKIND)
+         edgeSignOnVertexTmp(k, n) = &
+            int(edgeSignOnVertex(k, n))
       end do
       end do
 
@@ -1094,6 +1116,11 @@ contains
       !$acc               nVerticesHalo,            &
       !$acc               nEdgesOnEdge,             &
       !$acc               nEdgesOnCell,             &
+      !$acc               minLevelCell,             &
+      !$acc               minLevelEdgeTop,          &
+      !$acc               minLevelEdgeBot,          &
+      !$acc               minLevelVertexTop,        &
+      !$acc               minLevelVertexBot,        &
       !$acc               maxLevelCell,             &
       !$acc               maxLevelEdgeTop,          &
       !$acc               maxLevelEdgeBot,          &
@@ -1162,9 +1189,6 @@ contains
       !$acc               derivTwo,                 &
       !$acc               cellTangentPlane,         &
       !$acc               coeffs_reconstruct)
-
-      !$omp end master
-      !$omp barrier
 
 !-------------------------------------------------------------------------------
 

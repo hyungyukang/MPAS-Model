@@ -54,7 +54,8 @@ module ocn_TEM_PLATE
    use mpas_stream_manager
 
    use ocn_constants
-   use ocn_diagnostics_routines
+   use ocn_config
+   use ocn_diagnostics_variables
 
    implicit none
    private
@@ -184,8 +185,6 @@ contains
       type (block_type), pointer :: block
       type (mpas_pool_type), pointer :: statePool
       type (mpas_pool_type), pointer :: meshPool
-      type (mpas_pool_type), pointer :: scratchPool
-      type (mpas_pool_type), pointer :: diagnosticsPool
 
       ! Here are some example variables which may be needed for your analysis member
       integer, pointer :: nVertLevels, nCellsSolve, nEdgesSolve, nVerticesSolve, num_tracers
@@ -202,8 +201,6 @@ contains
       do while (associated(block))
          call mpas_pool_get_subpool(block % structs, 'state', statePool)
          call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-         call mpas_pool_get_subpool(block % structs, 'scratch', scratchPool)
-         call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
          call mpas_pool_get_subpool(block % structs, 'temPlateAM', temPlateAMPool)
 
          ! Here are some example variables which may be needed for your analysis member

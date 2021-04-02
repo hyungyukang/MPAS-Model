@@ -27,6 +27,8 @@ module ocn_init_tidal_boundary
    use mpas_dmpar
 
    use ocn_constants
+   use ocn_config
+   use ocn_diagnostics_variables
    use ocn_init_vertical_grids
    use ocn_init_cell_markers
 
@@ -64,7 +66,7 @@ contains
 !  routine ocn_init_setup_tidal_boundary
 !
 !> \brief   Setup for Tidal Boundary on drying slope
-!> \author  Phillip Wolfram
+!> \author  Phillip Wolfram, Xylar Asay-Davis
 !> \date    04/05/2019
 !> \details
 !>  This routine sets up the initial conditions for the tidal_boundary test case.
@@ -88,71 +90,33 @@ contains
     type (mpas_pool_type), pointer :: meshPool
     type (mpas_pool_type), pointer :: forcingPool
     type (mpas_pool_type), pointer :: statePool
-    type (mpas_pool_type), pointer :: diagnosticsPool
     type (mpas_pool_type), pointer :: verticalMeshPool
     type (mpas_pool_type), pointer :: tracersPool
 
-    integer :: iCell, k
+    integer :: iCell, k, N
 
     ! Define dimensions
     integer, pointer :: nCellsSolve, nEdgesSolve, nVertLevels, nVertLevelsP1
     integer, pointer :: index_temperature, index_salinity, index_tracer1
 
     ! Define arrays
-    integer, dimension(:), pointer :: maxLevelCell
+    integer, dimension(:), pointer :: minLevelCell, maxLevelCell
+    integer, dimension(:), pointer :: vegetationMask
+    real (kind=RKIND), dimension(:), pointer :: vegetationHeight,vegetationDensity, vegetationDiameter
     real (kind=RKIND), dimension(:), pointer :: yCell, refBottomDepth, bottomDepth, vertCoordMovementWeights, dcEdge
     real (kind=RKIND), dimension(:), pointer :: tidalInputMask
+    real (kind=RKIND), dimension(:), pointer :: bottomDrag
     real (kind=RKIND), dimension(:), pointer :: ssh
-    real (kind=RKIND), dimension(:,:), pointer :: layerThickness, restingThickness, zMid
+    real (kind=RKIND), dimension(:,:), pointer :: layerThickness, restingThickness
     real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers, debugTracers
-
-    ! Define configs
-    character (len=StrKIND), pointer :: config_init_configuration, &
-                                        config_vertical_grid, &
-                                        config_tidal_boundary_layer_type
-    logical, pointer :: config_tidal_boundary_use_distances, config_alter_ICs_for_pbcs
-    logical, pointer :: config_use_wetting_drying, config_tidal_start_dry
-    real (kind=RKIND), pointer :: config_tidal_boundary_right_bottom_depth, &
-                                  config_tidal_boundary_left_bottom_depth, &
-                                  config_tidal_boundary_plug_width_dist, config_tidal_boundary_plug_width_frac, &
-                                  config_tidal_boundary_plug_temperature, config_tidal_boundary_domain_temperature, &
-                                  config_tidal_boundary_salinity, config_tidal_boundary_isopycnal_min_thickness, &
-                                  config_tidal_boundary_left_value, &
-                                  config_tidal_boundary_right_value, &
-                                  config_drying_min_cell_height
-    integer, pointer :: config_tidal_boundary_min_vert_levels
-
-
     real (kind=RKIND), dimension(:), pointer :: interfaceLocations
     real (kind=RKIND),  parameter :: eps=1.0e-12
+    real (kind=RKIND) :: cff1,cff2,cff3, dep_mark1, dep_mark2 ! intermediate variables
 
     iErr = 0
 
-
-    call mpas_pool_get_config(ocnConfigs, 'config_init_configuration', config_init_configuration)
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_boundary_layer_type', config_tidal_boundary_layer_type)
-
     call mpas_log_write('here')
     if(config_init_configuration .ne. trim('tidal_boundary')) return
-
-    call mpas_pool_get_config(ocnConfigs, 'config_vertical_grid', config_vertical_grid)
-
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_boundary_min_vert_levels', config_tidal_boundary_min_vert_levels)
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_boundary_right_value', config_tidal_boundary_right_value)
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_boundary_left_value', config_tidal_boundary_left_value)
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_boundary_right_bottom_depth', config_tidal_boundary_right_bottom_depth)
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_boundary_left_bottom_depth', config_tidal_boundary_left_bottom_depth)
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_boundary_plug_width_frac', config_tidal_boundary_plug_width_frac)
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_boundary_plug_temperature', config_tidal_boundary_plug_temperature)
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_boundary_domain_temperature', config_tidal_boundary_domain_temperature)
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_boundary_salinity', config_tidal_boundary_salinity)
-    call mpas_pool_get_config(ocnConfigs, 'config_alter_ICs_for_pbcs', config_alter_ICs_for_pbcs)
-
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_start_dry', config_tidal_start_dry)
-    call mpas_pool_get_config(ocnConfigs, 'config_use_wetting_drying', config_use_wetting_drying)
-    call mpas_pool_get_config(ocnConfigs, 'config_drying_min_cell_height', config_drying_min_cell_height)
-
-    call mpas_pool_get_config(ocnConfigs, 'config_tidal_boundary_use_distances', config_tidal_boundary_use_distances)
 
     call mpas_pool_get_subpool(domain % blocklist % structs, 'mesh', meshPool)
     call mpas_pool_get_dimension(meshPool, 'nVertLevelsP1', nVertLevelsP1)
@@ -199,7 +163,6 @@ contains
 
       call mpas_pool_get_array(meshPool, 'yCell', yCell)
       call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
-      call mpas_pool_get_subpool(block_ptr % structs, 'diagnostics', diagnosticsPool)
       call mpas_pool_get_subpool(block_ptr % structs, 'verticalMesh', verticalMeshPool)
       call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
 
@@ -210,6 +173,7 @@ contains
       call mpas_pool_get_dimension(tracersPool, 'index_salinity', index_salinity)
       call mpas_pool_get_dimension(tracersPool, 'index_tracer1', index_tracer1)
 
+      call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
       call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
       call mpas_pool_get_array(meshPool, 'refBottomDepth', refBottomDepth)
       call mpas_pool_get_array(meshPool, 'bottomDepth', bottomDepth)
@@ -218,7 +182,6 @@ contains
       call mpas_pool_get_array(tracersPool, 'activeTracers', activeTracers, 1)
       call mpas_pool_get_array(tracersPool, 'debugTracers', debugTracers, 1)
       call mpas_pool_get_array(statePool, 'layerThickness', layerThickness, 1)
-      call mpas_pool_get_array(diagnosticsPool, 'zMid', zMid)
       call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
 
       call mpas_pool_get_array(verticalMeshPool, 'restingThickness', restingThickness)
@@ -229,9 +192,19 @@ contains
       end if
 
       ! Set refBottomDepth, bottomDepth, and maxLevelCell
-      do k = 1, nVertLevels
-        refBottomDepth(k) = config_tidal_boundary_right_bottom_depth * interfaceLocations(k+1)
-      end do
+      if (min(config_tidal_boundary_left_bottom_depth, config_tidal_boundary_right_bottom_depth) < 0.0_RKIND) then
+        ! consider the case where there is wetting / drying and vertical mesh resolution is needed "on land"
+        do k = 1, nVertLevels
+          refBottomDepth(k) = config_tidal_boundary_left_bottom_depth + &
+            (config_tidal_boundary_right_bottom_depth - config_tidal_boundary_left_bottom_depth)* interfaceLocations(k+1)
+        end do
+      else
+        ! assumes we just need to build vertical mesh to deepest point (e.g., no "on land' vertical mesh)
+        do k = 1, nVertLevels
+          refBottomDepth(k) = &
+          max(config_tidal_boundary_left_bottom_depth, config_tidal_boundary_right_bottom_depth) * interfaceLocations(k+1)
+        end do
+      end if
 
       if (config_tidal_boundary_use_distances) then
         yMin = config_tidal_boundary_left_value
@@ -244,6 +217,78 @@ contains
           (config_tidal_boundary_right_bottom_depth - config_tidal_boundary_left_bottom_depth)
       end do
 
+      if (config_use_variable_drag) then
+        call mpas_pool_get_array(forcingPool, 'bottomDrag', bottomDrag)
+        do iCell = 1, nCellsSolve
+          bottomDrag(iCell) = config_tidal_forcing_left_Cd_or_n &
+            + (yCell(iCell) - yMin) / (yMax - yMin)  * &
+            (config_tidal_forcing_right_Cd_or_n - config_tidal_forcing_left_Cd_or_n)
+        end do
+      end if
+
+      if (config_use_vegetation_drag) then
+        call mpas_pool_get_array(forcingPool, 'vegetationMask', vegetationMask)
+        vegetationMask = 0
+        call mpas_pool_get_array(forcingPool, 'vegetationDiameter', vegetationDiameter)
+        vegetationDiameter = config_idealized_vegetation_diameter
+        call mpas_pool_get_array(forcingPool, 'vegetationHeight', vegetationHeight)
+        vegetationHeight = config_idealized_vegetation_height
+        call mpas_pool_get_array(forcingPool, 'vegetationDensity', vegetationDensity)
+        vegetationDensity = config_idealized_vegetation_density
+      endif
+
+      if (config_use_idealized_transect) then
+        call mpas_pool_get_array(forcingPool, 'bottomDrag', bottomDrag)
+        config_idealized_transect_Lmarsh = 1.0_RKIND - config_idealized_transect_Lcoast &
+                                                    - config_idealized_transect_Lshore
+        if (config_idealized_transect_Lmarsh .lt. 0.0_RKIND) then
+          call mpas_log_write("Lshore+Lcoast cannot be bigger than 1.0")
+          iErr = 1
+        endif
+        cff1 = yMax*config_idealized_transect_Lcoast
+        cff2 = yMax*config_idealized_transect_Lmarsh
+        cff3 = yMax*config_idealized_transect_Lshore
+        ! by defining the slopes and left_bottom_depth, the pre-defined right_bottom_depth won't work.
+        ! Need redefine it.
+        config_tidal_boundary_right_bottom_depth = config_tidal_boundary_left_bottom_depth + &
+                                                   cff1*config_idealized_transect_Scoast + &
+                                                   cff2*config_idealized_transect_Smarsh + &
+                                                   cff3*config_idealized_transect_Sshore
+        do iCell = 1, nCellsSolve
+          if (yCell(iCell) .lt. cff1) then
+            bottomDepth(iCell) = config_tidal_boundary_left_bottom_depth &
+              + (yCell(iCell)-yMin)*config_idealized_transect_Scoast
+            dep_mark1 = bottomDepth(iCell)
+            bottomDrag(iCell) = config_idealized_transect_roughness
+          elseif (yCell(iCell) .lt. (cff1+cff2)) then
+            bottomDepth(iCell) = dep_mark1 + (yCell(iCell)-cff1)*config_idealized_transect_Smarsh
+            dep_mark2 = bottomDepth(iCell)
+            bottomDrag(iCell) = config_idealized_transect_roughness_marsh
+            if (config_use_vegetation_drag) vegetationMask(iCell) = 1
+          else
+            if (cff2 .eq. 0.0_RKIND) dep_mark2 = dep_mark1
+            bottomDepth(iCell) = dep_mark2 + (yCell(iCell)-cff1-cff2)*config_idealized_transect_Sshore
+            bottomDrag(iCell) = config_idealized_transect_roughness
+          endif
+        end do !! do iCell
+      else
+      ! if not config_idealized_transect, assign a constant slope
+        do iCell = 1, nCellsSolve
+          bottomDepth(iCell) = config_tidal_boundary_left_bottom_depth &
+            + (yCell(iCell) - yMin) / (yMax - yMin)  * &
+            (config_tidal_boundary_right_bottom_depth - config_tidal_boundary_left_bottom_depth)
+        end do
+      end if   !! if config_idealized_transect
+
+      if (config_tidal_boundary_right_bottom_depth < config_tidal_boundary_left_bottom_depth) then
+        call mpas_log_write('Right boundary must be deeper than left boundary!', MPAS_LOG_CRIT)
+      end if
+
+      ! Set refBottomDepth, bottomDepth, and maxLevelCell
+      do k = 1, nVertLevels
+        refBottomDepth(k) = config_tidal_boundary_right_bottom_depth * interfaceLocations(k+1)
+      end do
+
       if (config_use_wetting_drying .and. config_tidal_start_dry .and. &
           trim(config_tidal_boundary_layer_type) == 'zstar') then
         do iCell = 1, nCellsSolve
@@ -252,7 +297,7 @@ contains
         end do
       end if
 
-      if (.not. config_alter_ICs_for_pbcs .and. trim(config_tidal_boundary_layer_type) == 'zstar') then
+      if (.not. config_alter_ICs_for_pcs .and. trim(config_tidal_boundary_layer_type) == 'zstar') then
         do iCell = 1, nCellsSolve
           do k = 1,nVertLevels
             if (refBottomDepth(k) > bottomDepth(iCell)) then
@@ -262,6 +307,8 @@ contains
           end do
         end do
       end if
+
+      minLevelCell(:) = 1
 
       if(trim(config_tidal_boundary_layer_type) == 'zstar') then
 
@@ -320,6 +367,7 @@ contains
       if (config_use_wetting_drying .and. config_tidal_start_dry) then
         do iCell = 1, nCellsSolve
           ssh(iCell) = -bottomDepth(iCell) + config_drying_min_cell_height*maxLevelCell(iCell)
+          ssh(iCell) = MAX(ssh(iCell),-config_tidal_forcing_monochromatic_baseline)
           ! also computes zMid
           do k = 1, maxLevelCell(iCell)
             layerThickness(k,iCell) = (ssh(iCell) + bottomDepth(iCell))/maxLevelCell(iCell)
@@ -328,12 +376,19 @@ contains
         end do
       else
         do iCell = 1, nCellsSolve
-          ! Set layerThickness and restingThickness
-          call ocn_compute_layerThickness_zMid_from_bottomDepth(layerThickness(:,iCell), zMid(:,iCell), &
-            refBottomDepth, bottomDepth(iCell), maxLevelCell(iCell), nVertLevels, iErr, &
-            restingThickness=restingThickness(:,iCell), &
-            ssh=ssh(iCell))
-          ! also computes zMid
+          ! restingThickness is z-level, with ssh = 0
+          call ocn_compute_z_level_layerThickness(restingThickness(:,iCell), refBottomDepth, 0.0_RKIND, &
+                                                  bottomDepth(iCell), minLevelCell(iCell),              &
+                                                  maxLevelCell(iCell), nVertLevels, iErr)
+
+          ! stretch restingThickness to get the z-star layerThickness
+          call ocn_compute_z_star_layerThickness(layerThickness(:,iCell), restingThickness(:,iCell),  &
+                                                 ssh(iCell), bottomDepth(iCell), minLevelCell(iCell), &
+                                                 maxLevelCell(iCell), nVertLevels, iErr)
+
+          ! compute zMid
+          call ocn_compute_zMid_from_layerThickness(zMid(:,iCell), layerThickness(:,iCell), ssh(iCell), &
+                                                    minLevelCell(iCell), maxLevelCell(iCell), nVertLevels, iErr)
           do k = 1, maxLevelCell(iCell)
             restingThickness(k, iCell) = layerThickness(k, iCell)
           end do
@@ -346,13 +401,18 @@ contains
       ! Set tidal boundary mask
       do iCell = 1, nCellsSolve
         tidalInputMask(iCell) = 0.0_RKIND
-        if (yCell(iCell) > (25.0e3 - dcEdgeMinGlobal/2.0_RKIND)) then
+        if (yCell(iCell) > (yMax - dcEdgeMinGlobal/2.0_RKIND)) then
           tidalInputMask(iCell) = 1.0_RKIND
         ! spread it over multiple cells
         !if (yCell(iCell) > (25.0e3 - 3*dcEdgeMinGlobal)) then
         !  tidalInputMask(iCell) = exp(-((yCell(iCell)-25.0e3)/dcEdgeMinGlobal)**2.0)
         end if
       end do
+
+      ! check that there is some tidalInputMask
+      if (.not. sum(tidalInputMask) > 0) then
+        call mpas_log_write('Input mask for tidal case is not set!', MPAS_LOG_CRIT)
+      end if
 
       ! Set salinity
       if ( associated(activeTracers) ) then

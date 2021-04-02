@@ -79,9 +79,9 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_tracer_hmix_tend(meshPool, scratchPool, layerThicknessEdge, layerThickness, zMid, tracers, &
+   subroutine ocn_tracer_hmix_tend(meshPool, layerThicknessEdge, layerThickness, zMid, tracers, &
                                    RediKappa, slopeTriadUp, slopeTriadDown, dt, isActiveTracer,          &
-                                   kappaRediSfcTaper, kappaRediCell, rediLimiterCount, tend, err)!{{{
+                                   RediKappaSfcTaper, RediKappaScaling, rediLimiterCount, tend, err)!{{{
 
 
       !-----------------------------------------------------------------
@@ -90,7 +90,6 @@ contains
       !
       !-----------------------------------------------------------------
       type (mpas_pool_type), intent(in) :: meshPool !< Input: Mesh information
-      type (mpas_pool_type), intent(in) :: scratchPool !< Input: Scratch information
 
       real (kind=RKIND), dimension(:), intent(in), optional :: &
          RediKappa
@@ -100,7 +99,7 @@ contains
          layerThickness,     &!< Input: thickness at centers
          zMid                 !< Input: Z coordinate at the center of a cell
       real (kind=RKIND), dimension(:,:), intent(in), optional :: &
-         kappaRediSfcTaper, kappaRediCell        !< Input: vertical structure of GM/Redi limiter
+         RediKappaSfcTaper, RediKappaScaling        !< Input: vertical structure of GM/Redi limiter
 
       real (kind=RKIND), dimension(:,:,:), intent(in) :: &
         slopeTriadUp, slopeTriadDown, &
@@ -150,12 +149,12 @@ contains
       call mpas_timer_start("tracer hmix")
 
       call ocn_tracer_hmix_del2_tend(meshPool, layerThicknessEdge, tracers, tend, err1)
-      call ocn_tracer_hmix_del4_tend(meshPool, scratchPool, layerThicknessEdge, tracers, tend, err2)
+      call ocn_tracer_hmix_del4_tend(meshPool, layerThicknessEdge, tracers, tend, err2)
       if (config_use_Redi) then
-        call ocn_tracer_hmix_Redi_tend(meshPool, scratchPool, layerThickness, layerThicknessEdge, zMid, tracers, &
+        call ocn_tracer_hmix_Redi_tend(meshPool, layerThickness, layerThicknessEdge, zMid, tracers, &
                                      RediKappa, dt, isActiveTracer,        &
-                                     slopeTriadUp, slopeTriadDown, kappaRediSfcTaper, &
-                                     kappaRediCell, rediLimiterCount, tend, err1)
+                                     slopeTriadUp, slopeTriadDown, RediKappaSfcTaper, &
+                                     RediKappaScaling, rediLimiterCount, tend, err1)
       endif
       err = ior(err1, err2)
       call mpas_timer_stop("tracer hmix")

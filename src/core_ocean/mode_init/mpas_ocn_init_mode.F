@@ -37,9 +37,10 @@ module ocn_init_mode
 
    use ocn_constants
    use ocn_config
+   use ocn_diagnostics
 
    use ocn_init_spherical_utils
-
+   use ocn_init_cosine_bell
    !use ocn_init_TEMPLATE
    use ocn_init_baroclinic_channel
    use ocn_init_lock_exchange
@@ -142,6 +143,9 @@ module ocn_init_mode
       call mpas_stream_mgr_reset_alarms(domain % streamManager, direction=MPAS_STREAM_INPUT, ierr=err_tmp)
       ierr = ior(ierr, err_tmp)
       call mpas_timer_stop('reset_io_alarms')
+
+      ! Initialize diagnostics variables
+      call ocn_diagnostics_init(domain, err_tmp)
 
       ! Initialize submodules before initializing blocks.
       call ocn_equation_of_state_init(domain, err_tmp)
@@ -258,8 +262,6 @@ module ocn_init_mode
 
       type (MPAS_timeInterval_type) :: timeStep
 
-      character (len=StrKIND), pointer :: config_init_configuration
-
       ierr = 0
 
       ! Eventually, dt should be domain specific
@@ -269,7 +271,6 @@ module ocn_init_mode
       currTime = mpas_get_clock_time(domain % clock, MPAS_NOW, ierr)
       call mpas_get_time(curr_time=currTime, dateTimeString=timeStamp, ierr=ierr)
 
-      call mpas_pool_get_config(domain % configs, 'config_init_configuration', config_init_configuration)
       call mpas_log_write( ' Generating configuration: ' // trim(config_init_configuration))
 
       call ocn_init_setup_baroclinic_channel(domain, ierr)
@@ -290,6 +291,7 @@ module ocn_init_mode
       call ocn_init_setup_isomip_plus(domain, ierr)
       call ocn_init_setup_hurricane(domain, ierr)
       call ocn_init_setup_tidal_boundary(domain, ierr)
+      call ocn_init_setup_cosine_bell(domain, ierr)
       !call ocn_init_setup_TEMPLATE(domain, ierr)
 
       call mpas_log_write( ' Completed setup of: ' // trim(config_init_configuration))
@@ -398,6 +400,8 @@ module ocn_init_mode
       call ocn_init_validate_hurricane(configPool, packagePool, iocontext, iErr=err_tmp)
       iErr = ior(iErr, err_tmp)
       call ocn_init_validate_tidal_boundary(configPool, packagePool, iocontext, iErr=err_tmp)
+      iErr = ior(iErr, err_tmp)
+      call ocn_init_validate_cosine_bell(configPool, packagePool, iocontext, iErr=err_tmp)
       iErr = ior(iErr, err_tmp)
       ! call ocn_init_validate_TEMPLATE(configPool, packagePool, iocontext, iErr=err_tmp)
       ! iErr = ior(iErr, err_tmp)

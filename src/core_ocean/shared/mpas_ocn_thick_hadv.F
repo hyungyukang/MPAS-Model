@@ -24,6 +24,7 @@ module ocn_thick_hadv
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
+   use ocn_config
 
    implicit none
    private
@@ -113,7 +114,7 @@ contains
       integer, pointer :: nVertLevels
       integer, dimension(:), pointer :: nCellsArray
 
-      integer, dimension(:), pointer :: maxLevelEdgeBot, MaxLevelCell, nEdgesOnCell
+      integer, dimension(:), pointer :: minLevelEdgeBot, maxLevelEdgeTop, MaxLevelCell, nEdgesOnCell
       integer, dimension(:,:), pointer :: cellsOnEdge, edgesOnCell, edgeSignOnCell
 
       real (kind=RKIND) :: flux, invAreaCell, invAreaCell1, invAreaCell2
@@ -137,7 +138,8 @@ contains
       call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
 
       call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-      call mpas_pool_get_array(meshPool, 'maxLevelEdgeBot', maxLevelEdgeBot)
+      call mpas_pool_get_array(meshPool, 'minLevelEdgeBot', minLevelEdgeBot)
+      call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
       call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
       call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
       call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
@@ -148,18 +150,20 @@ contains
 
       nCells = nCellsArray( 1 )
 
+      !$omp parallel
       !$omp do schedule(runtime) private(invAreaCell, i, iEdge, k, flux)
       do iCell = 1, nCells
         invAreaCell = 1.0_RKIND / areaCell(iCell)
         do i = 1, nEdgesOnCell(iCell)
           iEdge = edgesOnCell(i, iCell)
-          do k = 1, maxLevelEdgeBot(iEdge)
+          do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
             flux = normalVelocity(k, iEdge) * dvEdge(iEdge) * layerThicknessEdge(k, iEdge)
             tend(k, iCell) = tend(k, iCell) + edgeSignOnCell(i, iCell) * flux * invAreaCell
           end do
         end do
       end do
       !$omp end do
+      !$omp end parallel
 
       call mpas_timer_stop("thick hadv")
 
@@ -192,11 +196,7 @@ contains
 
       integer, intent(out) :: err !< Output: error flag
 
-      logical, pointer :: config_disable_thick_hadv
-
       thickHadvOn = .true.
-
-      call mpas_pool_get_config(ocnConfigs, 'config_disable_thick_hadv', config_disable_thick_hadv)
 
       if(config_disable_thick_hadv) thickHadvOn = .false.
 
