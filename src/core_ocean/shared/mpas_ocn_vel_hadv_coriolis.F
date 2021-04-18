@@ -146,15 +146,16 @@ contains
       if (usePlanetVorticity) then
 #ifdef MPAS_OPENACC
          !$acc parallel loop &
-         !$acc    present(tmpVorticity, normRelVortEdge, &
+         !$acc    present(qArr,tmpVorticity, normRelVortEdge, &
          !$acc            normPlanetVortEdge) &
-         !$acc    private(k)
+         !$acc    private(k) collapse(2)
 #else
          !$omp do schedule(runtime) &
          !$omp    private(k)
 #endif
          do iEdge = 1, nEdgesAll
          do k=1,nVertLevels
+            qArr(k,iEdge) = 0.0_RKIND
             tmpVorticity(k,iEdge) = normRelVortEdge(k,iEdge) + &
                                  normPlanetVortEdge(k,iEdge)
          end do
@@ -165,14 +166,15 @@ contains
       else
 #ifdef MPAS_OPENACC
          !$acc parallel loop &
-         !$acc    present(tmpVorticity, normRelVortEdge) &
-         !$acc    private(k)
+         !$acc    present(qArr,tmpVorticity, normRelVortEdge) &
+         !$acc    private(k) collapse(2)
 #else
          !$omp do schedule(runtime) &
          !$omp    private(k)
 #endif
          do iEdge = 1, nEdgesAll
          do k=1,nVertLevels
+            qArr(k,iEdge) = 0.0_RKIND
             tmpVorticity(k,iEdge) = normRelVortEdge(k,iEdge)
          end do
          end do
@@ -197,9 +199,9 @@ contains
 #endif
       do iEdge = 1, nEdgesOwned
 
-         do k = 1, nVertLevels
-            qArr(k,iEdge) = 0.0_RKIND
-         end do
+!        do k = 1, nVertLevels
+!           qArr(k,iEdge) = 0.0_RKIND
+!        end do
 
          do j = 1, nEdgesOnEdge(iEdge)
             eoe = edgesOnEdge(j, iEdge)
