@@ -142,7 +142,7 @@ contains
       !call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
       !call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
 
-      allocate(prelim_ALE_thickness(nVertLevels),thick_weight_sum(nCellsOwned), &
+      allocate(prelim_ALE_thickness(nVertLevels),thick_weight_sum(nCellsAll), &
          min_ALE_thickness_down(nVertLevels), min_ALE_thickness_up(nVertLevels))
 
       !$acc enter data &
@@ -159,7 +159,7 @@ contains
       !$omp parallel
       !$omp do schedule(runtime)
 #endif
-      do iCell = 1,nCellsOwned
+      do iCell = 1,nCellsAll
          thick_weight_sum(iCell) = 1e-14_RKIND
       end do
 #ifndef MPAS_OPENACC
@@ -167,7 +167,7 @@ contains
       !$omp end parallel
 #endif
 
-!      !nCells = nCellsArray( 2 )
+      nCells = nCellsHalo( 1 )
 !
 !      !
 !      ! ALE thickness alteration due to SSH (z-star)
@@ -183,7 +183,7 @@ contains
          !$omp parallel
          !$omp do schedule(runtime) private(k)
 #endif
-         do iCell = 1, nCellsOwned
+         do iCell = 1, nCells
             do k = minLevelCell(iCell), maxLevelCell(iCell)
                thick_weight_sum(iCell) = thick_weight_sum(iCell) &
                                        + vertCoordMovementWeights(k) * restingThickness(k, iCell)
@@ -204,8 +204,7 @@ contains
          !$omp parallel
          !$omp do schedule(runtime) private(kMax, thicknessSum, k)
 #endif
-         !do iCell = 1, nCells
-         do iCell = 1, nCellsOwned
+         do iCell = 1, nCells
             !kMax = maxLevelCell(iCell)
             !kMin = minLevelCell(iCell)
    
@@ -245,7 +244,7 @@ contains
          !$omp parallel
          !$omp do schedule(runtime) private(k)
 #endif
-         do iCell = 1, nCellsOwned
+         do iCell = 1, nCells
             do k = minLevelCell(iCell), maxLevelCell(iCell)
                thick_weight_sum(iCell) = thick_weight_sum(iCell) + vertCoordMovementWeights(k)
             end do
@@ -264,8 +263,7 @@ contains
          !$omp parallel
          !$omp do schedule(runtime) private(kMax, weightSum, k)
 #endif
-         !do iCell = 1, nCells
-         do iCell = 1, nCellsOwned
+         do iCell = 1, nCells
             !kMax = maxLevelCell(iCell)
             !kMin = minLevelCell(iCell)
    
