@@ -1846,51 +1846,78 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_fuperp(statePool, meshPool, timeLevelIn)!{{{
+   subroutine ocn_fuperp(normalVelocityNew,normalBaroclinicVelocityNew)!{{{
 
-      type (mpas_pool_type), intent(inout) :: statePool !< Input/Output: State information
-      type (mpas_pool_type), intent(in) :: meshPool !< Input: mesh information
-      integer, intent(in), optional :: timeLevelIn !< Input: Input time level for state pool
+      !type (mpas_pool_type), intent(inout) :: statePool !< Input/Output: State
+      !information
+      !type (mpas_pool_type), intent(in) :: meshPool !< Input: mesh information
+      real (kind=RKIND), dimension(:,:), pointer,intent(in) :: &
+           normalVelocityNew, normalBaroclinicVelocityNew
+      !integer, intent(in), optional :: timeLevelIn !< Input: Input time level
+      !for state pool
 
-      integer :: iEdge, cell1, cell2, eoe, j, k
-      real (kind=RKIND), dimension(:,:), pointer :: normalVelocity, normalBaroclinicVelocity
+      integer :: iEdge, cell1, cell2, eoe, j, k, nEdges
+      !real (kind=RKIND), dimension(:,:), pointer :: normalVelocity,
+      !normalBaroclinicVelocity
 
       integer :: timeLevel
 
-      if (present(timeLevelIn)) then
-         timeLevel = timeLevelIn
-      else
-         timeLevel = 1
-      end if
+      !if (present(timeLevelIn)) then
+      !   timeLevel = timeLevelIn
+      !else
+      !   timeLevel = 1
+      !end if
 
       call mpas_timer_start("ocn_fuperp")
-
-      call mpas_pool_get_array(statePool, 'normalVelocity', normalVelocity, timeLevel)
-      call mpas_pool_get_array(statePool, 'normalBaroclinicVelocity', normalBaroclinicVelocity, timeLevel)
 
       !DWJ: ADD OMP (Only needed for split explicit)
 
       !
       ! Put f*normalBaroclinicVelocity^{perp} in u as a work variable
       !
+
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(normalVelocityNew,minLevelEdgeBot,maxLevelEdgeTop) &
+      !$acc    collapse(2)
+      do iEdge = 1, nEdgesOwned
+         do k = 1,nVertLevels
+            normalVelocityNew(k,iEdge) = 0.0_RKIND
+         end do
+      end do
+
+      !$acc parallel loop &
+      !$acc    present(normalVelocityNew,weightsOnEdge, &
+      !$acc            normalBaroclinicVelocityNew,fEdge,nEdgesOnEdge, &
+      !$acc             minLevelEdgeBot,maxLevelEdgeTop) &
+      !$acc    private(eoe,j) collapse(2)
+      do iEdge = 1, nEdgesOwned
+         do k = 1,nVertLevels
+            do j = 1,nEdgesOnEdge(iEdge)
+               eoe = edgesOnEdge(j,iEdge)
+               normalVelocityNew(k,iEdge) &
+                  = normalVelocityNew(k,iEdge) + weightsOnEdge(j,iEdge) &
+                  * normalBaroclinicVelocityNew(k,eoe) * fEdge(eoe)
+            end do
+         end do
+      end do
+#else
       !$omp parallel
       !$omp do schedule(runtime) private(cell1, cell2, k, eoe)
       do iEdge = 1, nEdgesOwned
-         cell1 = cellsOnEdge(1,iEdge)
-         cell2 = cellsOnEdge(2,iEdge)
-
          do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
-
-            normalVelocity(k,iEdge) = 0.0_RKIND
+            normalVelocityNew(k,iEdge) = 0.0_RKIND
             do j = 1,nEdgesOnEdge(iEdge)
                eoe = edgesOnEdge(j,iEdge)
-               normalVelocity(k,iEdge) = normalVelocity(k,iEdge) + weightsOnEdge(j,iEdge) * normalBaroclinicVelocity(k,eoe) &
-                                       * fEdge(eoe)
+               normalVelocityNew(k,iEdge) &
+                  = normalVelocityNew(k,iEdge) + weightsOnEdge(j,iEdge) &
+                  * normalBaroclinicVelocityNew(k,eoe) * fEdge(eoe)
             end do
          end do
       end do
       !$omp end do
       !$omp end parallel
+#endif
 
       call mpas_timer_stop("ocn_fuperp")
 

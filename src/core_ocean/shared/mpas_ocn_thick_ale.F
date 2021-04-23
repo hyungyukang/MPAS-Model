@@ -117,19 +117,9 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, k, i, kMax, kMin
-      !integer, pointer :: nVertLevels
       integer :: nCells
-      !integer, dimension(:), pointer :: maxLevelCell
-      !integer, dimension(:), pointer :: minLevelCell
-      !integer, dimension(:), pointer :: nCellsArray
 
       real (kind=RKIND) :: weightSum, thicknessSum, remainder, newThickness, thicknessWithRemainder
-      !real (kind=RKIND), dimension(:), pointer :: vertCoordMovementWeights
-!     real (kind=RKIND), dimension(:), allocatable :: &
-!        prelim_ALE_thickness,   & !> ALE thickness at new time
-!        min_ALE_thickness_down, & !> ALE thickness alteration due to min/max thickness
-!        min_ALE_thickness_up, &   !> ALE thickness alteration due to min/max thickness
-!        thick_weight_sum
 
       logical, pointer :: thicknessFilterActive
 
@@ -276,7 +266,7 @@ contains
                ! This is equation 4 and 6 in Petersen et al 2015, but with eqn 6
                ! altered so only the W_k weights are used. The resting
                ! thickness shown in eqn 6 is not included here.
-               ALE_thickness(k, iCell) = restingThickness(k, iCell) + ssh(iCell)  
+               ALE_thickness(k, iCell) = restingThickness(k, iCell) + ssh(iCell) &
                                        * vertCoordMovementWeights(k) / temp1Cell(iCell)
             end do
          enddo
