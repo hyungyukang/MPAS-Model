@@ -658,6 +658,15 @@ module ocn_time_integration_split
             ! Put f*normalBaroclinicVelocity^{perp} in
             ! normalVelocityNew as a work variable
 
+            if ( j > 1 ) then
+               call mpas_timer_start("se halo normalBaroclinicVelocity")
+               !$acc update self(normalBaroclinicVelocityNew)
+               call mpas_dmpar_field_halo_exch(domain, &
+                                 'normalBaroclinicVelocity', timeLevel=2)
+               !$acc update device(normalBaroclinicVelocityNew)
+               call mpas_timer_stop("se halo normalBaroclinicVelocity")
+            endif
+
             call ocn_fuperp(normalVelocityNew,normalBaroclinicVelocityNew)
 
             !TODO: look at loop optimizations here
@@ -700,11 +709,20 @@ module ocn_time_integration_split
                              (sshNew(cell2) - sshNew(cell1)) &
                              /dcEdge(iEdge))
                enddo ! vertical
+            enddo ! iEdge
 
                ! thicknessSum is initialized outside the loop because
                ! on land boundaries maxLevelEdgeTop=0, but we want to
                ! initialize thicknessSum with a nonzero value to avoid
                ! a NaN.
+
+#ifdef MPAS_OPENACC
+            !$acc loop gang vector private(k)
+#else
+            !$omp parallel do schedule(runtime) &
+            !$omp    private(k, normalThicknessFluxSum, thicknessSum)
+#endif
+            do iEdge = 1, nEdgesOwned
                normalThicknessFluxSum = &
                               layerThickEdge(minLevelEdgeBot(iEdge),iEdge) &
                             * normalBaroclinicVelocityNew(minLevelEdgeBot(iEdge),iEdge)
@@ -721,8 +739,18 @@ module ocn_time_integration_split
                barotropicForcing(iEdge) = splitFact* &
                               normalThicknessFluxSum/thicknessSum/dt
             enddo ! iEdge
+#ifndef MPAS_OPENACC
+            !$omp end do
+            !$omp end parallel
+#endif
 
+
+#ifdef MPAS_OPENACC
             !$acc loop gang vector private(k)
+#else
+            !$omp parallel do schedule(runtime) &
+            !$omp    private(k)
+#endif
             do iEdge = 1, nEdgesOwned
                do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
                   ! These two steps are together here:
@@ -745,15 +773,6 @@ module ocn_time_integration_split
             !$omp end parallel
 #endif
 
-            !$acc update self(normalBaroclinicVelocityNew)
-
-            call mpas_timer_start("se halo normalBaroclinicVelocity")
-            call mpas_dmpar_field_halo_exch(domain, &
-                              'normalBaroclinicVelocity', timeLevel=2)
-            call mpas_timer_stop("se halo normalBaroclinicVelocity")
-
-            !$acc update device(normalBaroclinicVelocityNew)
-
          end do  ! do j=1,config_n_bcl_iter
 
          !$acc exit data &
@@ -764,6 +783,8 @@ module ocn_time_integration_split
          call mpas_timer_stop('bcl iters on linear Coriolis')
 
          call mpas_timer_start('se halo barotropicForcing')
+         call mpas_dmpar_field_halo_exch(domain, &
+                              'normalBaroclinicVelocity', timeLevel=2)
          call mpas_dmpar_field_halo_exch(domain, 'barotropicForcing')
          call mpas_timer_stop('se halo barotropicForcing')
 

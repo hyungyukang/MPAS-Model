@@ -1721,7 +1721,6 @@ contains
       do iCell = 1, nCellsAll
          do k = 1,nVertLevels
             div_hu(k,iCell) = 0.0_RKIND
-!           ALE_Thickness(k,iCell)=0.0_RKIND
          end do
       end do
 #ifndef MPAS_OPENACC

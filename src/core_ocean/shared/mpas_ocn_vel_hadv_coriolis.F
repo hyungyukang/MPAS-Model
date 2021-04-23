@@ -119,9 +119,9 @@ contains
          invLength,    &! temp variable for 1/dcedge
          edgeWeight     ! weight for summing over edges
 
-      real (kind=RKIND), dimension(:,:), allocatable :: &
-         qArr,         &! temporary vorticity array
-         tmpVorticity   ! vorticity on edge
+!     real (kind=RKIND), dimension(:,:), allocatable :: &
+!        qArr,         &! temporary vorticity array
+!        tmpVorticity   ! vorticity on edge
 
       ! End preamble
       !-----------------------------------------------------------------
@@ -136,18 +136,14 @@ contains
 
       !*** allocate and transfer temporary arrays
 
-      allocate(tmpVorticity(nVertLevels,nEdgesAll), &
-                       qArr(nVertLevels,nEdgesAll))
-      !$acc enter data create(tmpVorticity, qArr)
-
 #ifndef MPAS_OPENACC
       !$omp parallel
 #endif
       if (usePlanetVorticity) then
 #ifdef MPAS_OPENACC
          !$acc parallel loop &
-         !$acc    present(qArr,tmpVorticity, normRelVortEdge, &
-         !$acc            normPlanetVortEdge) &
+         !$acc    present(temp1VertEdge,temp2VertEdge, &
+         !$acc            normRelVortEdge,normPlanetVortEdge) &
          !$acc    private(k) collapse(2)
 #else
          !$omp do schedule(runtime) &
@@ -155,9 +151,9 @@ contains
 #endif
          do iEdge = 1, nEdgesAll
          do k=1,nVertLevels
-            qArr(k,iEdge) = 0.0_RKIND
-            tmpVorticity(k,iEdge) = normRelVortEdge(k,iEdge) + &
-                                 normPlanetVortEdge(k,iEdge)
+            temp1VertEdge(k,iEdge) = 0.0_RKIND
+            temp2VertEdge(k,iEdge) = normRelVortEdge(k,iEdge) + &
+                                     normPlanetVortEdge(k,iEdge)
          end do
          end do
 #ifndef MPAS_OPENACC
@@ -166,7 +162,8 @@ contains
       else
 #ifdef MPAS_OPENACC
          !$acc parallel loop &
-         !$acc    present(qArr,tmpVorticity, normRelVortEdge) &
+         !$acc    present(temp1VertEdge,temp2VertEdge, &
+         !$acc            normRelVortEdge) &
          !$acc    private(k) collapse(2)
 #else
          !$omp do schedule(runtime) &
@@ -174,8 +171,8 @@ contains
 #endif
          do iEdge = 1, nEdgesAll
          do k=1,nVertLevels
-            qArr(k,iEdge) = 0.0_RKIND
-            tmpVorticity(k,iEdge) = normRelVortEdge(k,iEdge)
+            temp1VertEdge(k,iEdge) = 0.0_RKIND
+            temp2VertEdge(k,iEdge) = normRelVortEdge(k,iEdge)
          end do
          end do
 #ifndef MPAS_OPENACC
@@ -189,7 +186,8 @@ contains
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
       !$acc    present(nEdgesOnEdge, edgesOnEdge, weightsOnEdge, &
-      !$acc            minLevelEdgeBot, maxLevelEdgeTop, qArr, tmpVorticity, &
+      !$acc            minLevelEdgeBot, maxLevelEdgeTop, &
+      !$acc            temp1VertEdge, temp2VertEdge, &
       !$acc            normalVelocity, layerThickEdge) &
       !$acc    private(k, j, eoe, edgeWeight, avgVorticity)
 #else
@@ -199,19 +197,15 @@ contains
 #endif
       do iEdge = 1, nEdgesOwned
 
-!        do k = 1, nVertLevels
-!           qArr(k,iEdge) = 0.0_RKIND
-!        end do
-
          do j = 1, nEdgesOnEdge(iEdge)
             eoe = edgesOnEdge(j, iEdge)
             edgeWeight = weightsOnEdge(j, iEdge)
 
             do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
                avgVorticity = 0.5_RKIND* &
-                              (tmpVorticity(k,iEdge) + &
-                               tmpVorticity(k,eoe))
-               qArr(k,iEdge) = qArr(k,iEdge) + &
+                              (temp2VertEdge(k,iEdge) + &
+                               temp2VertEdge(k,eoe))
+               temp1VertEdge(k,iEdge) = temp1VertEdge(k,iEdge) + &
                                edgeWeight*normalVelocity(k,eoe)* &
                                avgVorticity*layerThickEdge(k,eoe)
             end do
@@ -225,7 +219,7 @@ contains
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
       !$acc    present(cellsOnEdge, minLevelEdgeBot, maxLevelEdgeTop, edgeMask, &
-      !$acc            dcEdge, tend, qArr, kineticEnergyCell) &
+      !$acc            dcEdge, tend, temp1VertEdge, kineticEnergyCell) &
       !$acc    private(cell1, cell2, invLength, k)
 #else
       !$omp do schedule(runtime) &
@@ -238,7 +232,7 @@ contains
 
          do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
             tend(k,iEdge) = tend(k,iEdge) + &
-                        edgeMask(k,iEdge)* (qArr(k,iEdge) - &
+                        edgeMask(k,iEdge)* (temp1VertEdge(k,iEdge) - &
                            (kineticEnergyCell(k,cell2) &
                           - kineticEnergyCell(k,cell1))*invLength)
          end do
@@ -247,9 +241,6 @@ contains
       !$omp end do
       !$omp end parallel
 #endif
-
-      !$acc exit data delete(tmpVorticity, qArr)
-      deallocate(qArr,tmpVorticity)
 
       call mpas_timer_stop("coriolis")
 
