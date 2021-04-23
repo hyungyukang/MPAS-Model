@@ -29,6 +29,7 @@ module ocn_mesh
    use mpas_derived_types
    use mpas_pool_routines
    use mpas_log
+   use ocn_config
 
    implicit none
    private
@@ -146,6 +147,12 @@ module ocn_mesh
       derivTwo, &! 2nd derivative of edge reconstruction polynomial
       cellTangentPlane, &! two vectors defining tangent plane at cell center
       coeffs_reconstruct  ! coeffs for reconstructing vectors at cell centers
+
+   ! Temporary arrays to reduce data trasfer between host and device
+   real(kind=RKIND), public, dimension(:), allocatable :: &
+      temp1Vert,temp2Vert,temp3Vert,temp1Edge,temp2Edge,temp1Cell,temp2Cell
+   real(kind=RKIND), public, dimension(:,:), allocatable :: &
+      temp1VertEdge,temp2VertEdge,temp1VertCell,temp2VertCell
    !}}}
 
    !----------------------------------------------------------------------------
@@ -514,6 +521,34 @@ contains
          end do
          end do
 
+
+         ! Temporary arrays
+         allocate ( &
+            temp1Vert(nVertLevels), &
+            temp2Vert(nVertLevels), &
+            temp3Vert(nVertLevels), &
+            temp1Edge(nEdgesAll), &
+            temp2Edge(nEdgesAll), &
+            temp1Cell(nCellsAll), &
+            temp2Cell(nCellsAll), &
+            temp1VertEdge(nVertLevels,nEdgesAll), &
+            temp2VertEdge(nVertLevels,nEdgesAll), &
+            temp1VertCell(nVertLevels,nCellsAll), &
+            temp2VertCell(nVertLevels,nCellsAll) )
+ 
+         temp1Vert(:) = 0.0_RKIND
+         temp2Vert(:) = 0.0_RKIND
+         temp3Vert(:) = 0.0_RKIND
+         temp1Edge(:) = 0.0_RKIND
+         temp2Edge(:) = 0.0_RKIND
+         temp1Cell(:) = 0.0_RKIND
+         temp2Cell(:) = 0.0_RKIND
+         temp1VertEdge(:,:) = 0.0_RKIND
+         temp2VertEdge(:,:) = 0.0_RKIND
+         temp1VertCell(:,:) = 0.0_RKIND
+         temp2VertCell(:,:) = 0.0_RKIND
+
+
          ! Copy structure and components to accelerator
          ! Must manually do a deep copy with structure itself copied first.
          !$acc enter data copyin( &
@@ -606,7 +641,23 @@ contains
          !$acc                   advCoefs3rd,              &
          !$acc                   derivTwo,                 &
          !$acc                   cellTangentPlane,         &
-         !$acc                   coeffs_reconstruct)
+         !$acc                   coeffs_reconstruct,       &
+      ! Temporary Arrays
+         !$acc                   temp1Vert,                &
+         !$acc                   temp2Vert,                &
+         !$acc                   temp3Vert,                &
+         !$acc                   temp1Edge,                &
+         !$acc                   temp2Edge,                &
+         !$acc                   temp1Cell,                &
+         !$acc                   temp2Cell,                &
+         !$acc                   temp1VertEdge,            &
+         !$acc                   temp2VertEdge,            &
+         !$acc                   temp1VertCell,            &
+         !$acc                   temp2VertCell,            &
+      ! ocn Configurations
+         !$acc                   config_max_thickness_factor, &
+         !$acc                   config_min_thickness)
+
 
          block => block%next
       end do
@@ -742,7 +793,22 @@ contains
       !$acc                  advCoefs3rd,       &
       !$acc                  derivTwo,          &
       !$acc                  cellTangentPlane,  &
-      !$acc                  coeffs_reconstruct)
+      !$acc                  coeffs_reconstruct,&
+   ! Temporary Arrays
+      !$acc                  temp1Vert,         &
+      !$acc                  temp2Vert,         &
+      !$acc                  temp3Vert,         &
+      !$acc                  temp1Edge,         &
+      !$acc                  temp2Edge,         &
+      !$acc                  temp1Cell,         &
+      !$acc                  temp2Cell,         &
+      !$acc                  temp1VertEdge,     &
+      !$acc                  temp2VertEdge,     &
+      !$acc                  temp1VertCell,     &
+      !$acc                  temp2VertCell,     &
+   ! ocn Configurations
+      !$acc                  config_max_thickness_factor, &
+      !$acc                  config_min_thickness )
 
       ! Reset all scalars to zero
       nCellsAll = 0
@@ -840,7 +906,18 @@ contains
                   boundaryVertex, &
                   edgeSignOnCell, &
                   edgeSignOnVertex, &
-                  highOrderAdvectionMask)
+                  highOrderAdvectionMask, &
+               ! Temporary arrays
+                  temp1Vert, &
+                  temp2Vert, &
+                  temp1Edge, &
+                  temp2Edge, &
+                  temp1Cell, &
+                  temp2Cell, &
+                  temp1VertEdge, &
+                  temp2VertEdge, &
+                  temp1VertCell, &
+                  temp2VertCell)
 
 !-------------------------------------------------------------------------------
 
