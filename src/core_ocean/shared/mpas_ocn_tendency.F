@@ -302,6 +302,7 @@ contains
       call mpas_pool_get_array(forcingPool, 'surfaceStressMagnitude', &
                                              sfcStressMag)
 
+      call mpas_timer_start("ocn_tend_vel transfer")
       !*** Transfer data to device
       !$acc enter data &
       !$acc    copyin(tendVel, sfcStress, sfcStressMag, &
@@ -312,6 +313,7 @@ contains
       !$acc    normPlanetVortEdge, montgomeryPotential, &
       !$acc    vertAleTransportTop, divergence, vertViscTopOfEdge, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
+      call mpas_timer_stop("ocn_tend_vel transfer")
 
       !*** Set output variables to zero before accumulating results
       

@@ -70,6 +70,7 @@ module ocn_time_integration_split
    !--------------------------------------------------------------------
 
    character (len=*), parameter :: &
+      finalBclGroupName = 'finalBclFields', &! name for cached halo exch
       subcycleGroupName = 'subcycleFields', &! name for cached halo exch
       finalBtrGroupName = 'finalBtrFields'   ! name for cached halo exch
 
@@ -192,6 +193,7 @@ module ocn_time_integration_split
          sshSubcycleNewWithTides,     &! subcycl ssh    at new     time
          normalBarotropicVelocitySubcycleCur,&! barotropic vel subcyc
          normalBarotropicVelocitySubcycleNew,&! at current, new times
+         ssh,                         &! sea sfc height at current time
          sshCur,                      &! sea sfc height at current time
          sshNew,                      &! sea sfc height at new     time
          normalBarotropicVelocityCur, &! barotropic vel at current time
@@ -200,8 +202,10 @@ module ocn_time_integration_split
       real (kind=RKIND), dimension(:,:), pointer :: &
          normalBaroclinicVelocityCur, &! baroclinic vel at current time
          normalBaroclinicVelocityNew, &! baroclinic vel at new     time
+         normalVelocity,              &! full velocity  at current time
          normalVelocityCur,           &! full velocity  at current time
          normalVelocityNew,           &! full velocity  at new     time
+         layerThickness,              &! layer thick    at current time
          layerThicknessCur,           &! layer thick    at current time
          layerThicknessNew,           &! layer thick    at new     time
          highFreqThicknessCur,        &! high frq thick at current time
@@ -543,6 +547,7 @@ module ocn_time_integration_split
 
          stage1_tend_time = min(splitExplicitStep,2)
 
+
          ! ---  update halos for diagnostic ocean boundary layer depth
          if (config_use_cvmix_kpp) then
             call mpas_timer_start("se halo diag obd")
@@ -610,6 +615,27 @@ module ocn_time_integration_split
 !           !$acc    delete(highFreqThicknessCur,highFreqThicknessTend)
 
          endif ! freq filtered thickness
+
+
+!###############################################
+!
+!     call mpas_pool_get_array(statePool,   'normalVelocity', &
+!                                            normalVelocity, stage1_tend_time)
+!     call mpas_pool_get_array(statePool,   'layerThickness', &
+!                                            layerThickness, stage1_tend_time)
+!     call mpas_pool_get_array(statePool,   'ssh', ssh, timeLevel)
+!     call mpas_pool_get_array(tracersPool, 'activeTracers', &
+!                                            activeTracers, stage1_tend_time)
+
+!     !$acc enter data &
+!     !$acc    copyin(normalVelocity,layerThickness,activeTracers, &
+!     !$acc       layerThickEdge,vertAleTransportTop,highFreqThicknessNew, &
+!     !$acc       normalVelocityCur,normalVelocityNew,sshCur,sshNew, &
+!     !$acc       normalBaroclinicVelocityCur,normalBaroclinicVelocityNew, &
+!     !$acc       normalBarotropicVelocityCur,normalBarotropicVelocityNew, &
+!     !$acc       layerThicknessCur,layerThicknessNew)
+
+!###############################################
 
          ! compute velocity tendencies, T(u*,w*,p*)
          call mpas_timer_start("se bcl vel")
@@ -782,11 +808,36 @@ module ocn_time_integration_split
 
          call mpas_timer_stop('bcl iters on linear Coriolis')
 
-         call mpas_timer_start('se halo barotropicForcing')
-         call mpas_dmpar_field_halo_exch(domain, &
-                              'normalBaroclinicVelocity', timeLevel=2)
-         call mpas_dmpar_field_halo_exch(domain, 'barotropicForcing')
-         call mpas_timer_stop('se halo barotropicForcing')
+
+         call mpas_timer_start('se halo bcl vel and btr forcing')
+!        call mpas_dmpar_field_halo_exch(domain, &
+!                             'normalBaroclinicVelocity', timeLevel=2)
+!        call mpas_dmpar_field_halo_exch(domain, 'barotropicForcing')
+
+         call mpas_dmpar_exch_group_create(domain, finalBclGroupName)
+
+         call mpas_dmpar_exch_group_add_field(domain, &
+                                           finalBclGroupName, &
+                                          'barotropicForcing')
+         call mpas_dmpar_exch_group_add_field(domain, &
+                                           finalBclGroupName, &
+                                          'normalBaroclinicVelocity', &
+                                           timeLevel=2)
+         call mpas_dmpar_exch_group_full_halo_exch(domain, &
+                                                   finalBclGroupName)
+         call mpas_dmpar_exch_group_destroy(domain,finalBclGroupName)
+
+         call mpas_timer_stop('se halo bcl vel and btr forcing')
+
+
+
+
+
+
+
+
+
+
 
          call mpas_timer_stop("se bcl vel")
 
