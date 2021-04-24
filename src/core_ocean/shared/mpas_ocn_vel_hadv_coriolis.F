@@ -119,10 +119,6 @@ contains
          invLength,    &! temp variable for 1/dcedge
          edgeWeight     ! weight for summing over edges
 
-!     real (kind=RKIND), dimension(:,:), allocatable :: &
-!        qArr,         &! temporary vorticity array
-!        tmpVorticity   ! vorticity on edge
-
       ! End preamble
       !-----------------------------------------------------------------
       ! Begin code

@@ -152,7 +152,8 @@ module ocn_mesh
    real(kind=RKIND), public, dimension(:), allocatable :: &
       temp1Vert,temp2Vert,temp3Vert,temp1Edge,temp2Edge,temp1Cell,temp2Cell
    real(kind=RKIND), public, dimension(:,:), allocatable :: &
-      temp1VertEdge,temp2VertEdge,temp1VertCell,temp2VertCell
+      temp1VertEdge,temp2VertEdge,temp3VertEdge, &
+      temp1VertCell,temp2VertCell
    !}}}
 
    !----------------------------------------------------------------------------
@@ -533,6 +534,7 @@ contains
             temp2Cell(nCellsAll), &
             temp1VertEdge(nVertLevels,nEdgesAll), &
             temp2VertEdge(nVertLevels,nEdgesAll), &
+            temp3VertEdge(nVertLevels,nEdgesAll), &
             temp1VertCell(nVertLevels,nCellsAll), &
             temp2VertCell(nVertLevels,nCellsAll) )
  
@@ -545,6 +547,7 @@ contains
          temp2Cell(:) = 0.0_RKIND
          temp1VertEdge(:,:) = 0.0_RKIND
          temp2VertEdge(:,:) = 0.0_RKIND
+         temp3VertEdge(:,:) = 0.0_RKIND
          temp1VertCell(:,:) = 0.0_RKIND
          temp2VertCell(:,:) = 0.0_RKIND
 
@@ -652,6 +655,7 @@ contains
          !$acc                   temp2Cell,                &
          !$acc                   temp1VertEdge,            &
          !$acc                   temp2VertEdge,            &
+         !$acc                   temp3VertEdge,            &
          !$acc                   temp1VertCell,            &
          !$acc                   temp2VertCell,            &
       ! ocn Configurations
@@ -804,6 +808,7 @@ contains
       !$acc                  temp2Cell,         &
       !$acc                  temp1VertEdge,     &
       !$acc                  temp2VertEdge,     &
+      !$acc                  temp3VertEdge,     &
       !$acc                  temp1VertCell,     &
       !$acc                  temp2VertCell,     &
    ! ocn Configurations
@@ -916,6 +921,7 @@ contains
                   temp2Cell, &
                   temp1VertEdge, &
                   temp2VertEdge, &
+                  temp3VertEdge, &
                   temp1VertCell, &
                   temp2VertCell)
 

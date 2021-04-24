@@ -417,11 +417,35 @@ contains
 
      case (pGradTypeJacobTS)
 
-         allocate(JacobianDxDs(nVertLevels,nEdgesAll), &
-                  JacobianTz(nVertLevels,nEdgesAll), &
-                  JacobianSz(nVertLevels,nEdgesAll))
-         !$acc enter data create(JacobianDxDs, &
-         !$acc                   JacobianTz, JacobianSz)
+!        allocate(temp1VertEdge(nVertLevels,nEdgesAll), &
+!                 temp2VertEdge(nVertLevels,nEdgesAll), &
+!                 temp3VertEdge(nVertLevels,nEdgesAll))
+!        !$acc enter data create(temp1VertEdge, &
+!        !$acc                   temp2VertEdge, temp3VertEdge)
+
+
+         ! Initialization of temporary arrays
+#ifdef MPAS_OPENACC
+         !$acc parallel loop &
+         !$acc    present(temp1VertEdge,temp2VertEdge,temp3VertEdge) &
+         !$acc    private(k) collapse(2)
+#else
+         !$omp parallel
+         !$omp do schedule(runtime) &
+         !$omp private(k)
+#endif
+         do iEdge = 1,nEdgesAll
+            do k = 1,nVertLevels
+               temp1VertEdge(k,iEdge) = 0.0_RKIND
+               temp2VertEdge(k,iEdge) = 0.0_RKIND
+               temp3VertEdge(k,iEdge) = 0.0_RKIND
+            end do
+         end do
+#ifndef MPAS_OPENACC
+         !$omp end do
+         !$omp end parallel
+#endif
+
 
 #ifdef MPAS_OPENACC
          !$acc parallel loop &
@@ -429,7 +453,7 @@ contains
          !$acc            zMid, tracers, edgeMask, pressure, &
          !$acc            density, tend, thermExpCoeff, &
          !$acc            salineContractCoeff, &
-         !$acc            JacobianTz, JacobianSz, JacobianDxDs) &
+         !$acc            temp2VertEdge, temp3VertEdge, temp1VertEdge) &
          !$acc    private(cell1, cell2, invdcEdge, k, kMin, kMax, alpha, beta,&
          !$acc         TL, TR, SL, SR, Area, zStar, zC, zGamma, pGrad)
 #else
@@ -448,8 +472,8 @@ contains
             ! compute J(T,z) and J(S,z)
             ! in Shchepetkin and McWilliams (2003) (7.16)
 
-            JacobianTz(kMin,iEdge) = 0.0_RKIND
-            JacobianSz(kMin,iEdge) = 0.0_RKIND
+            temp2VertEdge(kMin,iEdge) = 0.0_RKIND
+            temp3VertEdge(kMin,iEdge) = 0.0_RKIND
 
             do k=kMin+1,kMax
 
@@ -489,8 +513,8 @@ contains
 
 
                ! eqn 2.6 in Shchepetkin and McWilliams (2003)
-               JacobianTz(k,iEdge) = Area*(TL - TR)
-               JacobianSz(k,iEdge) = Area*(SL - SR)
+               temp2VertEdge(k,iEdge) = Area*(TL - TR)
+               temp3VertEdge(k,iEdge) = Area*(SL - SR)
             end do
 
             ! In top layer, use pressure for generalized coordinates
@@ -523,13 +547,13 @@ contains
                      + density(k-1,cell2)*salineContractCoeff(k-1,cell2) )
 
                ! Shchepetkin and McWilliams (2003) (7.16)
-               JacobianDxDs(k,iEdge) = -alpha*JacobianTz(k,iEdge) + &
-                                         beta*JacobianSz(k,iEdge)
+               temp1VertEdge(k,iEdge) = -alpha*temp2VertEdge(k,iEdge) + &
+                                         beta*temp3VertEdge(k,iEdge)
 
-               ! note JacobianDxDs includes negative sign, so
+               ! note temp1VertEdge includes negative sign, so
                ! pGrad is - g/rho_0 dP/dx
 
-               pGrad = pGrad + gdensity0Inv * JacobianDxDs(k,iEdge) * invdcEdge
+               pGrad = pGrad + gdensity0Inv * temp1VertEdge(k,iEdge) * invdcEdge
 
                tend(k,iEdge) = tend(k,iEdge) + pGrad
 
@@ -540,8 +564,8 @@ contains
          !$omp end parallel
 #endif
 
-         !$acc exit data delete (JacobianDxDs, JacobianTz, JacobianSz)
-         deallocate(JacobianDxDs, JacobianTz, JacobianSz)
+!        !$acc exit data delete (temp1VertEdge, temp2VertEdge, temp3VertEdge)
+!        deallocate(temp1VertEdge, temp2VertEdge, temp3VertEdge)
 
       case default
 

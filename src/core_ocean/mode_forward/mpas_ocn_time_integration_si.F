@@ -506,7 +506,11 @@ module ocn_time_integration_si
                nEdges = nEdgesArray( 1 )
 
                ! Put f*normalBaroclinicVelocity^{perp} in normalVelocityNew as a work variable
-               call ocn_fuperp(statePool, meshPool, 2)
+            !*********************************************
+            ! Currently commented for GPU implementation
+               !call ocn_fuperp(statePool, meshPool, 2)
+            !*********************************************
+               
 
                allocate(uTemp(nVertLevels))
 

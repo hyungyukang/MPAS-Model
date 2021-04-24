@@ -109,9 +109,6 @@ contains
       real (kind=RKIND) :: &
          wAvg           ! ALE transport velocity across top edge
 
-      real (kind=RKIND), dimension(:,:), allocatable :: &
-         w_dudzTopEdge  ! w*du/dz at top of edge
-
       ! End preamble
       !-----------------------------------------------------------------
       ! Begin code
@@ -123,13 +120,9 @@ contains
       if (velVadvOff) return
       call mpas_timer_start("vel vadv")
 
-
-      allocate(w_dudzTopEdge(nVertLevels+1,nEdgesAll))
-      !$acc enter data create(w_dudzTopEdge)
-
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
-      !$acc    present(cellsOnEdge, minLevelEdgeBot, maxLevelEdgeTop, w_dudzTopEdge, &
+      !$acc    present(cellsOnEdge, minLevelEdgeBot, maxLevelEdgeTop, temp1VertEdge, &
       !$acc            vertAleTransportTop, normalVelocity, &
       !$acc            layerThickEdge) &
       !$acc    private(cell1, cell2, k, kmin, kmax, wAvg)
@@ -144,7 +137,7 @@ contains
          kmin  = minLevelEdgeBot(iEdge)
          kmax  = maxLevelEdgeTop(iEdge)
 
-         w_dudzTopEdge(kmin,iEdge) = 0.0_RKIND ! flux is zero at top
+         temp1VertEdge(kmin,iEdge) = 0.0_RKIND ! flux is zero at top
          do k = kmin+1,kmax
 
             ! Average w from cell center to edge
@@ -152,14 +145,14 @@ contains
                               vertAleTransportTop(k,cell2))
 
             ! compute dudz at vertical interface with first order derivative.
-            w_dudzTopEdge(k,iEdge) = wAvg* &
+            temp1VertEdge(k,iEdge) = wAvg* &
                                      (normalVelocity(k-1,iEdge) - &
                                       normalVelocity(k,  iEdge))/ &
                          (0.5_RKIND*(layerThickEdge(k-1,iEdge) + &
                                      layerThickEdge(k  ,iEdge)))
          end do
          ! transport is zero at bottom
-         w_dudzTopEdge(kmax+1,iEdge) = 0.0_RKIND
+         !temp1VertEdge(kmax+1,iEdge) = 0.0_RKIND
       end do
 #ifndef MPAS_OPENACC
       !$omp end do
@@ -168,26 +161,27 @@ contains
       ! Average w*du/dz from vertical interface to vertical middle of cell
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
-      !$acc    present(minLevelEdgeBot, maxLevelEdgeTop, tend, edgeMask, w_dudzTopEdge)&
+      !$acc    present(minLevelEdgeBot, maxLevelEdgeTop, tend, edgeMask, temp1VertEdge)&
       !$acc    private(k)
 #else
       !$omp do schedule(runtime) &
       !$omp    private(k)
 #endif
       do iEdge = 1, nEdgesOwned
-      do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
+      do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)-1
          tend(k,iEdge) = tend(k,iEdge) - edgeMask(k,iEdge)* &
-                         0.5_RKIND*(w_dudzTopEdge(k  ,iEdge) + &
-                                    w_dudzTopEdge(k+1,iEdge))
+                         0.5_RKIND*(temp1VertEdge(k  ,iEdge) + &
+                                    temp1VertEdge(k+1,iEdge))
       enddo
+
+      k = maxLevelEdgeTop(iEdge)
+      tend(k,iEdge) = tend(k,iEdge) - edgeMask(k,iEdge)* &
+                      0.5_RKIND*(temp1VertEdge(k  ,iEdge))
       enddo
 #ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
 #endif
-
-      !$acc exit data delete(w_dudzTopEdge)
-      deallocate(w_dudzTopEdge)
 
       call mpas_timer_stop("vel vadv")
 
