@@ -69,13 +69,13 @@ contains
 !> \details
 !>  This routine computes the desired Arbitrary Lagrangian-Eulerian (ALE)
 !>  thickness at the new time. It uses the ALE formulation, and includes
-!>  contributions from SSH variations (z-star), high-frequency divergence
+!>  contributions from temp1Cell variations (z-star), high-frequency divergence
 !>  (z-tilde), and imposes a minimum layer thickness.
 !
 !-----------------------------------------------------------------------
-   !subroutine ocn_ALE_thickness(meshPool, verticalMeshPool, SSH, ALE_thickness, err, newHighFreqThickness)!{{{
-   subroutine ocn_ALE_thickness(meshPool, verticalMeshPool, SSH, &
-                                ALE_thickness, restingThickness, err, &
+   !subroutine ocn_ALE_thickness(meshPool, verticalMeshPool, temp1Cell, temp2VertCell, err, newHighFreqThickness)!{{{
+   subroutine ocn_ALE_thickness(meshPool, verticalMeshPool, &
+                                restingThickness, err, &
                                 newHighFreqThickness)!{{{
 
       !-----------------------------------------------------------------
@@ -90,14 +90,14 @@ contains
       type (mpas_pool_type), intent(in) :: &
          verticalMeshPool   !< Input: vertical mesh information
 
-      real (kind=RKIND), dimension(:), intent(in) :: &
-         SSH     !< Input: sea surface height
+!     real (kind=RKIND), dimension(:), intent(in) :: &
+!        temp1Cell     !< Input: sea surface height
 
       real (kind=RKIND), dimension(:,:), intent(in), optional :: &
          newHighFreqThickness   !< Input: high frequency thickness.  Alters ALE thickness.
 
       real (kind=RKIND), dimension(:,:), intent(in), pointer :: &
-         restingThickness   !>  Layer thickness when the ocean is at rest, i.e. without SSH or internal perturbations.
+         restingThickness   !>  Layer thickness when the ocean is at rest, i.e. without temp1Cell or internal perturbations.
 
       !-----------------------------------------------------------------
       !
@@ -105,8 +105,8 @@ contains
       !
       !-----------------------------------------------------------------
 
-      real (kind=RKIND), dimension(:,:), intent(out) :: &
-         ALE_thickness     !< Output: desired thickness at new time
+!     real (kind=RKIND), dimension(:,:), intent(out) :: &
+!        temp2VertCell     !< Output: desired thickness at new time
 
       integer, intent(out) :: err !< Output: error flag
 
@@ -145,29 +145,29 @@ contains
       !$omp end parallel
 #endif
 
-#ifdef MPAS_OPENACC
-      !$acc parallel loop present(temp1Cell)
-#else
-      !$omp parallel
-      !$omp do schedule(runtime)
-#endif
-      do iCell = 1,nCellsAll
-         temp1Cell(iCell) = 0.0_RKIND
-      end do
-#ifndef MPAS_OPENACC
-      !$omp end do
-      !$omp end parallel
-#endif
+!#ifdef MPAS_OPENACC
+!      !$acc parallel loop present(temp2Cell)
+!#else
+!      !$omp parallel
+!      !$omp do schedule(runtime)
+!#endif
+!      do iCell = 1,nCellsAll
+!         temp2Cell(iCell) = 0.0_RKIND
+!      end do
+!#ifndef MPAS_OPENACC
+!      !$omp end do
+!      !$omp end parallel
+!#endif
      
 
 #ifdef MPAS_OPENACC
-      !$acc parallel loop present(temp1Cell)
+      !$acc parallel loop present(temp2Cell)
 #else
       !$omp parallel
       !$omp do schedule(runtime)
 #endif
       do iCell = 1,nCellsAll
-         temp1Cell(iCell) = 1e-14_RKIND
+         temp2Cell(iCell) = 1e-14_RKIND
       end do
 #ifndef MPAS_OPENACC
       !$omp end do
@@ -177,14 +177,14 @@ contains
       nCells = nCellsHalo( 1 )
  
       !
-      ! ALE thickness alteration due to SSH (z-star)
+      ! ALE thickness alteration due to temp1Cell (z-star)
       !
       if (configALEthicknessProportionality==1) then ! restingThickness_times_weights
 
 #ifdef MPAS_OPENACC
          !$acc parallel loop &
          !$acc    present(maxLevelCell,minLevelCell,vertCoordMovementWeights, &
-         !$acc            restingThickness,temp1Cell)  &
+         !$acc            restingThickness,temp2Cell)  &
          !$acc    private(k)
 #else
          !$omp parallel
@@ -192,7 +192,7 @@ contains
 #endif
          do iCell = 1, nCells
             do k = minLevelCell(iCell), maxLevelCell(iCell)
-               temp1Cell(iCell) = temp1Cell(iCell) &
+               temp2Cell(iCell) = temp2Cell(iCell) &
                                 + vertCoordMovementWeights(k) * restingThickness(k, iCell)
             end do
          end do
@@ -205,7 +205,7 @@ contains
 #ifdef MPAS_OPENACC
          !$acc parallel loop &
          !$acc    present(maxLevelCell,minLevelCell,vertCoordMovementWeights, &
-         !$acc            restingThickness,ALE_thickness,SSH,temp1Cell) &
+         !$acc            restingThickness,temp2VertCell,temp1Cell,temp2Cell) &
          !$acc    private(k,thicknessSum)
 #else
          !$omp parallel
@@ -213,13 +213,13 @@ contains
 #endif
          do iCell = 1, nCells
    
-            thicknessSum = SSH(iCell) / temp1Cell(iCell)
+            thicknessSum = temp1Cell(iCell) / temp2Cell(iCell)
 
             ! Note that restingThickness is nonzero, and remaining terms are perturbations about zero.
             ! This is equation 4 and 6 in Petersen et al 2015, but with eqn 6
             !do k = kMin, kMax
             do k = minLevelCell(iCell), maxLevelCell(iCell)
-               ALE_thickness(k, iCell) = restingThickness(k, iCell) &
+               temp2VertCell(k, iCell) = restingThickness(k, iCell) &
                   + ( vertCoordMovementWeights(k) * restingThickness(k, iCell) * thicknessSum )
             end do
          enddo
@@ -234,7 +234,7 @@ contains
 #ifdef MPAS_OPENACC
          !$acc parallel loop &
          !$acc    present(maxLevelCell,minLevelCell,vertCoordMovementWeights, &
-         !$acc            restingThickness,temp1Cell) &
+         !$acc            restingThickness,temp2Cell) &
          !$acc    private(k)
 #else
          !$omp parallel
@@ -242,7 +242,7 @@ contains
 #endif
          do iCell = 1, nCells
             do k = minLevelCell(iCell), maxLevelCell(iCell)
-               temp1Cell(iCell) = temp1Cell(iCell) + vertCoordMovementWeights(k)
+               temp2Cell(iCell) = temp2Cell(iCell) + vertCoordMovementWeights(k)
             end do
          end do
 #ifndef MPAS_OPENACC
@@ -253,7 +253,7 @@ contains
 #ifdef MPAS_OPENACC
          !$acc parallel loop &
          !$acc    present(maxLevelCell,minLevelCell,vertCoordMovementWeights, &
-         !$acc            restingThickness,ALE_thickness,SSH,temp1Cell) &
+         !$acc            restingThickness,temp2VertCell,temp1Cell,temp2Cell) &
          !$acc    private(weightSum,k)
 #else
          !$omp parallel
@@ -266,8 +266,8 @@ contains
                ! This is equation 4 and 6 in Petersen et al 2015, but with eqn 6
                ! altered so only the W_k weights are used. The resting
                ! thickness shown in eqn 6 is not included here.
-               ALE_thickness(k, iCell) = restingThickness(k, iCell) + ssh(iCell) &
-                                       * vertCoordMovementWeights(k) / temp1Cell(iCell)
+               temp2VertCell(k, iCell) = restingThickness(k, iCell) + temp1Cell(iCell) &
+                                       * vertCoordMovementWeights(k) / temp2Cell(iCell)
             end do
          enddo
 #ifndef MPAS_OPENACC
@@ -279,7 +279,7 @@ contains
       if (thicknessFilterActive) then
 #ifdef MPAS_OPENACC
          !$acc parallel loop &
-         !$acc    present(minLevelCell,maxLevelCell,ALE_thickness,newHighFreqThickness) &
+         !$acc    present(minLevelCell,maxLevelCell,temp2VertCell,newHighFreqThickness) &
          !$acc    private(k)
 #else
          !$omp parallel
@@ -289,8 +289,8 @@ contains
             !kMax = maxLevelCell(iCell)
             !kMin = minLevelCell(iCell)
             do k = minLevelCell(iCell),maxLevelCell(iCell)
-               ALE_thickness(k, iCell) = &
-                   ALE_thickness(k, iCell) + newHighFreqThickness(k,iCell)
+               temp2VertCell(k, iCell) = &
+                   temp2VertCell(k, iCell) + newHighFreqThickness(k,iCell)
             end do
          enddo
 #ifndef MPAS_OPENACC
@@ -307,7 +307,7 @@ contains
 #ifdef MPAS_OPENACC
          !$acc parallel loop &
          !$acc    present(minLevelCell,maxLevelCell,temp1Vert, &
-         !$acc            ALE_thickness,restingThickness, &
+         !$acc            temp2VertCell,restingThickness, &
          !$acc            config_min_thickness,config_max_thickness_factor) &
          !$acc private(kMin,kMax, temp1Vert, remainder, k, newThickness, &
          !$acc         temp2Vert,temp3Vert)
@@ -324,7 +324,7 @@ contains
             ! go down the column:
  
             do k = minLevelCell(iCell),maxLevelCell(iCell)
-               temp1Vert(k) = ALE_thickness(k, iCell)
+               temp1Vert(k) = temp2VertCell(k, iCell)
             end do
 
             remainder = 0.0_RKIND
@@ -354,7 +354,7 @@ contains
             temp3Vert(kMin) = temp3Vert(kMin) + remainder
 
             do k = minLevelCell(iCell),maxLevelCell(iCell)
-               ALE_thickness(k, iCell) = ALE_thickness(k, iCell) &
+               temp2VertCell(k, iCell) = temp2VertCell(k, iCell) &
                                             + temp2Vert(k) &
                                             + temp3Vert(k)
             end do

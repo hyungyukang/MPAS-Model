@@ -153,7 +153,8 @@ module ocn_mesh
       temp1Vert,temp2Vert,temp3Vert,temp1Edge,temp2Edge,temp1Cell,temp2Cell
    real(kind=RKIND), public, dimension(:,:), allocatable :: &
       temp1VertEdge,temp2VertEdge,temp3VertEdge, &
-      temp1VertCell,temp2VertCell
+      temp1VertCell,temp2VertCell, &
+      temp1VertVertex
    !}}}
 
    !----------------------------------------------------------------------------
@@ -528,15 +529,16 @@ contains
             temp1Vert(nVertLevels), &
             temp2Vert(nVertLevels), &
             temp3Vert(nVertLevels), &
-            temp1Edge(nEdgesAll), &
-            temp2Edge(nEdgesAll), &
-            temp1Cell(nCellsAll), &
-            temp2Cell(nCellsAll), &
-            temp1VertEdge(nVertLevels,nEdgesAll), &
-            temp2VertEdge(nVertLevels,nEdgesAll), &
-            temp3VertEdge(nVertLevels,nEdgesAll), &
-            temp1VertCell(nVertLevels,nCellsAll), &
-            temp2VertCell(nVertLevels,nCellsAll) )
+            temp1Edge(nEdgesAll+1), &
+            temp2Edge(nEdgesAll+1), &
+            temp1Cell(nCellsAll+1), &
+            temp2Cell(nCellsAll+1), &
+            temp1VertEdge(nVertLevels,nEdgesAll+1), &
+            temp2VertEdge(nVertLevels,nEdgesAll+1), &
+            temp3VertEdge(nVertLevels,nEdgesAll+1), &
+            temp1VertCell(nVertLevels,nCellsAll+1), &
+            temp2VertCell(nVertLevels,nCellsAll+1), & 
+            temp1VertVertex(nVertLevels,nVerticesAll+1) )
  
          temp1Vert(:) = 0.0_RKIND
          temp2Vert(:) = 0.0_RKIND
@@ -550,6 +552,7 @@ contains
          temp3VertEdge(:,:) = 0.0_RKIND
          temp1VertCell(:,:) = 0.0_RKIND
          temp2VertCell(:,:) = 0.0_RKIND
+         temp1VertVertex(:,:) = 0.0_RKIND
 
 
          ! Copy structure and components to accelerator
@@ -658,6 +661,7 @@ contains
          !$acc                   temp3VertEdge,            &
          !$acc                   temp1VertCell,            &
          !$acc                   temp2VertCell,            &
+         !$acc                   temp1VertVertex,          &
       ! ocn Configurations
          !$acc                   config_max_thickness_factor, &
          !$acc                   config_min_thickness)
@@ -811,6 +815,7 @@ contains
       !$acc                  temp3VertEdge,     &
       !$acc                  temp1VertCell,     &
       !$acc                  temp2VertCell,     &
+      !$acc                  temp1VertVertex,   &
    ! ocn Configurations
       !$acc                  config_max_thickness_factor, &
       !$acc                  config_min_thickness )
@@ -923,7 +928,8 @@ contains
                   temp2VertEdge, &
                   temp3VertEdge, &
                   temp1VertCell, &
-                  temp2VertCell)
+                  temp2VertCell, &
+                  temp1VertVertex)
 
 !-------------------------------------------------------------------------------
 

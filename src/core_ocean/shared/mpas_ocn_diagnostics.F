@@ -1661,19 +1661,6 @@ contains
       integer :: iEdge, iCell, k, i, nCells
 
       real (kind=RKIND) :: flux, invAreaCell, div_hu_btr, edgeArea
-      !integer, dimension(:, :), pointer :: edgeSignOnCell
-
-      ! Scratch Arrays
-      ! projectedSSH: projected SSH at a new time
-      !        units: none
-      real (kind=RKIND), dimension(:), allocatable ::  projectedSSH
-      ! div_hu: divergence of (thickness*velocity)
-      !  units: none
-      real (kind=RKIND), dimension(:,:), allocatable :: div_hu
-      ! ALE_Thickness: ALE thickness at new time
-      !         units: none
-      real (kind=RKIND), dimension(:,:), allocatable :: ALE_Thickness
-
       real (kind=RKIND), dimension(:,:), pointer :: restingThickness
 
       err = 0
@@ -1688,24 +1675,19 @@ contains
 
       nCells = nCellsAll
 
-      allocate(div_hu(nVertLevels, nCells), &
-               projectedSSH(nCells), &
-               ALE_Thickness(nVertLevels, nCells))
-
       !$acc enter data &
       !$acc    copyin(layerThicknessEdge,normalVelocity,oldSSH, &
       !$acc           oldLayerThickness,vertAleTransportTop, newHighFreqThickness, &
-      !$acc           restingThickness) &
-      !$acc    create(div_hu,projectedSSH,ALE_Thickness)  
+      !$acc           restingThickness) 
 
 #ifdef MPAS_OPENACC
-      !$acc parallel loop present(projectedSSH)
+      !$acc parallel loop present(temp1Cell)
 #else
       !$omp parallel
       !$omp do schedule(runtime)
 #endif
       do iCell = 1, nCellsAll
-         projectedSSH(iCell) = 0.0_RKIND
+         temp1Cell(iCell) = 0.0_RKIND
       end do
 #ifndef MPAS_OPENACC
       !$omp end do
@@ -1713,14 +1695,14 @@ contains
 #endif
 
 #ifdef MPAS_OPENACC
-      !$acc parallel loop present(div_hu) collapse(2)
+      !$acc parallel loop present(temp1VertCell) collapse(2)
 #else
       !$omp parallel
       !$omp do schedule(runtime) private(k)
 #endif
       do iCell = 1, nCellsAll
          do k = 1,nVertLevels
-            div_hu(k,iCell) = 0.0_RKIND
+            temp1VertCell(k,iCell) = 0.0_RKIND
          end do
       end do
 #ifndef MPAS_OPENACC
@@ -1737,15 +1719,15 @@ contains
       ! See Ringler et al. (2010) jcp paper, eqn 19, 21, and fig. 3.
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
-      !$acc    present(div_hu,layerThicknessEdge,normalVelocity, &
-      !$acc            projectedSSH,areaCell,nEdgesOnCell, &
+      !$acc    present(temp1VertCell,layerThicknessEdge,normalVelocity, &
+      !$acc            temp1Cell,areaCell,nEdgesOnCell, &
       !$acc            edgesOnCell,minLevelEdgeBot,minLevelEdgeTop, &
       !$acc            dvEdge,edgeSignOnCell) &
       !$acc    private(iCell,i,iEdge, k, flux,edgeArea)
 #else
       !$omp parallel
       !$omp do schedule(runtime) private(invAreaCell, i, iEdge, k, flux,
-      !div_hu_btr)
+      !temp1VertCell_btr)
 #endif
       do iCell = 1, nCells
          do i = 1, nEdgesOnCell(iCell)
@@ -1754,11 +1736,11 @@ contains
             do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
                flux = layerThicknessEdge(k, iEdge) * normalVelocity(k, iEdge) &
                     * edgeArea
-               div_hu(k,iCell) = div_hu(k,iCell) - flux
-               projectedSSH(iCell) = projectedSSH(iCell) - flux
+               temp1VertCell(k,iCell) = temp1VertCell(k,iCell) - flux
+               temp1Cell(iCell) = temp1Cell(iCell) - flux
             end do
          end do
-         projectedSSH(iCell) = oldSSH(iCell) - dt*projectedSSH(iCell)
+         temp1Cell(iCell) = oldSSH(iCell) - dt*temp1Cell(iCell)
       end do
 #ifndef MPAS_OPENACC
       !$omp end do
@@ -1769,10 +1751,10 @@ contains
       ! Compute desired thickness at new time
       !
       if (present(newHighFreqThickness)) then
-        call ocn_ALE_thickness(meshPool, verticalMeshPool, projectedSSH, ALE_thickness, &
+        call ocn_ALE_thickness(meshPool, verticalMeshPool, &
                                restingThickness, err, newHighFreqThickness)
       else
-        call ocn_ALE_thickness(meshPool, verticalMeshPool, projectedSSH, ALE_thickness, &
+        call ocn_ALE_thickness(meshPool, verticalMeshPool, &
                                restingThickness, err)
       endif
 
@@ -1781,7 +1763,7 @@ contains
       !
       ! Vertical transport through layer interface at top and bottom is zero.
       ! Here we are using solving the continuity equation for vertAleTransportTop ($w^t$),
-      ! and using ALE_Thickness for thickness at the new time.
+      ! and using temp2VertCell for thickness at the new time.
 
 
 #ifdef MPAS_OPENACC
@@ -1803,7 +1785,7 @@ contains
 
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
-      !$acc    present(vertAleTransportTop,div_hu,ALE_Thickness,oldLayerThickness, &
+      !$acc    present(vertAleTransportTop,temp1VertCell,temp2VertCell,oldLayerThickness, &
       !$acc            minLevelCell,maxLevelCell) &
       !$acc    private(k)
 #else
@@ -1812,8 +1794,8 @@ contains
 #endif
       do iCell = 1,nCells
          do k = maxLevelCell(iCell), minLevelCell(iCell)+1, -1
-            vertAleTransportTop(k,iCell) = vertAleTransportTop(k+1,iCell) - div_hu(k,iCell) &
-              - (ALE_Thickness(k,iCell) - oldLayerThickness(k,iCell))/dt
+            vertAleTransportTop(k,iCell) = vertAleTransportTop(k+1,iCell) - temp1VertCell(k,iCell) &
+              - (temp2VertCell(k,iCell) - oldLayerThickness(k,iCell))/dt
          end do
       end do
 #ifndef MPAS_OPENACC
@@ -1824,12 +1806,8 @@ contains
       !$acc exit data &
       !$acc    copyout(vertAleTransportTop) &
       !$acc    delete(oldLayerThickness,newHighFreqThickness, &
-      !$acc           div_hu,projectedSSH,ALE_Thickness,layerThicknessEdge, &
+      !$acc           layerThicknessEdge, &
       !$acc           restingThickness,normalVelocity,oldSSH)
-
-      deallocate(div_hu, &
-                 projectedSSH, &
-                 ALE_Thickness)
 
    end subroutine ocn_vert_transport_velocity_top!}}}
 

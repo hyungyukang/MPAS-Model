@@ -121,12 +121,6 @@ contains
          dvEdgeInv,        &! 1/dvEdge
          visc4              ! scaled biharmonic viscosity coeff
 
-      ! Scratch Arrays
-      real (kind=RKIND), dimension(:,:), allocatable :: &
-         del2div,     &!
-         del2relVort, &!
-         del2u
-
       ! End preamble
       !-----------------------------------------------------------------
       ! Begin code
@@ -140,18 +134,13 @@ contains
 
       !*** allocate temporaries
 
-      allocate(del2u(nVertLevels, nEdgesAll + 1), &
-               del2div(nVertLevels, nCellsAll + 1), &
-               del2relVort(nVertLevels, nVerticesAll + 1))
-      !$acc enter data create(del2u, del2div, del2relVort)
-
       nEdges = nEdgesHalo(2)
 
       !Compute Laplacian of velocity
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
       !$acc    present(cellsOnEdge, verticesOnEdge, maxLevelEdgeTop, &
-      !$acc            dvEdge, dcEdge, del2u, div, relVort) &
+      !$acc            dvEdge, dcEdge, temp1VertEdge, div, relVort) &
       !$acc    private(k, cell1, cell2, vertex1, vertex2, &
       !$acc            dcEdgeInv, dvEdgeInv)
 #else
@@ -161,7 +150,7 @@ contains
       !$omp            dcEdgeInv, dvEdgeInv)
 #endif
       do iEdge = 1, nEdges
-         del2u(:, iEdge) = 0.0_RKIND
+         temp1VertEdge(:, iEdge) = 0.0_RKIND
          cell1 = cellsOnEdge(1,iEdge)
          cell2 = cellsOnEdge(2,iEdge)
 
@@ -173,7 +162,7 @@ contains
 
          do k=1,maxLevelEdgeTop(iEdge)
             ! Compute \nabla^2 u = \nabla divergence + k \times \nabla relativeVorticity
-            del2u(k,iEdge) = (div(k,cell2) - div(k,cell1))*dcEdgeInv &
+            temp1VertEdge(k,iEdge) = (div(k,cell2) - div(k,cell1))*dcEdgeInv &
                             -(relVort(k,vertex2) - relVort(k,vertex1))*&
                                                            dvEdgeInv
          end do
@@ -189,22 +178,22 @@ contains
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
       !$acc    present(edgesOnVertex, maxLevelVertexTop, dcEdge, &
-      !$acc            areaTriangle, edgeSignOnVertex, del2u, &
-      !$acc            del2relVort) &
+      !$acc            areaTriangle, edgeSignOnVertex, temp1VertEdge, &
+      !$acc            temp1VertVertex) &
       !$acc    private(i, k, iEdge, areaTriInv)
 #else
       !$omp parallel
       !$omp do schedule(runtime) private(i, k, iEdge, areaTriInv)
 #endif
       do iVertex = 1, nVertices
-         del2relVort(:, iVertex) = 0.0_RKIND
+         temp1VertVertex(:, iVertex) = 0.0_RKIND
          areaTriInv = 1.0_RKIND/areaTriangle(iVertex)
          do i = 1, vertexDegree
             iEdge = edgesOnVertex(i, iVertex)
             do k = 1, maxLevelVertexTop(iVertex)
-               del2relVort(k,iVertex) = del2relVort(k,iVertex) &
+               temp1VertVertex(k,iVertex) = temp1VertVertex(k,iVertex) &
                                       + edgeSignOnVertex(i,iVertex) &
-                                       *dcEdge(iEdge)*del2u(k,iEdge)*areaTriInv
+                                       *dcEdge(iEdge)*temp1VertEdge(k,iEdge)*areaTriInv
             end do
          end do
       end do
@@ -219,21 +208,21 @@ contains
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
       !$acc    present(nEdgesOnCell, edgesOnCell, maxLevelCell, dvEdge,&
-      !$acc            edgeSignOnCell, areaCell, del2u, del2div) &
+      !$acc            edgeSignOnCell, areaCell, temp1VertEdge, temp1VertCell) &
       !$acc    private(i, k, iEdge, areaCellInv)
 #else
       !$omp parallel
       !$omp do schedule(runtime) private(i, k, iEdge, areaCellInv)
 #endif
       do iCell = 1, nCells
-         del2div(:, iCell) = 0.0_RKIND
+         temp1VertCell(:, iCell) = 0.0_RKIND
          areaCellInv = 1.0_RKIND / areaCell(iCell)
          do i = 1, nEdgesOnCell(iCell)
             iEdge = edgesOnCell(i, iCell)
             do k = 1, maxLevelCell(iCell)
-               del2div(k,iCell) = del2div(k,iCell) - &
+               temp1VertCell(k,iCell) = temp1VertCell(k,iCell) - &
                                   edgeSignOnCell(i,iCell)*dvEdge(iEdge) &
-                                 *del2u(k,iEdge)*areaCellInv
+                                 *temp1VertEdge(k,iEdge)*areaCellInv
             end do
          end do
       end do
@@ -250,7 +239,7 @@ contains
       !$acc parallel loop &
       !$acc    present(cellsOnEdge, verticesOnEdge, maxLevelEdgeTop, &
       !$acc            dcEdge, dvEdge, meshScalingDel4, edgeMask, &
-      !$acc            del2div, del2relVort, tend) &
+      !$acc            temp1VertCell, temp1VertVertex, tend) &
       !$acc private(k, cell1, cell2, vertex1, vertex2, &
       !$acc         dcEdgeInv, dvEdgeInv, visc4, uDiff)
 #else
@@ -270,9 +259,9 @@ contains
          visc4 = viscDel4*meshScalingDel4(iEdge)
 
          do k=1, maxLevelEdgeTop(iEdge)
-            uDiff = divFactor*(del2div(k,cell2) - del2div(k,cell1))* &
+            uDiff = divFactor*(temp1VertCell(k,cell2) - temp1VertCell(k,cell1))* &
                                                           dcEdgeInv  &
-                  - (del2relVort(k,vertex2) - del2relVort(k,vertex1))* &
+                  - (temp1VertVertex(k,vertex2) - temp1VertVertex(k,vertex1))* &
                                                           dvEdgeInv
 
             tend(k,iEdge) = tend(k,iEdge) - &
@@ -283,11 +272,6 @@ contains
       !$omp end do
       !$omp end parallel
 #endif
-
-      !$acc exit data delete(del2u, del2div, del2relVort)
-      deallocate(del2u, &
-                 del2div, &
-                 del2relVort)
 
       call mpas_timer_stop("vel del4")
 
