@@ -242,6 +242,7 @@ module ocn_time_integration_si
       ! Semi-implicit variables
       real (kind=RKIND), dimension(5) :: CGcst_allreduce,CGcst_allreduce_global
       real (kind=RKIND), dimension(3) :: CGcst_allreduce3,CGcst_allreduce_global3
+      real (kind=RKIND), dimension(5) :: CGcst_allreduce5,CGcst_allreduce_global5
       real (kind=RKIND) :: CGcst_r00r0,CGcst_r00w0,CGcst_r00r1,CGcst_r00w1
       real (kind=RKIND) :: CGcst_r00r0_global,CGcst_r00w0_global,CGcst_r00r1_global,CGcst_r00w1_global
 
@@ -253,7 +254,7 @@ module ocn_time_integration_si
 
       real (kind=RKIND) :: CGcst_alpha0,CGcst_alpha1,CGcst_beta0,CGcst_beta1,CGcst_omega0,CGcst_omega1
       real (kind=RKIND) :: sshCurArea,sshLagArea,sshTendA,sshTendB,sshTendC,temp1,temp2,crit_main,resid,wgt
-      real (kind=RKIND) :: r0u0,r1u1,w0u0,w1u1,r0r0,r1r1,alph0,alph1,beta0,beta1
+      real (kind=RKIND) :: r0u0,r1u1,w0u0,w1u1,r0r0,r1r1,alph0,alph1,beta0,beta1,b0b0,rresid
 
       ! Diagnostics Field Pointers
       type (field2DReal), pointer :: normalizedRelativeVorticityEdgeField, divergenceField, relativeVorticityField
@@ -339,7 +340,8 @@ module ocn_time_integration_si
       call mpas_pool_get_config(domain % configs, 'config_n_btr_si_outer_iter'  , config_n_btr_si_outer_iter  )
 
       ! Tolerance for main iteration -- !
-      crit_main  = config_btr_si_tolerance * area_mean
+      !crit_main  = config_btr_si_tolerance * area_mean
+      crit_main  = config_btr_si_tolerance * dsqrt(area_mean)
 
       !--- Backward-Euler at the 1st time step only to remove spurious oscillation caused by CN method
       if ( first_step ) then
@@ -846,7 +848,7 @@ module ocn_time_integration_si
 
          ! Outer loop -----------------------------------------------------------------------------!
 
-         call mpas_timer_start("si btr residual")
+!        call mpas_timer_start("si btr residual")
 
          ! SpMV -----------------------------------------------------------------------------------!
 
@@ -884,6 +886,9 @@ module ocn_time_integration_si
             nCells = nCellsArray( 1 )
             nEdges = nEdgesArray( 2 )
 
+
+         call mpas_timer_start("si applyOp")
+            
             do iCell = 1, nCells
                sshTendb1 = 0.0_RKIND
                sshTendb2 = 0.0_RKIND
@@ -926,12 +931,14 @@ module ocn_time_integration_si
             block => block % next
          end do  ! block
 
-         call mpas_timer_start("si halo r0")
+!        call mpas_timer_start("si halo r0")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q0', 1)
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-         call mpas_timer_stop("si halo r0")
+!        call mpas_timer_stop("si halo r0")
+
+         call mpas_timer_start("si applyOp")
 
          ! SpMV -----------------------------------------------------------------------------------!
 
@@ -972,9 +979,7 @@ module ocn_time_integration_si
             CGcst_r00r0 = 0.0_RKIND
             CGcst_r00w0 = 0.0_RKIND
 
-            r0u0 = 0.0_RKIND
-            w0u0 = 0.0_RKIND
-            r0r0 = 0.0_RKIND
+         call mpas_timer_start("si applyOp")
 
             do iCell = 1, nCells
 
@@ -1004,11 +1009,25 @@ module ocn_time_integration_si
                CGvec_w0(iCell) = -sshCurArea - sshTendAx
                CGvec_s0(iCell) = 0.0_RKIND
 
+            end do ! iCell
+
+         call mpas_timer_stop("si applyOp")
+
+
+         call mpas_timer_stop("si MvTransMv")
+
+            r0u0 = 0.0_RKIND
+            w0u0 = 0.0_RKIND
+            r0r0 = 0.0_RKIND
+
+            do iCell = 1, nCells
+
                r0u0 = r0u0 + CGvec_r0(iCell) * CGvec_q0(iCell)
                w0u0 = w0u0 + CGvec_w0(iCell) * CGvec_q0(iCell)
                r0r0 = r0r0 + CGvec_r0(iCell) * CGvec_r0(iCell)
 
             end do ! iCell
+
 
             block => block % next
          end do  ! block
@@ -1017,20 +1036,22 @@ module ocn_time_integration_si
          CGcst_allreduce3(2) = w0u0
          CGcst_allreduce3(3) = r0r0
 
-         call mpas_timer_start("si reduction r0")
+         !call mpas_timer_start("si reduction r0")
          call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
-         call mpas_timer_stop ("si reduction r0")
+         !call mpas_timer_stop ("si reduction r0")
 
          r0u0 = CGcst_allreduce_global3(1)
          w0u0 = CGcst_allreduce_global3(2)
          r0r0 = CGcst_allreduce_global3(3)
 
+         call mpas_timer_stop("si MvTransMv")
+
          alph0 = r0u0 / w0u0
          beta0 = 0.0_RKIND
 
-         call mpas_timer_stop("si btr residual")
+!        call mpas_timer_stop("si btr residual")
 
-         call mpas_timer_start("si btr iteration")
+!        call mpas_timer_start("si btr iteration")
 
          !**************************************************************!
          do iter = 1,config_n_btr_si_outer_iter
@@ -1062,6 +1083,8 @@ module ocn_time_integration_si
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
 
+         call mpas_timer_start("si MvAddMv")
+
                do iCell = 1, nCells
                  CGvec_z1(iCell) = CGvec_q0(iCell) + beta0 * CGvec_z0(iCell)
                  CGvec_s1(iCell) = CGvec_w0(iCell) + beta0 * CGvec_s0(iCell)
@@ -1070,16 +1093,22 @@ module ocn_time_integration_si
                  CGvec_q1(iCell) = CGvec_r1(iCell)
                end do ! iCell
 
+         call mpas_timer_stop("si MvAddMv")
+
                block => block % next
             end do  ! block
 
-            call mpas_timer_start("si halo")
+
+
+         call mpas_timer_start("si applyOp")
+
+!           call mpas_timer_start("si halo")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q1', 1)
             call mpas_threading_barrier()
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo")
+!           call mpas_timer_stop("si halo")
 
             ! SpMV -----------------------------------------------------------------------------------!
 
@@ -1119,10 +1148,6 @@ module ocn_time_integration_si
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
 
-               r1u1 = 0.d0
-               w1u1 = 0.d0
-               r1r1 = 0.d0
-
                do iCell = 1, nCells
                   sshTendAx = 0.0_RKIND
 
@@ -1159,6 +1184,23 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
 
+         call mpas_timer_stop("si applyOp")
+
+
+         call mpas_timer_start("si MvTransMv")
+
+               r1u1 = 0.d0
+               w1u1 = 0.d0
+               r1r1 = 0.d0
+
+               do iCell = 1, nCells
+
+                  r1u1 = r1u1 + CGvec_r1(iCell) * CGvec_q1(iCell)
+                  w1u1 = w1u1 + CGvec_w1(iCell) * CGvec_q1(iCell)
+                  r1r1 = r1r1 + CGvec_r1(iCell) * CGvec_r1(iCell)
+
+               end do ! iCell
+
             ! Begin reduction ------------------------------------------------------------------------!
 
             CGcst_allreduce3(1) = r1u1
@@ -1166,14 +1208,16 @@ module ocn_time_integration_si
             CGcst_allreduce3(3) = r1r1
 
             ! Global sum across CPUs
-            call mpas_timer_start("si reduction iter")
+            !call mpas_timer_start("si reduction iter")
             call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
-            call mpas_timer_stop ("si reduction iter")
+            !call mpas_timer_stop ("si reduction iter")
 
             r1u1 = CGcst_allreduce_global3(1)
             w1u1 = CGcst_allreduce_global3(2)
             r1r1 = CGcst_allreduce_global3(3)
             resid = r1r1
+
+         call mpas_timer_stop("si MvTransMv")
 
             beta1 = r1u1 / r0u0
             alph1 = 1.0_RKIND / (w1u1/r1u1 - beta1/alph0)
@@ -1219,6 +1263,8 @@ module ocn_time_integration_si
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
 
+         call mpas_timer_start("si MvAddMv")
+
                do iCell = 1, nCells
                   sshSubcycleCur(iCell) = sshSubcycleNew(iCell)
                   CGvec_r0(iCell) = CGvec_r1(iCell)
@@ -1227,6 +1273,8 @@ module ocn_time_integration_si
                   CGvec_s0(iCell) = CGvec_s1(iCell)
                   CGvec_q0(iCell) = CGvec_q1(iCell)
                end do
+
+         call mpas_timer_stop("si MvAddMv")
 
                 r0u0 = r1u1
                 w0u0 = w1u1
@@ -1249,7 +1297,7 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo iter")
 
-         call mpas_timer_stop("si btr iteration")
+!        call mpas_timer_stop("si btr iteration")
 
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1340,7 +1388,7 @@ module ocn_time_integration_si
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
          ! Main loop ------------------------------------------------------------------------------!
-         call mpas_timer_start("si btr residual")
+!        call mpas_timer_start("si btr residual")
 
          ! SpMV -----------------------------------------------------------------------------------!
 
@@ -1378,6 +1426,9 @@ module ocn_time_integration_si
             nCells = nCellsArray( 1 )
             nEdges = nEdgesArray( 2 )
 
+          
+         call mpas_timer_start("si applyOp")
+
             do iCell = 1, nCells
                sshTendb1 = 0.0_RKIND
                sshTendb2 = 0.0_RKIND
@@ -1395,7 +1446,6 @@ module ocn_time_integration_si
                   sshEdgeMid = alpha1 * sshEdgeLag + alpha2 * sshEdgeCur
 
                   ! method 1, matches method 0 without pbcs, works with pbcs.
-                  thicknessSumCur = sshEdgeCur + min(bottomDepth(cell1), bottomDepth(cell2))
                   thicknessSumLag = sshEdgeLag + min(bottomDepth(cell1), bottomDepth(cell2))
                   thicknessSumMid = sshEdgeMid + min(bottomDepth(cell1), bottomDepth(cell2))
 
@@ -1421,18 +1471,20 @@ module ocn_time_integration_si
                                 -(-sshLagArea - sshTendAx)
                CGvec_z0(iCell) = CGvec_r0(iCell)
                CGvec_q0(iCell) = CGvec_r0(iCell)
+
             end do ! iCell
 
             block => block % next
          end do  ! block
 
-         call mpas_timer_start("si halo r0")
+         !call mpas_timer_start("si halo r0")
          call mpas_dmpar_exch_group_create(domain, iterGroupName)
          call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q0', 1)
          call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-         call mpas_timer_stop("si halo r0")
+         !call mpas_timer_stop("si halo r0")
 
+         call mpas_timer_stop("si applyOp")
 
          ! SpMV -----------------------------------------------------------------------------------!
 
@@ -1472,9 +1524,7 @@ module ocn_time_integration_si
             CGcst_r00r0 = 0.0_RKIND
             CGcst_r00w0 = 0.0_RKIND
 
-            r0u0 = 0.0_RKIND
-            w0u0 = 0.0_RKIND
-            r0r0 = 0.0_RKIND
+         call mpas_timer_start("si applyOp")
 
             do iCell = 1, nCells
 
@@ -1506,38 +1556,55 @@ module ocn_time_integration_si
                CGvec_w0(iCell) = -sshCurArea - sshTendAx
                CGvec_s0(iCell) = 0.0_RKIND
 
+            end do ! iCell
+
+         call mpas_timer_stop("si applyOp")
+
+            block => block % next
+         end do  ! block
+
+         call mpas_timer_start("si MvTransMv")
+
+            r0u0 = 0.0_RKIND
+            w0u0 = 0.0_RKIND
+            r0r0 = 0.0_RKIND
+
+            do iCell = 1, nCells
+
                r0u0 = r0u0 + CGvec_r0(iCell) * CGvec_q0(iCell)
                w0u0 = w0u0 + CGvec_w0(iCell) * CGvec_q0(iCell)
                r0r0 = r0r0 + CGvec_r0(iCell) * CGvec_r0(iCell)
 
             end do ! iCell
 
-            block => block % next
-         end do  ! block
-
          CGcst_allreduce3(1) = r0u0
          CGcst_allreduce3(2) = w0u0
          CGcst_allreduce3(3) = r0r0
 
-         call mpas_timer_start("si reduction r0")
+         !call mpas_timer_start("si reduction r0")
          call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
-         call mpas_timer_stop ("si reduction r0")
+         !call mpas_timer_stop ("si reduction r0")
 
          r0u0 = CGcst_allreduce_global3(1)
          w0u0 = CGcst_allreduce_global3(2)
          r0r0 = CGcst_allreduce_global3(3)
+         b0b0 = r0r0
+
+         call mpas_timer_stop("si MvTransMv")
 
          alph0 = r0u0 / w0u0
          beta0 = 0.0_RKIND
 
-         call mpas_timer_stop("si btr residual")
+!        call mpas_timer_stop("si btr residual")
 
-
-         call mpas_timer_start("si btr iteration")
+!        call mpas_timer_start("si btr iteration")
 
          iter = 0
          resid = (crit_main+100.0)**2.0
 
+
+         ! Main iteration -------------------------------------------------------------------------!
+        
          !**************************************************************!
          do while ( dsqrt(resid) > crit_main )
          !**************************************************************!
@@ -1573,6 +1640,8 @@ module ocn_time_integration_si
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
 
+            call mpas_timer_start("si MvAddMv")
+
                do iCell = 1, nCells
                  CGvec_z1(iCell) = CGvec_q0(iCell) + beta0 * CGvec_z0(iCell)
                  CGvec_s1(iCell) = CGvec_w0(iCell) + beta0 * CGvec_s0(iCell)
@@ -1580,16 +1649,19 @@ module ocn_time_integration_si
                  CGvec_r1(iCell) = CGvec_r0(iCell) - alph0 * CGvec_s1(iCell)
                  CGvec_q1(iCell) = CGvec_r1(iCell)
                end do ! iCell
+            call mpas_timer_stop("si MvAddMv")
 
                block => block % next
             end do  ! block
 
-            call mpas_timer_start("si halo iter")
+            call mpas_timer_start("si applyOp")
+
+            !call mpas_timer_start("si halo iter")
             call mpas_dmpar_exch_group_create(domain, iterGroupName)
             call mpas_dmpar_exch_group_add_field(domain, iterGroupName, 'CGvec_q1', 1)
             call mpas_dmpar_exch_group_full_halo_exch(domain, iterGroupName)
             call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
-            call mpas_timer_stop("si halo iter")
+            !call mpas_timer_stop("si halo iter")
 
 
             ! SpMV -----------------------------------------------------------------------------------!
@@ -1630,10 +1702,6 @@ module ocn_time_integration_si
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
 
-               r1u1 = 0.d0
-               w1u1 = 0.d0
-               r1r1 = 0.d0
-
                do iCell = 1, nCells
                   sshTendAx = 0.0_RKIND
 
@@ -1661,15 +1729,27 @@ module ocn_time_integration_si
 
                   CGvec_w1(iCell) = -sshLagArea - sshTendAx
 
+               end do ! iCell
+
+            call mpas_timer_stop("si applyOp")
+
+               block => block % next
+            end do  ! block
+
+
+            call mpas_timer_start("si MvTransMv")
+
+               r1u1 = 0.d0
+               w1u1 = 0.d0
+               r1r1 = 0.d0
+
+               do iCell = 1, nCells
+
                   r1u1 = r1u1 + CGvec_r1(iCell) * CGvec_q1(iCell)
                   w1u1 = w1u1 + CGvec_w1(iCell) * CGvec_q1(iCell)
                   r1r1 = r1r1 + CGvec_r1(iCell) * CGvec_r1(iCell)
 
                end do ! iCell
-
-               block => block % next
-            end do  ! block
-
 
             ! Begin reduction ------------------------------------------------------------------------!
 
@@ -1678,14 +1758,17 @@ module ocn_time_integration_si
             CGcst_allreduce3(3) = r1r1
 
             ! Global sum across CPUs
-            call mpas_timer_start("si reduction iter")
+            !call mpas_timer_start("si reduction iter")
             call mpas_dmpar_sum_real_array(dminfo, 3, CGcst_allreduce3, CGcst_allreduce_global3)
-            call mpas_timer_stop ("si reduction iter")
+            !call mpas_timer_stop ("si reduction iter")
 
             r1u1 = CGcst_allreduce_global3(1)
             w1u1 = CGcst_allreduce_global3(2)
             r1r1 = CGcst_allreduce_global3(3)
-            resid = r1r1
+            resid = r1r1 / b0b0
+
+            call mpas_timer_stop("si MvTransMv")
+
 
             beta1 = r1u1 / r0u0
             alph1 = 1.0_RKIND / (w1u1/r1u1 - beta1/alph0)
@@ -1730,6 +1813,7 @@ module ocn_time_integration_si
                nCells = nCellsArray(1)
                nEdges = nEdgesArray(2)
 
+            call mpas_timer_start("si MvAddMv")
                do iCell = 1, nCells
                   sshSubcycleCur(iCell) = sshSubcycleNew(iCell)
                   CGvec_r0(iCell) = CGvec_r1(iCell)
@@ -1738,6 +1822,7 @@ module ocn_time_integration_si
                   CGvec_s0(iCell) = CGvec_s1(iCell)
                   CGvec_q0(iCell) = CGvec_q1(iCell)
                end do
+            call mpas_timer_stop("si MvAddMv")
 
                 r0u0 = r1u1
                 w0u0 = w1u1
@@ -1769,7 +1854,7 @@ module ocn_time_integration_si
          call mpas_dmpar_exch_group_destroy(domain, iterGroupName)
          call mpas_timer_stop("si halo iter")
 
-         call mpas_timer_stop("si btr iteration")
+!        call mpas_timer_stop("si btr iteration")
 
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1856,6 +1941,7 @@ module ocn_time_integration_si
          ! #Iteration  check
          if ( split_implicit_step == 2 ) then
             call mpas_log_write( 'Iteration $i', intArgs=(/ iter /) )
+            print*, 'Iteration', iter 
          endif
 
          ! boundary update on F
