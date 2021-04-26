@@ -204,8 +204,12 @@ contains
 !
 !-----------------------------------------------------------------------
 
+!  subroutine ocn_tend_vel(tendPool, statePool, forcingPool, &
+!                          timeLevelIn, dt)!{{{
    subroutine ocn_tend_vel(tendPool, statePool, forcingPool, &
-                           timeLevelIn, dt)!{{{
+                           normalVelocity,layerThickness,ssh, &
+                           activeTracers,normalVelocityTend, &
+                           sfcStress, sfcStressMag, dt)!{{{
 
       !-----------------------------------------------------------------
       ! input variables
@@ -214,8 +218,8 @@ contains
       real (kind=RKIND), intent(in) :: &
          dt             !< [in] time step
 
-      integer, intent(in), optional :: &
-         timeLevelIn    !< [in] Time level for state fields
+!     integer, intent(in), optional :: &
+!        timeLevelIn    !< [in] Time level for state fields
 
       ! Input structures with lots of fields
       type (mpas_pool_type), intent(in) :: statePool ! replace
@@ -230,10 +234,10 @@ contains
          tendPool,          &!< [out] Tendency structure w/ vel tend
          forcingPool         !< [out] Forcing structure w/ sfc stresses
 
-      real (kind=RKIND), dimension(:,:), pointer :: &
-         tendVel             !< [out] normal velocity tendency at edges
+      real (kind=RKIND), dimension(:,:),intent(in), pointer :: &
+         normalVelocityTend             !< [out] normal velocity tendency at edges
 
-      real (kind=RKIND), dimension(:), pointer :: &
+      real (kind=RKIND), dimension(:), intent(in), pointer :: &
          sfcStress,         &!< [out] surface stress at edges
          sfcStressMag        !< [out] surface stress magnitude (on cell)
 
@@ -253,15 +257,16 @@ contains
       integer, pointer :: indexTemperature, indexSalinity
       type (mpas_pool_type), pointer :: tracersPool
 
-      real (kind=RKIND), dimension(:), pointer :: &
+      real (kind=RKIND), dimension(:),intent(in), pointer :: &
          ssh               ! sea surface height
 
-      real (kind=RKIND), dimension(:,:), pointer :: &
+      real (kind=RKIND), dimension(:,:),intent(in), pointer :: &
          normalVelocity,     &! normal velocity
-         layerThickness, &
+         layerThickness
+      real (kind=RKIND), dimension(:,:),pointer :: &
          circulation
 
-      real (kind=RKIND), dimension(:,:,:), pointer :: &
+      real (kind=RKIND), dimension(:,:,:), intent(in),pointer :: &
          activeTracers
 
       ! End preamble
@@ -271,22 +276,22 @@ contains
       !*** Initialize error code and determine time level
 
       err = 0
-      if (present(timeLevelIn)) then
-         timeLevel = timeLevelIn
-      else
-         timeLevel = 1
-      end if
+!     if (present(timeLevelIn)) then
+!        timeLevel = timeLevelIn
+!     else
+!        timeLevel = 1
+!     end if
 
       !*** Retrieve pool variables
       call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
 
-      call mpas_pool_get_array(statePool,   'normalVelocity', &
-                                             normalVelocity, timeLevel)
-      call mpas_pool_get_array(statePool,   'layerThickness', &
-                                             layerThickness, timeLevel)
-      call mpas_pool_get_array(statePool,   'ssh', ssh, timeLevel)
-      call mpas_pool_get_array(tracersPool, 'activeTracers', &
-                                             activeTracers, timeLevel)
+!     call mpas_pool_get_array(statePool,   'normalVelocity', &
+!                                            normalVelocity, timeLevel)
+!     call mpas_pool_get_array(statePool,   'layerThickness', &
+!                                            layerThickness, timeLevel)
+!     call mpas_pool_get_array(statePool,   'ssh', ssh, timeLevel)
+!     call mpas_pool_get_array(tracersPool, 'activeTracers', &
+!                                            activeTracers, timeLevel)
 
       call mpas_pool_get_dimension(tracersPool, 'index_temperature', &
                                                  indexTemperature)
@@ -295,30 +300,40 @@ contains
       indxTemp = indexTemperature
       indxSalt = indexSalinity
 
-      call mpas_pool_get_array(tendPool, 'normalVelocity', tendVel)
+!     call mpas_pool_get_array(tendPool, 'normalVelocity', normalVelocityTend)
 
-      call mpas_pool_get_array(forcingPool, 'surfaceStress', &
-                                             sfcStress)
-      call mpas_pool_get_array(forcingPool, 'surfaceStressMagnitude', &
-                                             sfcStressMag)
+!     call mpas_pool_get_array(forcingPool, 'surfaceStress', &
+!                                            sfcStress)
+!     call mpas_pool_get_array(forcingPool, 'surfaceStressMagnitude', &
+!                                            sfcStressMag)
 
       call mpas_timer_start("ocn_tend_vel transfer")
       !*** Transfer data to device
+!     !$acc enter data &
+!     !$acc    copyin(normalVelocityTend, sfcStress, sfcStressMag, &
+!     !$acc    sfcFlxAttCoeff, ssh, layerThickEdge, normalVelocity, &
+!     !$acc    tangentialVelocity, density, potentialDensity, zMid, &
+!     !$acc    pressure, layerThickness, circulation, activeTracers, &
+!     !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
+!     !$acc    normPlanetVortEdge, montgomeryPotential, &
+!     !$acc    vertAleTransportTop, divergence, vertViscTopOfEdge, &
+!     !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
+
       !$acc enter data &
-      !$acc    copyin(tendVel, sfcStress, sfcStressMag, &
-      !$acc    sfcFlxAttCoeff, ssh, layerThickEdge, normalVelocity, &
+      !$acc    copyin(sfcStress, sfcStressMag, &
+      !$acc    sfcFlxAttCoeff, &
       !$acc    tangentialVelocity, density, potentialDensity, zMid, &
-      !$acc    pressure, layerThickness, circulation, activeTracers, &
+      !$acc    pressure,circulation,&
       !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
       !$acc    normPlanetVortEdge, montgomeryPotential, &
-      !$acc    vertAleTransportTop, divergence, vertViscTopOfEdge, &
+      !$acc    divergence, vertViscTopOfEdge, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
       call mpas_timer_stop("ocn_tend_vel transfer")
 
       !*** Set output variables to zero before accumulating results
       
 #ifdef MPAS_OPENACC
-      !$acc parallel loop present(sfcStress, tendVel) private(k)
+      !$acc parallel loop present(sfcStress, normalVelocityTend) private(k)
 #else
       !$omp parallel
       !$omp do schedule(runtime) private(k)
@@ -326,7 +341,7 @@ contains
       do iEdge = 1, nEdgesAll
          sfcStress(iEdge) = 0.0_RKIND
          do k=1,nVertLevels
-            tendVel(k,iEdge) = 0.0_RKIND
+            normalVelocityTend(k,iEdge) = 0.0_RKIND
          end do
       end do
 #ifndef MPAS_OPENACC
@@ -366,11 +381,11 @@ contains
       call ocn_vel_hadv_coriolis_tend(normRelVortEdge, &
                                       normPlanetVortEdge, &
                                       layerThickEdge, normalVelocity, &
-                                      kineticEnergyCell, tendVel, err)
+                                      kineticEnergyCell, normalVelocityTend, err)
 
       ! Add vertical advection term -w du/dz
       call ocn_vel_vadv_tend(normalVelocity, layerThickEdge, &
-                             vertAleTransportTop, tendVel, err)
+                             vertAleTransportTop, normalVelocityTend, err)
 
       ! Add pressure gradient
       call ocn_vel_pressure_grad_tend(ssh, pressure, &
@@ -378,36 +393,36 @@ contains
                                density, potentialDensity, &
                                indxTemp, indxSalt, activeTracers, &
                                thermExpCoeff, salineContractCoeff, &
-                               tendVel, err)
+                               normalVelocityTend, err)
 
       ! Add tidal potential (if needed) 
       call ocn_compute_tidal_potential_forcing(err)
       if (config_time_integrator == 'RK4') then
         ! for split explicit, tidal forcing is added in barotropic subcycles
-        call ocn_vel_tidal_potential_tend(ssh, tendVel, err) 
+        call ocn_vel_tidal_potential_tend(ssh, normalVelocityTend, err) 
       endif
 
       ! Add horizontal mixing
-      call ocn_vel_hmix_tend(divergence, relativeVorticity, tendVel,err)
+      call ocn_vel_hmix_tend(divergence, relativeVorticity, normalVelocityTend,err)
 
       ! Add forcing and bottom drag
       call ocn_vel_forcing_tend(normalVelocity, sfcFlxAttCoeff, &
                                 sfcStress, kineticEnergyCell, &
-                                layerThickEdge, tendVel, err)
+                                layerThickEdge, normalVelocityTend, err)
 
       ! vertical mixing treated implicitly in a later routine
       ! adjust total velocity tendency based on wetting/drying
 
 #ifdef MPAS_OPENACC
       !$acc parallel loop collapse(2) &
-      !$acc    present(tendVel, wettingVelocity)
+      !$acc    present(normalVelocityTend, wettingVelocity)
 #else
       !$omp parallel
       !$omp do schedule(runtime) private(k)
 #endif
       do iEdge = 1, nEdgesAll
       do k=1,nVertLevels
-         tendVel(k,iEdge) = tendVel(k,iEdge)* &
+         normalVelocityTend(k,iEdge) = normalVelocityTend(k,iEdge)* &
                             (1.0_RKIND - wettingVelocity(k,iEdge))
       end do
       end do
@@ -417,17 +432,27 @@ contains
 #endif
 
       !*** Transfer any needed data back to host and delete inputs
+!     !$acc exit data &
+!     !$acc    copyout(normalVelocityTend, sfcStress, sfcStressMag) &
+!     !$acc    delete( &
+!     !$acc    sfcFlxAttCoeff, ssh, layerThickEdge, normalVelocity, &
+!     !$acc    tangentialVelocity, density, potentialDensity, zMid, &
+!     !$acc    pressure, layerThickness, circulation, activeTracers, &
+!     !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
+!     !$acc    normPlanetVortEdge, montgomeryPotential, &
+!     !$acc    vertAleTransportTop, divergence, vertViscTopOfEdge, &
+!     !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
+
       !$acc exit data &
-      !$acc    copyout(tendVel, sfcStress, sfcStressMag) &
+!     !$acc    copyout(sfcStress, sfcStressMag) &
       !$acc    delete( &
-      !$acc    sfcFlxAttCoeff, ssh, layerThickEdge, normalVelocity, &
+      !$acc    sfcFlxAttCoeff, &
       !$acc    tangentialVelocity, density, potentialDensity, zMid, &
-      !$acc    pressure, layerThickness, circulation, activeTracers, &
+      !$acc    pressure,circulation,&
       !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
       !$acc    normPlanetVortEdge, montgomeryPotential, &
-      !$acc    vertAleTransportTop, divergence, vertViscTopOfEdge, &
+      !$acc    divergence, vertViscTopOfEdge, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
-
       ! stop the timer and exit
 
       call mpas_timer_stop("ocn_tend_vel")

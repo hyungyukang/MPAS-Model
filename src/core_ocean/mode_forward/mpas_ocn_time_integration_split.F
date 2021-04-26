@@ -219,7 +219,8 @@ module ocn_time_integration_split
       ! State/Tracer arrays, info
       real (kind=RKIND), dimension(:,:,:), pointer ::      &!
          tracersGroupCur,      &! old, new tracer arrays
-         tracersGroupNew
+         tracersGroupNew,      &
+         activeTracers
 
       integer, pointer :: &
          startIndex, endIndex, &! start, end index for tracer groups
@@ -249,6 +250,12 @@ module ocn_time_integration_split
 
       ! Forcing pool
       real (kind=RKIND), dimension(:), pointer :: tidalPotentialEta
+ 
+      real (kind=RKIND), dimension(:,:), pointer :: restingThickness
+
+      real (kind=RKIND), dimension(:), pointer :: &
+         sfcStress,         &!< [out] surface stress at edges
+         sfcStressMag        !< [out] surface stress magnitude (on cell)
 
       ! These are public variables used from the diagnostics module
       ! indexSurfaceVelocityZonal, indexSurfaceVelocityMeridional
@@ -618,22 +625,31 @@ module ocn_time_integration_split
 
 
 !###############################################
-!
-!     call mpas_pool_get_array(statePool,   'normalVelocity', &
-!                                            normalVelocity, stage1_tend_time)
-!     call mpas_pool_get_array(statePool,   'layerThickness', &
-!                                            layerThickness, stage1_tend_time)
-!     call mpas_pool_get_array(statePool,   'ssh', ssh, timeLevel)
-!     call mpas_pool_get_array(tracersPool, 'activeTracers', &
-!                                            activeTracers, stage1_tend_time)
+ 
+      call mpas_pool_get_array(statePool,   'normalVelocity', &
+                                             normalVelocity, stage1_tend_time)
+      call mpas_pool_get_array(statePool,   'layerThickness', &
+                                             layerThickness, stage1_tend_time)
+      call mpas_pool_get_array(statePool,   'ssh', ssh, stage1_tend_time)
+      call mpas_pool_get_array(tracersPool, 'activeTracers', &
+                                             activeTracers, stage1_tend_time)
+      call mpas_pool_get_array(verticalMeshPool,'restingThickness', &
+                               restingThickness)
 
-!     !$acc enter data &
-!     !$acc    copyin(normalVelocity,layerThickness,activeTracers, &
-!     !$acc       layerThickEdge,vertAleTransportTop,highFreqThicknessNew, &
-!     !$acc       normalVelocityCur,normalVelocityNew,sshCur,sshNew, &
-!     !$acc       normalBaroclinicVelocityCur,normalBaroclinicVelocityNew, &
-!     !$acc       normalBarotropicVelocityCur,normalBarotropicVelocityNew, &
-!     !$acc       layerThicknessCur,layerThicknessNew)
+      call mpas_pool_get_array(forcingPool, 'surfaceStress', &
+                                             sfcStress)
+      call mpas_pool_get_array(forcingPool, 'surfaceStressMagnitude', &
+                                             sfcStressMag)
+
+      !$acc enter data &
+      !$acc    copyin(normalVelocity,layerThickness,activeTracers, &
+      !$acc       layerThickEdge,vertAleTransportTop,highFreqThicknessNew, &
+      !$acc       normalVelocityCur,normalVelocityNew,ssh,sshCur,sshNew, &
+      !$acc       normalBaroclinicVelocityCur,normalBaroclinicVelocityNew, &
+      !$acc       normalBarotropicVelocityCur,normalBarotropicVelocityNew, &
+      !$acc       layerThicknessCur,layerThicknessNew,restingThickness, &
+      !$acc       normalVelocityTend,barotropicForcing, &
+      !$acc       sfcStress,sfcStressMag)
 
 !###############################################
 
@@ -641,8 +657,8 @@ module ocn_time_integration_split
          call mpas_timer_start("se bcl vel")
          call mpas_timer_start('se bcl vel tend')
 
-         call mpas_pool_get_array(statePool, 'normalVelocity', &
-                           normalVelocityCur, stage1_tend_time)
+!        call mpas_pool_get_array(statePool, 'normalVelocity', &
+!                          normalVelocityCur, stage1_tend_time)
 
          ! compute vertAleTransportTop.  Use u (rather than &
          ! normalTransportVelocity) for momentum advection.
@@ -651,20 +667,45 @@ module ocn_time_integration_split
             
          call mpas_timer_start('se bcl trans vel top')
          if (associated(highFreqThicknessNew)) then
+            !call ocn_vert_transport_velocity_top(meshPool, &
+            !     verticalMeshPool, scratchPool, layerThicknessCur, &
+            !     layerThickEdge, normalVelocityCur, sshCur, dt, &
+            !     vertAleTransportTop, err, highFreqThicknessNew)
+
             call ocn_vert_transport_velocity_top(meshPool, &
                  verticalMeshPool, scratchPool, layerThicknessCur, &
-                 layerThickEdge, normalVelocityCur, sshCur, dt, &
-                 vertAleTransportTop, err, highFreqThicknessNew)
+                 normalVelocityCur, sshCur, dt, &
+                 restingThickness, err, highFreqThicknessNew)
+
+!           call ocn_vert_transport_velocity_top( &
+!                layerThicknessCur,restingThickness, &
+!                normalVelocityCur, sshCur, dt, &
+!                err, highFreqThicknessNew)
          else
+            !call ocn_vert_transport_velocity_top(meshPool, &
+            !     verticalMeshPool, scratchPool, layerThicknessCur, &
+            !     layerThickEdge, normalVelocityCur, sshCur, dt, &
+            !     vertAleTransportTop, err)
+
             call ocn_vert_transport_velocity_top(meshPool, &
                  verticalMeshPool, scratchPool, layerThicknessCur, &
-                 layerThickEdge, normalVelocityCur, sshCur, dt, &
-                 vertAleTransportTop, err)
+                 normalVelocityCur, sshCur, dt, &
+                 restingThickness, err)
+
+!           call ocn_vert_transport_velocity_top( &
+!                layerThicknessCur,restingThickness, &
+!                normalVelocityCur, sshCur, dt, &
+!                err)
          endif
          call mpas_timer_stop('se bcl trans vel top')
 
+
+!        call ocn_tend_vel(tendPool, statePool, forcingPool, &
+!                          stage1_tend_time, dt)
          call ocn_tend_vel(tendPool, statePool, forcingPool, &
-                           stage1_tend_time, dt)
+                           normalVelocity,layerThickness,ssh, &
+                           activeTracers,normalVelocityTend, &
+                           sfcStress,sfcStressMag,dt)
 
          call mpas_timer_stop('se bcl vel tend')
 
@@ -674,10 +715,6 @@ module ocn_time_integration_split
 
          call mpas_timer_start('bcl iters on linear Coriolis')
 
-         !$acc enter data &
-         !$acc copyin(normalBaroclinicVelocityCur,normalVelocityTend, &
-         !$acc        normalVelocityNew,sshNew,layerThickEdge, &
-         !$acc        barotropicForcing, normalBaroclinicVelocityNew)
 
          do j=1,numClinicIterations(splitExplicitStep)
 
@@ -801,18 +838,46 @@ module ocn_time_integration_split
 
          end do  ! do j=1,config_n_bcl_iter
 
-         !$acc exit data &
-         !$acc copyout(barotropicForcing,normalBaroclinicVelocityNew) &
-         !$acc delete(normalBaroclinicVelocityCur,normalVelocityTend, &
-         !$acc        normalVelocityNew,sshNew,layerThickEdge)
 
          call mpas_timer_stop('bcl iters on linear Coriolis')
 
+      !$acc exit data &
+      !$acc    copyout(barotropicForcing,normalBaroclinicVelocityNew, &
+      !$acc            normalVelocity,layerThickness,activeTracers, &
+      !$acc            layerThickEdge,vertAleTransportTop,highFreqThicknessNew, &
+      !$acc            sfcStress,sfcStressMag) &
+      !$acc    delete( &
+      !$acc            normalVelocityCur,normalVelocityNew, &
+      !$acc       normalBaroclinicVelocityCur,ssh ,sshCur,sshNew,&
+      !$acc       normalBarotropicVelocityCur,normalBarotropicVelocityNew, &
+      !$acc       layerThicknessCur,layerThicknessNew,restingThickness, &
+      !$acc       normalVelocityTend)
+ 
+
+!     !$acc exit data &
+!     !$acc    copyout(barotropicForcing,normalBaroclinicVelocityNew) &
+!     !$acc    delete(normalVelocity,layerThickness,activeTracers, &
+!     !$acc       layerThickEdge,vertAleTransportTop,highFreqThicknessNew, &
+!     !$acc       normalVelocityCur,normalVelocityNew,ssh,sshCur,sshNew, &
+!     !$acc       normalBaroclinicVelocityCur, &
+!     !$acc       normalBarotropicVelocityCur,normalBarotropicVelocityNew, &
+!     !$acc       layerThicknessCur,layerThicknessNew,restingThickness, &
+!     !$acc       normalVelocityTend)
+ 
+
+
+
+
+
+!     !$acc exit data &
+!     !$acc    copyout( &
+!     !$acc       layerThickEdge, &
+!     !$acc       normalVelocityNew,sshNew, &
+!     !$acc       normalBaroclinicVelocityCur,normalBaroclinicVelocityNew, &
+!     !$acc       normalVelocityTend,barotropicForcing)
+
 
          call mpas_timer_start('se halo bcl vel and btr forcing')
-!        call mpas_dmpar_field_halo_exch(domain, &
-!                             'normalBaroclinicVelocity', timeLevel=2)
-!        call mpas_dmpar_field_halo_exch(domain, 'barotropicForcing')
 
          call mpas_dmpar_exch_group_create(domain, finalBclGroupName)
 
@@ -829,21 +894,12 @@ module ocn_time_integration_split
 
          call mpas_timer_stop('se halo bcl vel and btr forcing')
 
-
-
-
-
-
-
-
-
-
-
          call mpas_timer_stop("se bcl vel")
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          ! END baroclinic iterations on linear Coriolis term
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          ! Stage 2: Barotropic velocity prediction, explicitly subcycled
@@ -1658,7 +1714,17 @@ module ocn_time_integration_split
          ! are completed before tracer tendency computations to allow
          ! monotonic advection.
 
+
          call mpas_timer_start('se thick tend')
+
+
+      !$acc enter data &
+      !$acc    copyin(normalTransportVelocity,layerThickness,activeTracers, &
+      !$acc       layerThickEdge,vertAleTransportTop,highFreqThicknessNew, &
+      !$acc       normalVelocityCur,sshCur,sshNew, &
+      !$acc       normalBaroclinicVelocityCur,normalBaroclinicVelocityNew, &
+      !$acc       normalBarotropicVelocityCur,normalBarotropicVelocityNew, &
+      !$acc       layerThicknessCur,layerThicknessNew,restingThickness)
 
          ! compute vertAleTransportTop.  Use normalTransportVelocity
          ! for advection of layerThickness and tracers.
@@ -1667,17 +1733,45 @@ module ocn_time_integration_split
          ! been computed for time level 2.
          call mpas_timer_start('thick vert trans vel top')
          if (associated(highFreqThicknessNew)) then
+!           call ocn_vert_transport_velocity_top(meshPool, &
+!                verticalMeshPool, scratchPool, layerThicknessCur, &
+!                layerThickEdge, normalTransportVelocity, sshCur, &
+!                dt, vertAleTransportTop, err, highFreqThicknessNew)
+
+!           call ocn_vert_transport_velocity_top( &
+!                layerThicknessCur,restingThickness, &
+!                normalTransportVelocity, sshCur, &
+!                dt, err, highFreqThicknessNew)
+
             call ocn_vert_transport_velocity_top(meshPool, &
                  verticalMeshPool, scratchPool, layerThicknessCur, &
-                 layerThickEdge, normalTransportVelocity, sshCur, &
-                 dt, vertAleTransportTop, err, highFreqThicknessNew)
+                 normalTransportVelocity, sshCur, &
+                 dt, restingThickness, err, highFreqThicknessNew)
          else
+!           call ocn_vert_transport_velocity_top(meshPool, &
+!                verticalMeshPool, scratchPool, layerThicknessCur, &
+!                layerThickEdge, normalTransportVelocity, sshCur, &
+!                dt, vertAleTransportTop, err)
+
+!           call ocn_vert_transport_velocity_top( &
+!                layerThicknessCur,restingThickness, &
+!                normalTransportVelocity, sshCur, &
+!                dt, err)
+
             call ocn_vert_transport_velocity_top(meshPool, &
                  verticalMeshPool, scratchPool, layerThicknessCur, &
-                 layerThickEdge, normalTransportVelocity, sshCur, &
-                 dt, vertAleTransportTop, err)
+                 normalTransportVelocity, sshCur, &
+                 dt, restingThickness, err)
          endif
          call mpas_timer_stop('thick vert trans vel top')
+
+      !$acc exit  data &
+      !$acc    copyout(normalTransportVelocity,layerThickness,activeTracers, &
+      !$acc       layerThickEdge,vertAleTransportTop,highFreqThicknessNew, &
+      !$acc       normalVelocityCur,sshCur,sshNew, &
+      !$acc       normalBaroclinicVelocityCur,normalBaroclinicVelocityNew, &
+      !$acc       normalBarotropicVelocityCur,normalBarotropicVelocityNew, &
+      !$acc       layerThicknessCur,layerThicknessNew,restingThickness)
 
          call ocn_tend_thick(tendPool, forcingPool, meshPool)
 

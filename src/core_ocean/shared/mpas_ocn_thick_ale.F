@@ -74,7 +74,7 @@ contains
 !
 !-----------------------------------------------------------------------
    !subroutine ocn_ALE_thickness(meshPool, verticalMeshPool, temp1Cell, temp2VertCell, err, newHighFreqThickness)!{{{
-   subroutine ocn_ALE_thickness(meshPool, verticalMeshPool, &
+   subroutine ocn_ALE_thickness( &
                                 restingThickness, err, &
                                 newHighFreqThickness)!{{{
 
@@ -84,11 +84,11 @@ contains
       !
       !-----------------------------------------------------------------
 
-      type (mpas_pool_type), intent(in) :: &
-         meshPool           !< Input: horizonal mesh information
+!     type (mpas_pool_type), intent(in) :: &
+!        meshPool           !< Input: horizonal mesh information
 
-      type (mpas_pool_type), intent(in) :: &
-         verticalMeshPool   !< Input: vertical mesh information
+!     type (mpas_pool_type), intent(in) :: &
+!        verticalMeshPool   !< Input: vertical mesh information
 
 !     real (kind=RKIND), dimension(:), intent(in) :: &
 !        temp1Cell     !< Input: sea surface height

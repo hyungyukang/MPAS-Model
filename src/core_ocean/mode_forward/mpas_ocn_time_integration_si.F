@@ -464,7 +464,8 @@ module ocn_time_integration_si
 
            call mpas_pool_get_array(statePool, 'highFreqThickness', highFreqThicknessNew, 2)
 
-           call ocn_tend_vel(tendPool, statePool, forcingPool, stage1_tend_time, dt)
+! Currently commented out for compiling - will be edited later
+!          call ocn_tend_vel(tendPool, statePool, forcingPool, stage1_tend_time, dt)
 
            block => block % next
          end do
@@ -2547,13 +2548,15 @@ module ocn_time_integration_si
             ! layerThickness has not yet been computed for time level 2.
             call mpas_timer_start('thick vert trans vel top')
             if (associated(highFreqThicknessNew)) then
-               call ocn_vert_transport_velocity_top(meshPool, verticalMeshPool, scratchPool, &
-                 layerThicknessCur, layerThickEdge, normalTransportVelocity, &
-                 sshCur, dt, vertAleTransportTop, err, highFreqThicknessNew)
+! Currently commented out for compiling - will be edited later
+!              call ocn_vert_transport_velocity_top(meshPool, verticalMeshPool, scratchPool, &
+!                layerThicknessCur, layerThickEdge, normalTransportVelocity, &
+!                sshCur, dt, vertAleTransportTop, err, highFreqThicknessNew)
             else
-               call ocn_vert_transport_velocity_top(meshPool, verticalMeshPool, scratchPool, &
-                 layerThicknessCur, layerThickEdge, normalTransportVelocity, &
-                 sshCur, dt, vertAleTransportTop, err)
+! Currently commented out for compiling - will be edited later
+!              call ocn_vert_transport_velocity_top(meshPool, verticalMeshPool, scratchPool, &
+!                layerThicknessCur, layerThickEdge, normalTransportVelocity, &
+!                sshCur, dt, vertAleTransportTop, err)
             endif
             call mpas_timer_stop('thick vert trans vel top')
 
