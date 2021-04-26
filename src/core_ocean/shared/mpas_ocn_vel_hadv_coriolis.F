@@ -185,12 +185,27 @@ contains
       !$acc            minLevelEdgeBot, maxLevelEdgeTop, &
       !$acc            temp1VertEdge, temp2VertEdge, &
       !$acc            normalVelocity, layerThickEdge) &
-      !$acc    private(k, j, eoe, edgeWeight, avgVorticity)
+      !$acc    private(k, j, eoe, edgeWeight, avgVorticity) &
+      !$acc    collapse(2)
+
+      do iEdge = 1, nEdgesOwned
+         do k = 1,nVertLevels
+            do j = 1, nEdgesOnEdge(iEdge)
+               eoe = edgesOnEdge(j, iEdge)
+               edgeWeight = weightsOnEdge(j, iEdge)
+               avgVorticity = 0.5_RKIND* &
+                              (temp2VertEdge(k,iEdge) + &
+                               temp2VertEdge(k,eoe))
+               temp1VertEdge(k,iEdge) = temp1VertEdge(k,iEdge) + &
+                               edgeWeight*normalVelocity(k,eoe)* &
+                               avgVorticity*layerThickEdge(k,eoe)
+            end do
+         end do
+      end do
 #else
       !$omp parallel
       !$omp do schedule(runtime) &
       !$omp    private(k, j, eoe, edgeWeight, avgVorticity)
-#endif
       do iEdge = 1, nEdgesOwned
 
          do j = 1, nEdgesOnEdge(iEdge)
@@ -208,9 +223,9 @@ contains
 
          end do
       end do
-#ifndef MPAS_OPENACC
       !$omp end do
 #endif
+
 
 #ifdef MPAS_OPENACC
       !$acc parallel loop &

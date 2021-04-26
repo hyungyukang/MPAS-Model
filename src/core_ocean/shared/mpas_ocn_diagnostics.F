@@ -1690,7 +1690,7 @@ contains
 !     !$acc           restingThickness) 
 
 #ifdef MPAS_OPENACC
-      !$acc parallel loop present(temp1Cell)
+      !$acc parallel loop present(temp1Cell) async(1)
 #else
       !$omp parallel
       !$omp do schedule(runtime)

@@ -309,18 +309,9 @@ contains
 
       call mpas_timer_start("ocn_tend_vel transfer")
       !*** Transfer data to device
-!     !$acc enter data &
-!     !$acc    copyin(normalVelocityTend, sfcStress, sfcStressMag, &
-!     !$acc    sfcFlxAttCoeff, ssh, layerThickEdge, normalVelocity, &
-!     !$acc    tangentialVelocity, density, potentialDensity, zMid, &
-!     !$acc    pressure, layerThickness, circulation, activeTracers, &
-!     !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
-!     !$acc    normPlanetVortEdge, montgomeryPotential, &
-!     !$acc    vertAleTransportTop, divergence, vertViscTopOfEdge, &
-!     !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
 
       !$acc enter data &
-      !$acc    copyin(sfcStress, sfcStressMag, &
+      !$acc    copyin( &
       !$acc    sfcFlxAttCoeff, &
       !$acc    tangentialVelocity, density, potentialDensity, zMid, &
       !$acc    pressure,circulation,&
@@ -328,12 +319,14 @@ contains
       !$acc    normPlanetVortEdge, montgomeryPotential, &
       !$acc    divergence, vertViscTopOfEdge, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
+
       call mpas_timer_stop("ocn_tend_vel transfer")
 
       !*** Set output variables to zero before accumulating results
       
 #ifdef MPAS_OPENACC
-      !$acc parallel loop present(sfcStress, normalVelocityTend) private(k)
+      !$acc parallel loop present(sfcStress, normalVelocityTend) &
+      !$acc private(k) 
 #else
       !$omp parallel
       !$omp do schedule(runtime) private(k)
@@ -349,7 +342,8 @@ contains
 #endif
 
 #ifdef MPAS_OPENACC
-      !$acc parallel loop present(sfcStressMag)
+      !$acc parallel loop present(sfcStressMag) &
+      !$acc private(k) 
 #else
       !$omp do schedule(runtime)
 #endif
@@ -415,7 +409,8 @@ contains
 
 #ifdef MPAS_OPENACC
       !$acc parallel loop collapse(2) &
-      !$acc    present(normalVelocityTend, wettingVelocity)
+      !$acc    present(normalVelocityTend, wettingVelocity) &
+      !$acc private(k) 
 #else
       !$omp parallel
       !$omp do schedule(runtime) private(k)
@@ -431,20 +426,10 @@ contains
       !$omp end parallel
 #endif
 
-      !*** Transfer any needed data back to host and delete inputs
-!     !$acc exit data &
-!     !$acc    copyout(normalVelocityTend, sfcStress, sfcStressMag) &
-!     !$acc    delete( &
-!     !$acc    sfcFlxAttCoeff, ssh, layerThickEdge, normalVelocity, &
-!     !$acc    tangentialVelocity, density, potentialDensity, zMid, &
-!     !$acc    pressure, layerThickness, circulation, activeTracers, &
-!     !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
-!     !$acc    normPlanetVortEdge, montgomeryPotential, &
-!     !$acc    vertAleTransportTop, divergence, vertViscTopOfEdge, &
-!     !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
+      !$acc wait(1)
 
+      !*** Transfer any needed data back to host and delete inputs
       !$acc exit data &
-!     !$acc    copyout(sfcStress, sfcStressMag) &
       !$acc    delete( &
       !$acc    sfcFlxAttCoeff, &
       !$acc    tangentialVelocity, density, potentialDensity, zMid, &
