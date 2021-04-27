@@ -263,8 +263,8 @@ contains
       real (kind=RKIND), dimension(:,:),intent(in), pointer :: &
          normalVelocity,     &! normal velocity
          layerThickness
-      real (kind=RKIND), dimension(:,:),pointer :: &
-         circulation
+!     real (kind=RKIND), dimension(:,:),pointer :: &
+!        circulation
 
       real (kind=RKIND), dimension(:,:,:), intent(in),pointer :: &
          activeTracers
@@ -310,8 +310,7 @@ contains
       call mpas_timer_start("ocn_tend_vel transfer")
       !*** Transfer data to device
 
-      !$acc enter data &
-      !$acc    copyin( &
+      !$acc update device( &
       !$acc    sfcFlxAttCoeff, &
       !$acc    tangentialVelocity, density, potentialDensity, zMid, &
       !$acc    pressure,circulation,&
@@ -428,17 +427,17 @@ contains
 
       !$acc wait(1)
 
-      !*** Transfer any needed data back to host and delete inputs
-      !$acc exit data &
-      !$acc    delete( &
-      !$acc    sfcFlxAttCoeff, &
-      !$acc    tangentialVelocity, density, potentialDensity, zMid, &
-      !$acc    pressure,circulation,&
-      !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
-      !$acc    normPlanetVortEdge, montgomeryPotential, &
-      !$acc    divergence, vertViscTopOfEdge, &
-      !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
-      ! stop the timer and exit
+!     !*** Transfer any needed data back to host and delete inputs
+!     !$acc exit data &
+!     !$acc    delete( &
+!     !$acc    sfcFlxAttCoeff, &
+!     !$acc    tangentialVelocity, density, potentialDensity, zMid, &
+!     !$acc    pressure,circulation,&
+!     !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
+!     !$acc    normPlanetVortEdge, montgomeryPotential, &
+!     !$acc    divergence, vertViscTopOfEdge, &
+!     !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
+!     ! stop the timer and exit
 
       call mpas_timer_stop("ocn_tend_vel")
 

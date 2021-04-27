@@ -203,7 +203,7 @@ module ocn_diagnostics_variables
    !
    !--------------------------------------------------------------------
 
-   public :: ocn_diagnostics_variables_init
+   public :: ocn_diagnostics_variables_init,ocn_diagnostics_variables_destroy
 
 !***********************************************************************
 
@@ -460,7 +460,51 @@ contains
          call mpas_pool_get_array(diagnosticsPool, 'CGvec_zh1', CGvec_zh1)
       end if
 
+      !$acc enter data &
+      !$acc    copyin( &
+               ! Variables that 'ocn_tend_vel' uses
+      !$acc    sfcFlxAttCoeff, &
+      !$acc    tangentialVelocity, density, potentialDensity, zMid, &
+      !$acc    pressure,circulation,&
+      !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
+      !$acc    normPlanetVortEdge, montgomeryPotential, &
+      !$acc    divergence, vertViscTopOfEdge, &
+      !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
+
     end subroutine ocn_diagnostics_variables_init!}}}
+
+
+!***********************************************************************
+!
+!  routine ocn_diagnostics_variables_destroy
+!
+!> \brief   Destroy variables in the diagnosticsPool from device
+!> \author  Matt Turner and Hyun-Gyu Kang
+!> \date    26 Apr 2021
+!> \details
+!>  This routine destroys all of the pointers associated with
+!>  variables contained in the diagnosticsPool from the device.
+!
+!-----------------------------------------------------------------------
+   subroutine ocn_diagnostics_variables_destroy(err)!{{{
+
+   integer,intent(out) :: err
+  
+      err = 0   
+
+      !$acc exit data &
+      !$acc    delete( &
+               ! Variables that 'ocn_tend_vel' uses
+      !$acc    sfcFlxAttCoeff, &
+      !$acc    tangentialVelocity, density, potentialDensity, zMid, &
+      !$acc    pressure,circulation,&
+      !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
+      !$acc    normPlanetVortEdge, montgomeryPotential, &
+      !$acc    divergence, vertViscTopOfEdge, &
+      !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
+
+   end subroutine ocn_diagnostics_variables_destroy!}}}
+
 
 !***********************************************************************
 

@@ -710,6 +710,9 @@ module ocn_forward_mode
 
       integer :: ierr
 
+      ! destroy the ocean diagnostic variables
+      call ocn_diagnostics_variables_destroy(ierr)
+
       ! destroy the ocean mesh structure
       call ocn_meshDestroy(ierr)
 
