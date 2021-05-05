@@ -203,7 +203,9 @@ module ocn_diagnostics_variables
    !
    !--------------------------------------------------------------------
 
-   public :: ocn_diagnostics_variables_init,ocn_diagnostics_variables_destroy
+   public :: ocn_diagnostics_variables_init, &
+             ocn_diagnostics_variables_update, &
+             ocn_diagnostics_variables_destroy
 
 !***********************************************************************
 
@@ -469,7 +471,10 @@ contains
       !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
       !$acc    normPlanetVortEdge, montgomeryPotential, &
       !$acc    divergence, vertViscTopOfEdge, &
-      !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
+      !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
+!     !$acc    topDrag,topDragMag,normalGMBolusVelocity)
+      !$acc    topDrag,topDragMag, layerThickEdge, &
+      !$acc    normalGMBolusVelocity)
 
     end subroutine ocn_diagnostics_variables_init!}}}
 
@@ -501,12 +506,69 @@ contains
       !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
       !$acc    normPlanetVortEdge, montgomeryPotential, &
       !$acc    divergence, vertViscTopOfEdge, &
-      !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
+      !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
+!     !$acc    topDrag,topDragMag,normalGMBolusVelocity)
+      !$acc    topDrag,topDragMag, layerThickEdge, &
+      !$acc    normalGMBolusVelocity)
 
+!!! Don't forget later
+!!! [layerThickEdge,normalGMBolusVelocity,normalTransportVelocity]
    end subroutine ocn_diagnostics_variables_destroy!}}}
+
+!***********************************************************************
 
 
 !***********************************************************************
+!
+!  routine ocn_diagnostics_variables_destroy
+!
+!> \brief   Destroy variables in the diagnosticsPool from device
+!> \author  Matt Turner and Hyun-Gyu Kang
+!> \date    26 Apr 2021
+!> \details
+!>  This routine destroys all of the pointers associated with
+!>  variables contained in the diagnosticsPool from the device.
+!
+!-----------------------------------------------------------------------
+   subroutine ocn_diagnostics_variables_update(err)!{{{
+
+   integer,intent(out) :: err
+  
+      err = 0   
+
+      !$acc update &
+               ! Variables that 'ocn_tend_vel' uses
+      !$acc    device ( &
+      !$acc    sfcFlxAttCoeff, &
+      !$acc    tangentialVelocity, density, potentialDensity, zMid, &
+      !$acc    pressure,circulation,&
+      !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
+      !$acc    normPlanetVortEdge, montgomeryPotential, &
+      !$acc    divergence, vertViscTopOfEdge, &
+      !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
+!     !$acc    topDrag,topDragMag,normalGMBolusVelocity)
+      !$acc    topDrag,topDragMag, layerThickEdge, &
+      !$acc    normalGMBolusVelocity)
+
+!     !$acc update &
+!              ! Variables that 'ocn_tend_vel' uses
+!     !$acc    self ( &
+!     !$acc    sfcFlxAttCoeff, &
+!     !$acc    tangentialVelocity, density, potentialDensity, zMid, &
+!     !$acc    pressure,circulation,&
+!     !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
+!     !$acc    normPlanetVortEdge, montgomeryPotential, &
+!     !$acc    divergence, vertViscTopOfEdge, &
+!     !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
+!     !$acc    topDrag,topDragMag)
+
+
+!!! Don't forget later
+!!! [layerThickEdge,normalGMBolusVelocity,normalTransportVelocity]
+   end subroutine ocn_diagnostics_variables_update!}}}
+
+!***********************************************************************
+
 
 end module ocn_diagnostics_variables
 

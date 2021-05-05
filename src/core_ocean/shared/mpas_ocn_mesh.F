@@ -524,7 +524,7 @@ contains
          end do
 
 
-         ! Temporary arrays
+         ! Temporary arrays to reduce communications between the host and device
          allocate ( &
             temp1Vert(nVertLevels), &
             temp2Vert(nVertLevels), &
@@ -664,7 +664,11 @@ contains
          !$acc                   temp1VertVertex,          &
       ! ocn Configurations
          !$acc                   config_max_thickness_factor, &
-         !$acc                   config_min_thickness)
+         !$acc                   config_min_thickness, &
+         !$acc                   config_self_attraction_and_loading_beta, &
+         !$acc                   config_btr_gam1_velWt1, &
+         !$acc                   config_btr_gam2_SSHWt1, &
+         !$acc                   config_btr_gam3_velWt2)
 
 
          block => block%next
@@ -818,7 +822,11 @@ contains
       !$acc                  temp1VertVertex,   &
    ! ocn Configurations
       !$acc                  config_max_thickness_factor, &
-      !$acc                  config_min_thickness )
+      !$acc                  config_min_thickness, &
+      !$acc                  config_self_attraction_and_loading_beta, &
+      !$acc                  config_btr_gam1_velWt1, &
+      !$acc                  config_btr_gam2_SSHWt1, &
+      !$acc                  config_btr_gam3_velWt2)
 
       ! Reset all scalars to zero
       nCellsAll = 0

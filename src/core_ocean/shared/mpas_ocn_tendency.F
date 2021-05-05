@@ -317,7 +317,8 @@ contains
       !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
       !$acc    normPlanetVortEdge, montgomeryPotential, &
       !$acc    divergence, vertViscTopOfEdge, &
-      !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity)
+      !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
+      !$acc    topDrag,topDragMag)
 
       call mpas_timer_stop("ocn_tend_vel transfer")
 

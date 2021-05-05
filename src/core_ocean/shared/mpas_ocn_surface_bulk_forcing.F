@@ -198,9 +198,11 @@ contains
       call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal)
       call mpas_pool_get_array(forcingPool, 'windStressMeridional', windStressMerid)
 
+      call mpas_timer_start("bulk transfer")
       !*** Transfer data to device
       !$acc enter data &
       !$acc    copyin(windStressZonal, windStressMerid)
+      call mpas_timer_stop("bulk transfer")
 
       !*** Forcing needed over halo regions
 
