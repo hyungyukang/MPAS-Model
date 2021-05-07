@@ -472,7 +472,6 @@ contains
       !$acc    normPlanetVortEdge, montgomeryPotential, &
       !$acc    divergence, vertViscTopOfEdge, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
-!     !$acc    topDrag,topDragMag,normalGMBolusVelocity)
       !$acc    topDrag,topDragMag, layerThickEdge, &
       !$acc    normalGMBolusVelocity)
 
@@ -507,7 +506,6 @@ contains
       !$acc    normPlanetVortEdge, montgomeryPotential, &
       !$acc    divergence, vertViscTopOfEdge, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
-!     !$acc    topDrag,topDragMag,normalGMBolusVelocity)
       !$acc    topDrag,topDragMag, layerThickEdge, &
       !$acc    normalGMBolusVelocity)
 

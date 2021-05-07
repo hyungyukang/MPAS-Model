@@ -1,0 +1,104 @@
+Registry.xml:			<var name="windStressZonal"/>
+Registry.xml:			<var name="windStressZonal"/>
+Registry.xml:			<var name="windStressZonal"/>
+Registry.xml:			<var name="windStressZonal"/>
+Registry.xml:			<var name="windStressZonal"/>
+Registry.xml:		<var name="windStressZonal" type="real" dimensions="nCells Time" units="N m^{-2}"
+Registry_processed.xml:			<var name="windStressZonal"/>
+Registry_processed.xml:			<var name="windStressZonal"/>
+Registry_processed.xml:			<var name="windStressZonal"/>
+Registry_processed.xml:			<var name="windStressZonal"/>
+Registry_processed.xml:			<var name="windStressZonal"/>
+Registry_processed.xml:		<var name="windStressZonal" type="real" dimensions="nCells Time" units="N m^{-2}"
+Registry_processed.xml:			<var name="windStressZonal"/>
+Registry_processed.xml:			<var name="windStressZonal"/>
+Registry_processed.xml:			<var name="windStressZonal"/>
+analysis_members/Registry_high_frequency_output.xml:			<var name="windStressZonal"/>
+analysis_members/Registry_time_series_stats_monthly_mean.xml:			<var name="windStressZonal"/>
+analysis_members/mpas_ocn_surface_area_weighted_averages.F:      real (kind=RKIND), dimension(:), pointer :: windStressZonal
+analysis_members/mpas_ocn_surface_area_weighted_averages.F:            if (activeTracersBulkRestoringPKG) call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal)
+analysis_members/mpas_ocn_surface_area_weighted_averages.F:            if (activeTracersBulkRestoringPKG) workArray(n,:) = windStressZonal(:)
+Binary file analysis_members/mpas_ocn_surface_area_weighted_averages.o matches
+analysis_members/Registry_time_series_stats_monthly_max.xml:			<var name="windStressZonal"/>
+default_inputs/streams.ocean:	<var name="windStressZonal"/>
+default_inputs/streams.ocean:	<var name="windStressZonal"/>
+default_inputs/streams.ocean:	<var name="windStressZonal"/>
+default_inputs/streams.ocean:	<var name="windStressZonal"/>
+default_inputs/streams.ocean:	<var name="windStressZonal"/>
+default_inputs/streams.ocean:	<var name="windStressZonal"/>
+default_inputs/streams.ocean:	<var name="windStressZonal"/>
+default_inputs/streams.ocean:	<var name="windStressZonal"/>
+default_inputs/streams.ocean.forward:	<var name="windStressZonal"/>
+default_inputs/streams.ocean.forward:	<var name="windStressZonal"/>
+default_inputs/streams.ocean.forward:	<var name="windStressZonal"/>
+default_inputs/streams.ocean.forward:	<var name="windStressZonal"/>
+default_inputs/streams.ocean.forward:	<var name="windStressZonal"/>
+default_inputs/streams.ocean.forward:	<var name="windStressZonal"/>
+default_inputs/streams.ocean.forward:	<var name="windStressZonal"/>
+default_inputs/streams.ocean.init:	<var name="windStressZonal"/>
+default_inputs/streams.ocean.analysis:	<var name="windStressZonal"/>
+default_inputs/streams.ocean.analysis:	<var name="windStressZonal"/>
+default_inputs/streams.ocean.analysis:	<var name="windStressZonal"/>
+Binary file driver/mpas_ocn_core_interface.o matches
+inc/structs_and_variables.inc:! Define variable windStressZonal
+inc/structs_and_variables.inc:      r1Ptr % fieldName = 'windStressZonal'
+inc/structs_and_variables.inc:      call mpas_pool_add_field(newSubPool, 'windStressZonal', r1Ptr)
+inc/structs_and_variables.inc:      call mpas_pool_add_field(block % allFields, 'windStressZonal', r1Ptr)
+Binary file libdycore.a matches
+mode_forward/mpas_ocn_time_integration_split.F:         windStressZonal,windStressMerid
+mode_forward/mpas_ocn_time_integration_split.F:      call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal)
+mode_forward/mpas_ocn_time_integration_split.F:      !$acc       windStressZonal,windStressMerid)
+mode_forward/mpas_ocn_time_integration_split.F:                           windStressZonal,windStressMerid,dt)
+mode_forward/mpas_ocn_time_integration_split.F:         !$acc       windStressZonal,windStressMerid) &
+Binary file mode_forward/mpas_ocn_time_integration_split.o matches
+mode_init/mpas_ocn_init_ziso.F:    real (kind=RKIND), dimension(:), pointer :: windStressZonal, windStressMeridional
+mode_init/mpas_ocn_init_ziso.F:       call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal)
+mode_init/mpas_ocn_init_ziso.F:       if (.not. associated(windStressZonal) .or. .not. associated(windStressMeridional)) then
+mode_init/mpas_ocn_init_ziso.F:         call mpas_log_write("MPAS-ocean: windStressZonal and / or windStressMeridional are not allocated")
+mode_init/mpas_ocn_init_ziso.F:                   windStressZonal(iCell) = config_ziso_wind_stress_max*sin((pii*(yCell(iCell) - &
+mode_init/mpas_ocn_init_ziso.F:              windStressZonal(iCell) = 0.0_RKIND
+mode_init/mpas_ocn_init_ziso.F:                   windStressZonal(iCell) = config_ziso_wind_stress_shelf_front_max * &
+mode_init/mpas_ocn_init_ziso.F:            windStressZonal(iCell) = config_ziso_wind_stress_max * exp(-((yCell(iCell) - &
+Binary file mode_init/mpas_ocn_init_iso.o matches
+Binary file mode_init/mpas_ocn_init_global_ocean.o matches
+mode_init/mpas_ocn_init_cvmix_WSwSBF.F:      real (kind=RKIND), dimension(:), pointer :: windStressZonal, windStressMeridional
+mode_init/mpas_ocn_init_cvmix_WSwSBF.F:        call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal, 1)
+mode_init/mpas_ocn_init_cvmix_WSwSBF.F:        windStressZonal(iCell) = config_cvmix_WSwSBF_max_windstress
+mode_init/mpas_ocn_init_global_ocean.F:       real (kind=RKIND), dimension(:), pointer :: latCell, lonCell, windStressZonal, windStressMeridional
+mode_init/mpas_ocn_init_global_ocean.F:          call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal)
+mode_init/mpas_ocn_init_global_ocean.F:                                                       lonCell, latCell, windStressZonal, nCells, &
+mode_init/mpas_ocn_init_global_ocean.F:                                                       lonCell, latCell, windStressZonal, nCells, &
+mode_init/mpas_ocn_init_global_ocean.F:          windStressZonal(:) = windStressZonal(:) * config_global_ocean_windstress_conversion_factor
+Binary file mode_init/mpas_ocn_init_cvmix_WSwSBF.o matches
+mode_init/mpas_ocn_init_iso.F:      real (kind=RKIND), dimension(:), pointer :: windStressZonal, windStressMeridional
+mode_init/mpas_ocn_init_iso.F:        call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal)
+mode_init/mpas_ocn_init_iso.F:            windStressZonal(iCell) = windStress
+mode_init/mpas_ocn_init_soma.F:      real (kind=RKIND), dimension(:), pointer :: windStressZonal, windStressMeridional
+mode_init/mpas_ocn_init_soma.F:        call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal)
+mode_init/mpas_ocn_init_soma.F:           windStressZonal(iCell) = windStress
+Binary file mode_init/mpas_ocn_init_ziso.o matches
+Binary file mode_init/mpas_ocn_init_soma.o matches
+shared/mpas_ocn_time_varying_forcing.F:         windStressZonal, &
+shared/mpas_ocn_time_varying_forcing.F:    call MPAS_pool_get_array(forcingPool, "windStressZonal", windStressZonal)
+shared/mpas_ocn_time_varying_forcing.F:       windStressZonal(iCell) =  rhoAir * windSpeedU(iCell) * windSpeedMagnitude(iCell) * windStressCoefficient
+Binary file shared/.mpas_ocn_surface_bulk_forcing.F.swp matches
+shared/mpas_ocn_diagnostics_backup.F:            ! Test windStressZonal
+shared/mpas_ocn_diagnostics_backup.F:            fieldName = 'windStressZonal'
+shared/mpas_ocn_surface_bulk_forcing.F:                               windStressZonal, windStressMerid, err)!{{{
+shared/mpas_ocn_surface_bulk_forcing.F:         windStressZonal, &! zonal wind stress from forcing
+shared/mpas_ocn_surface_bulk_forcing.F:!     call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal)
+shared/mpas_ocn_surface_bulk_forcing.F:!     !$acc    copyin(windStressZonal, windStressMerid)
+shared/mpas_ocn_surface_bulk_forcing.F:      !$acc            windStressZonal, windStressMerid) &
+shared/mpas_ocn_surface_bulk_forcing.F:        zonalWSEdge = 0.5_RKIND * (windStressZonal(cell1) + &
+shared/mpas_ocn_surface_bulk_forcing.F:                                   windStressZonal(cell2))
+shared/mpas_ocn_surface_bulk_forcing.F:      !$acc    present(sfcStressMag, windStressZonal, &
+shared/mpas_ocn_surface_bulk_forcing.F:                              sqrt( windStressZonal(iCell)**2 &
+shared/mpas_ocn_surface_bulk_forcing.F:!     !$acc    delete(windStressZonal, windStressMerid)
+Binary file shared/mpas_ocn_time_varying_forcing.o matches
+shared/mpas_ocn_tendency.F:                           windStressZonal, windStressMerid, dt)!{{{
+shared/mpas_ocn_tendency.F:         windStressZonal,   &! zonal wind stress from forcing
+shared/mpas_ocn_tendency.F:      !!$acc    topDrag,topDragMag,windStressZonal,windStressMerid)
+shared/mpas_ocn_tendency.F:                                    windStressZonal, windStressMerid, err)
+Binary file shared/.mpas_ocn_tendency.F.swp matches
+shared/mpas_ocn_diagnostics.F:            ! Test windStressZonal
+shared/mpas_ocn_diagnostics.F:            fieldName = 'windStressZonal'

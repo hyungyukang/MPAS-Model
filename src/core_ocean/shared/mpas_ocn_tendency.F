@@ -209,7 +209,8 @@ contains
    subroutine ocn_tend_vel(tendPool, statePool, forcingPool, &
                            normalVelocity,layerThickness,ssh, &
                            activeTracers,normalVelocityTend, &
-                           sfcStress, sfcStressMag, dt)!{{{
+                           sfcStress, sfcStressMag, &
+                           windStressZonal, windStressMerid, dt)!{{{
 
       !-----------------------------------------------------------------
       ! input variables
@@ -239,7 +240,9 @@ contains
 
       real (kind=RKIND), dimension(:), intent(in), pointer :: &
          sfcStress,         &!< [out] surface stress at edges
-         sfcStressMag        !< [out] surface stress magnitude (on cell)
+         sfcStressMag,      &!< [out] surface stress magnitude (on cell)
+         windStressZonal,   &! zonal wind stress from forcing
+         windStressMerid     ! meridional wind stress from forcing
 
       !-----------------------------------------------------------------
       ! local variables
@@ -263,8 +266,6 @@ contains
       real (kind=RKIND), dimension(:,:),intent(in), pointer :: &
          normalVelocity,     &! normal velocity
          layerThickness
-!     real (kind=RKIND), dimension(:,:),pointer :: &
-!        circulation
 
       real (kind=RKIND), dimension(:,:,:), intent(in),pointer :: &
          activeTracers
@@ -276,22 +277,9 @@ contains
       !*** Initialize error code and determine time level
 
       err = 0
-!     if (present(timeLevelIn)) then
-!        timeLevel = timeLevelIn
-!     else
-!        timeLevel = 1
-!     end if
 
       !*** Retrieve pool variables
       call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-
-!     call mpas_pool_get_array(statePool,   'normalVelocity', &
-!                                            normalVelocity, timeLevel)
-!     call mpas_pool_get_array(statePool,   'layerThickness', &
-!                                            layerThickness, timeLevel)
-!     call mpas_pool_get_array(statePool,   'ssh', ssh, timeLevel)
-!     call mpas_pool_get_array(tracersPool, 'activeTracers', &
-!                                            activeTracers, timeLevel)
 
       call mpas_pool_get_dimension(tracersPool, 'index_temperature', &
                                                  indexTemperature)
@@ -299,13 +287,6 @@ contains
                                                  indexSalinity)
       indxTemp = indexTemperature
       indxSalt = indexSalinity
-
-!     call mpas_pool_get_array(tendPool, 'normalVelocity', normalVelocityTend)
-
-!     call mpas_pool_get_array(forcingPool, 'surfaceStress', &
-!                                            sfcStress)
-!     call mpas_pool_get_array(forcingPool, 'surfaceStressMagnitude', &
-!                                            sfcStressMag)
 
       call mpas_timer_start("ocn_tend_vel transfer")
       !*** Transfer data to device
@@ -363,8 +344,8 @@ contains
 
       ! Compute bulk forcing surface stress
       call ocn_surface_bulk_forcing_vel( &
-                                    forcingPool, sfcStress, &
-                                    sfcStressMag, err)
+                                    forcingPool, sfcStress, sfcStressMag, &
+                                    windStressZonal, windStressMerid, err)
 
       ! Add top drag to surface stress
       call ocn_surface_land_ice_fluxes_vel( &

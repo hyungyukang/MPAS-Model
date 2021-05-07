@@ -255,7 +255,15 @@ module ocn_time_integration_split
 
       real (kind=RKIND), dimension(:), pointer :: &
          sfcStress,         &!< [out] surface stress at edges
-         sfcStressMag        !< [out] surface stress magnitude (on cell)
+         sfcStressMag,      &!< [out] surface stress magnitude (on cell)
+         surfaceThicknessFlux, &
+         surfaceThicknessFluxRunoff, &
+         evaporationFlux,snowFlux,seaIceFreshWaterFlux, &
+         icebergFreshWaterFlux,riverRunoffFlux,iceRunoffFlux,rainFlux, &
+         windStressZonal,windStressMerid
+
+      real (kind=RKIND), dimension(:,:), pointer :: &
+         fractionAbsorbed, fractionAbsorbedRunoff
 
       ! These are public variables used from the diagnostics module
       ! indexSurfaceVelocityZonal, indexSurfaceVelocityMeridional
@@ -637,12 +645,36 @@ module ocn_time_integration_split
       call mpas_pool_get_array(tracersPool, 'activeTracers', &
                                              activeTracers, stage1_tend_time)
       call mpas_pool_get_array(verticalMeshPool,'restingThickness', &
-                               restingThickness)
+                                                 restingThickness)
+
+      ! Forcing pool
+      call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal)
+      call mpas_pool_get_array(forcingPool, 'windStressMeridional', &
+                                             windStressMerid)
 
       call mpas_pool_get_array(forcingPool, 'surfaceStress', &
                                              sfcStress)
       call mpas_pool_get_array(forcingPool, 'surfaceStressMagnitude', &
                                              sfcStressMag)
+
+!     call mpas_pool_get_array(forcingPool, 'surfaceThicknessFlux',
+!                                            surfaceThicknessFlux)
+!     call mpas_pool_get_array(forcingPool, 'surfaceThicknessFluxRunoff',
+!                                            surfaceThicknessFluxRunoff)
+!     call mpas_pool_get_array(forcingPool, 'fractionAbsorbed',
+!                                            fractionAbsorbed)
+!     call mpas_pool_get_array(forcingPool, 'fractionAbsorbedRunoff',
+!                                            fractionAbsorbedRunoff)
+!     call mpas_pool_get_array(forcingPool, 'evaporationFlux', evaporationFlux)
+!     call mpas_pool_get_array(forcingPool, 'snowFlux', snowFlux)
+!     call mpas_pool_get_array(forcingPool, 'seaIceFreshWaterFlux', &
+!                                            seaIceFreshWaterFlux)
+!     call mpas_pool_get_array(forcingPool, 'icebergFreshWaterFlux',
+!                                            icebergFreshWaterFlux)
+!     call mpas_pool_get_array(forcingPool, 'riverRunoffFlux', riverRunoffFlux)
+!     call mpas_pool_get_array(forcingPool, 'iceRunoffFlux', iceRunoffFlux)
+!     call mpas_pool_get_array(forcingPool, 'rainFlux', rainFlux)
+
 
       call mpas_timer_start("se bcl vel copyin")
       !$acc enter data &
@@ -652,9 +684,17 @@ module ocn_time_integration_split
       !$acc       normalBaroclinicVelocityCur,normalBaroclinicVelocityNew, &
       !$acc       normalBarotropicVelocityCur,normalBarotropicVelocityNew, &
       !$acc       layerThicknessCur,layerThicknessNew,restingThickness, &
-      !$acc       normalVelocityTend,barotropicForcing, &
-      !$acc       sfcStress,sfcStressMag,nBtrSubcycles, &
-      !$acc       normalTransportVelocity,barotropicThicknessFlux)
+      !$acc       normalVelocityTend,barotropicForcing,nBtrSubcycles, &
+      !$acc       normalTransportVelocity,barotropicThicknessFlux, &
+               ! Forcing Pool
+      !$acc       sfcStress,sfcStressMag, &
+      !$acc       windStressZonal,windStressMerid)
+       
+!     !$acc       sfcStress,sfcStressMag,surfaceThicknessFlux, &
+!     !$acc       surfaceThicknessFluxRunoff,fractionAbsorbed, &
+!     !$acc       fractionAbsorbedRunoff,evaporationFlux,snowFlux,&
+!     !$acc       seaIceFreshWaterFlux,icebergFreshWaterFlux, &
+!     !$acc       riverRunoffFlux,iceRunoffFlux,rainFlux)
 
       call ocn_diagnostics_variables_update(err)
   
@@ -663,9 +703,6 @@ module ocn_time_integration_split
 !###############################################
 
          call mpas_timer_start('se bcl vel tend')
-
-!        call mpas_pool_get_array(statePool, 'normalVelocity', &
-!                          normalVelocityCur, stage1_tend_time)
 
          ! compute vertAleTransportTop.  Use u (rather than &
          ! normalTransportVelocity) for momentum advection.
@@ -684,10 +721,6 @@ module ocn_time_integration_split
                  normalVelocityCur, sshCur, dt, &
                  restingThickness, err, highFreqThicknessNew)
 
-!           call ocn_vert_transport_velocity_top( &
-!                layerThicknessCur,restingThickness, &
-!                normalVelocityCur, sshCur, dt, &
-!                err, highFreqThicknessNew)
          else
             !call ocn_vert_transport_velocity_top(meshPool, &
             !     verticalMeshPool, scratchPool, layerThicknessCur, &
@@ -699,20 +732,14 @@ module ocn_time_integration_split
                  normalVelocityCur, sshCur, dt, &
                  restingThickness, err)
 
-!           call ocn_vert_transport_velocity_top( &
-!                layerThicknessCur,restingThickness, &
-!                normalVelocityCur, sshCur, dt, &
-!                err)
          endif
          call mpas_timer_stop('se bcl trans vel top')
 
-
-!        call ocn_tend_vel(tendPool, statePool, forcingPool, &
-!                          stage1_tend_time, dt)
          call ocn_tend_vel(tendPool, statePool, forcingPool, &
                            normalVelocity,layerThickness,ssh, &
                            activeTracers,normalVelocityTend, &
-                           sfcStress,sfcStressMag,dt)
+                           sfcStress,sfcStressMag, &
+                           windStressZonal,windStressMerid,dt)
 
          call mpas_timer_stop('se bcl vel tend')
 
@@ -1895,19 +1922,6 @@ module ocn_time_integration_split
 
             call mpas_timer_stop('btr se ssh verif')
 
-            !$acc exit data &
-            !$acc    copyout(barotropicForcing,normalBaroclinicVelocityNew, &
-            !$acc            normalVelocity,layerThickness,activeTracers, &
-            !$acc            vertAleTransportTop,highFreqThicknessNew, &
-            !$acc            sfcStress,sfcStressMag, &
-            !$acc            normalTransportVelocity,barotropicThicknessFlux, &
-            !$acc            normalBarotropicVelocityNew) &
-            !$acc    delete(normalVelocityCur,normalVelocityNew, &
-            !$acc           normalBaroclinicVelocityCur,ssh ,sshCur,sshNew,&
-            !$acc           normalBarotropicVelocityCur, &
-            !$acc           layerThicknessCur,layerThicknessNew, &
-            !$acc           restingThickness,normalVelocityTend,nBtrSubcycles)
-
          endif ! split_explicit
 
          call mpas_timer_stop("se btr vel")
@@ -1930,15 +1944,6 @@ module ocn_time_integration_split
 
          call mpas_timer_start('se thick tend')
 
-
-      !$acc enter data &
-      !$acc    copyin(normalTransportVelocity,layerThickness,activeTracers, &
-      !$acc       vertAleTransportTop,highFreqThicknessNew, &
-      !$acc       normalVelocityCur,sshCur,sshNew, &
-      !$acc       normalBaroclinicVelocityCur,normalBaroclinicVelocityNew, &
-      !$acc       normalBarotropicVelocityCur,normalBarotropicVelocityNew, &
-      !$acc       layerThicknessCur,layerThicknessNew,restingThickness)
-
          ! compute vertAleTransportTop.  Use normalTransportVelocity
          ! for advection of layerThickness and tracers.
          ! Use time level 1 values of layerThickness and
@@ -1958,13 +1963,27 @@ module ocn_time_integration_split
          endif
          call mpas_timer_stop('thick vert trans vel top')
 
-      !$acc exit  data &
-      !$acc    copyout(normalTransportVelocity,layerThickness,activeTracers, &
-      !$acc       vertAleTransportTop,highFreqThicknessNew, &
-      !$acc       normalVelocityCur,sshCur,sshNew, &
-      !$acc       normalBaroclinicVelocityCur,normalBaroclinicVelocityNew, &
-      !$acc       normalBarotropicVelocityCur,normalBarotropicVelocityNew, &
-      !$acc       layerThicknessCur,layerThicknessNew,restingThickness)
+         !$acc exit data &
+         !$acc    copyout(barotropicForcing,normalBaroclinicVelocityNew, &
+         !$acc       normalVelocity,layerThickness,activeTracers, &
+         !$acc       vertAleTransportTop,highFreqThicknessNew, &
+         !$acc       normalTransportVelocity,barotropicThicknessFlux, &
+         !$acc       normalBarotropicVelocityNew, &
+                  ! Forcing Pool
+         !$acc       sfcStress,sfcStressMag, &
+         !$acc       windStressZonal,windStressMerid) &
+
+!        !$acc       sfcStress,sfcStressMag,surfaceThicknessFlux, &
+!        !$acc       surfaceThicknessFluxRunoff,fractionAbsorbed, &
+!        !$acc       fractionAbsorbedRunoff,evaporationFlux,snowFlux,&
+!        !$acc       seaIceFreshWaterFlux,icebergFreshWaterFlux, &
+!        !$acc       riverRunoffFlux,iceRunoffFlux,rainFlux) &
+         !$acc    delete(normalVelocityCur,normalVelocityNew, &
+         !$acc       normalBaroclinicVelocityCur,ssh ,sshCur,sshNew,&
+         !$acc       normalBarotropicVelocityCur, &
+         !$acc       layerThicknessCur,layerThicknessNew, &
+         !$acc       restingThickness,normalVelocityTend,nBtrSubcycles)
+
 
          call ocn_tend_thick(tendPool, forcingPool, meshPool)
 

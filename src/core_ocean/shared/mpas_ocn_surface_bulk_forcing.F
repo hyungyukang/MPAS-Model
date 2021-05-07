@@ -142,8 +142,8 @@ contains
 !-----------------------------------------------------------------------
 
    subroutine ocn_surface_bulk_forcing_vel( &
-                               forcingPool, sfcStress, &
-                               sfcStressMag, err)!{{{
+                               forcingPool, sfcStress, sfcStressMag, &
+                               windStressZonal, windStressMerid, err)!{{{
 
       !-----------------------------------------------------------------
       ! input variables
@@ -151,6 +151,10 @@ contains
 
       type (mpas_pool_type), intent(in) :: &
          forcingPool         !< [in] Forcing structure w/ sfc stresses
+
+      real (kind=RKIND), dimension(:), intent(in), pointer :: &
+         windStressZonal, &! zonal wind stress from forcing
+         windStressMerid   ! meridional wind stress from forcing
 
       !-----------------------------------------------------------------
       ! input/output variables
@@ -179,10 +183,6 @@ contains
          meridWSEdge,      &! meridional wind stress avg to edge
          zonalWSEdge        ! zonal wind stress averaged to edge
 
-      real (kind=RKIND), dimension(:), pointer :: &
-         windStressZonal, &! zonal wind stress from forcing
-         windStressMerid   ! meridional wind stress from forcing
-
       ! End preamble
       !-----------------------------------------------------------------
       ! Begin code
@@ -195,13 +195,13 @@ contains
 
       call mpas_timer_start("bulk_ws", .false.)
 
-      call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal)
-      call mpas_pool_get_array(forcingPool, 'windStressMeridional', windStressMerid)
+!     call mpas_pool_get_array(forcingPool, 'windStressZonal', windStressZonal)
+!     call mpas_pool_get_array(forcingPool, 'windStressMeridional', windStressMerid)
 
       call mpas_timer_start("bulk transfer")
       !*** Transfer data to device
-      !$acc enter data &
-      !$acc    copyin(windStressZonal, windStressMerid)
+!     !$acc enter data &
+!     !$acc    copyin(windStressZonal, windStressMerid)
       call mpas_timer_stop("bulk transfer")
 
       !*** Forcing needed over halo regions
@@ -260,8 +260,8 @@ contains
 #endif
 
       !*** Transfer any needed data back to host and delete inputs
-      !$acc exit data &
-      !$acc    delete(windStressZonal, windStressMerid)
+!     !$acc exit data &
+!     !$acc    delete(windStressZonal, windStressMerid)
 
       call mpas_timer_stop("bulk_ws")
 
