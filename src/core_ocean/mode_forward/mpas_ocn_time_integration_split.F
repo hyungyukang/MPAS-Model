@@ -875,19 +875,6 @@ module ocn_time_integration_split
          ! END baroclinic iterations on linear Coriolis term
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-!           !$acc exit data &
-!           !$acc    copyout(barotropicForcing,normalBaroclinicVelocityNew, &
-!           !$acc            normalVelocity,layerThickness,activeTracers, &
-!           !$acc            vertAleTransportTop,highFreqThicknessNew, &
-!           !$acc            sfcStress,sfcStressMag) &
-!           !$acc    delete( &
-!           !$acc            normalVelocityCur,normalVelocityNew, &
-!           !$acc       normalBaroclinicVelocityCur,ssh ,sshCur,sshNew,&
-!           !$acc       normalBarotropicVelocityCur,normalBarotropicVelocityNew, &
-!           !$acc       layerThicknessCur,layerThicknessNew,restingThickness, &
-!           !$acc       normalVelocityTend)
-
-
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          ! Stage 2: Barotropic velocity prediction, explicitly subcycled
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1051,8 +1038,6 @@ module ocn_time_integration_split
 
             ! Allocate subcycled scratch fields before starting
             ! subcycle loop
-!           allocate(btrvel_temp(nEdgesAll+1))
-!           btrvel_temp(:) = 0.0_RKIND
 
 #ifdef MPAS_OPENACC
             !$acc parallel loop present(temp1Edge)
@@ -1104,17 +1089,6 @@ module ocn_time_integration_split
                if (config_btr_gam1_velWt1 > 1.0e-12_RKIND) then
                   uPerpTime = oldBtrSubcycleTime
 
-!                 call mpas_pool_get_array(statePool, &
-!                                'normalBarotropicVelocitySubcycle', &
-!                                 normalBarotropicVelocitySubcycleCur, &
-!                                 uPerpTime)
-!                 call mpas_pool_get_array(statePool, &
-!                                'normalBarotropicVelocitySubcycle', &
-!                                 normalBarotropicVelocitySubcycleNew, &
-!                                 newBtrSubcycleTime)
-!                 call mpas_pool_get_array(statePool, 'sshSubcycle', &
-!                                 sshSubcycleCur, oldBtrSubcycleTime)
-
                   ! TODO: Modify this to eliminate pointer reassigning
                   ! Subtract tidal potential from ssh, if needed
                   ! Subtract the tidal potential from the current
@@ -1123,17 +1097,8 @@ module ocn_time_integration_split
                   ! tidal potential terms are included in the grad
                   ! operator inside the edge loop.
                   if (config_use_tidal_potential_forcing) then
-!                    call mpas_pool_get_array(forcingPool, &
-!                                          'sshSubcycleCurWithTides', &
-!                                           sshSubcycleCurWithTides)
-!                    call mpas_pool_get_array(forcingPool, &
-!                                            'tidalPotentialEta', &
-!                                             tidalPotentialEta)
 
 #ifdef MPAS_OPENACC
-!                    !$acc enter data copyin(sshSubcycleCurWithTides, &
-!                    !$acc                   tidalPotentialEta)
-
                      !$acc parallel loop &
                      !$acc    present(sshSubcycleCurWithTides, &
                      !$acc       tidalPotentialEta,sshSubcycleCur, &
@@ -1229,21 +1194,6 @@ module ocn_time_integration_split
                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                ! Barotropic subcycle: SSH PREDICTOR STEP
                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-!              call mpas_pool_get_array(statePool, 'sshSubcycle', &
-!                                                   sshSubcycleCur, &
-!                                                   oldBtrSubcycleTime)
-!              call mpas_pool_get_array(statePool, 'sshSubcycle', &
-!                                                   sshSubcycleNew, &
-!                                                   newBtrSubcycleTime)
-!              call mpas_pool_get_array(statePool, &
-!                            'normalBarotropicVelocitySubcycle', &
-!                             normalBarotropicVelocitySubcycleCur, &
-!                             oldBtrSubcycleTime)
-!              call mpas_pool_get_array(statePool, &
-!                            'normalBarotropicVelocitySubcycle', &
-!                             normalBarotropicVelocitySubcycleNew, &
-!                             newBtrSubcycleTime)
 
                if (cellHaloComputeCounter <= 1) then
                   nCells = nCellsOwned
@@ -1395,21 +1345,6 @@ module ocn_time_integration_split
                do BtrCorIter = 1, config_n_btr_cor_iter
                   uPerpTime = newBtrSubcycleTime
 
-!                 call mpas_pool_get_array(statePool, &
-!                                'normalBarotropicVelocitySubcycle', &
-!                                 normalBarotropicVelocitySubcycleCur, &
-!                                 oldBtrSubcycleTime)
-!                 call mpas_pool_get_array(statePool, &
-!                                'normalBarotropicVelocitySubcycle', &
-!                                 normalBarotropicVelocitySubcycleNew, &
-!                                 newBtrSubcycleTime)
-!                 call mpas_pool_get_array(statePool, 'sshSubcycle', &
-!                                                      sshSubcycleCur,&
-!                                                   oldBtrSubcycleTime)
-!                 call mpas_pool_get_array(statePool, 'sshSubcycle', &
-!                                                      sshSubcycleNew,&
-!                                                   newBtrSubcycleTime)
-
                   ! TODO: change to avoid pointer reassignment
                   ! Subtract tidal potential from ssh, if needed
                   ! Subtract the tidal potential from the current and
@@ -1418,15 +1353,6 @@ module ocn_time_integration_split
                   ! the work arrays so the tidal potential terms are
                   ! included in the grad operator inside the edge loop.
                   if (config_use_tidal_potential_forcing) then
-!                    call mpas_pool_get_array(forcingPool, &
-!                                          'sshSubcycleCurWithTides',  &
-!                                           sshSubcycleCurWithTides)
-!                    call mpas_pool_get_array(forcingPool, &
-!                                          'sshSubcycleNewWithTides',  &
-!                                           sshSubcycleNewWithTides)
-!                    call mpas_pool_get_array(forcingPool,  &
-!                                            'tidalPotentialEta',  &
-!                                             tidalPotentialEta)
 
 #ifdef MPAS_OPENACC
                      !$acc parallel loop &
@@ -1486,7 +1412,6 @@ module ocn_time_integration_split
                   !$omp do schedule(runtime)
 #endif
                   do iEdge = 1, nEdges+1
-!                    btrvel_temp(iEdge) = &
                      temp1Edge(iEdge) = &
                          normalBarotropicVelocitySubcycleNew(iEdge)
                   end do
@@ -1533,7 +1458,6 @@ module ocn_time_integration_split
                         CoriolisTerm = CoriolisTerm &
                                      + weightsOnEdge(i,iEdge)* &
                                        temp1Edge(eoe)*fEdge(eoe)
-!                                      btrvel_temp(eoe)*fEdge(eoe)
                      end do
 
                      ! In this final solve for velocity, SSH is a
@@ -1577,21 +1501,6 @@ module ocn_time_integration_split
                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
                if (config_btr_solve_SSH2) then
-
-!                 call mpas_pool_get_array(statePool, 'sshSubcycle', &
-!                                                      sshSubcycleCur,&
-!                                                   oldBtrSubcycleTime)
-!                 call mpas_pool_get_array(statePool, 'sshSubcycle', &
-!                                                      sshSubcycleNew,&
-!                                                   newBtrSubcycleTime)
-!                 call mpas_pool_get_array(statePool, &
-!                                 'normalBarotropicVelocitySubcycle', &
-!                                  normalBarotropicVelocitySubcycleCur, &
-!                                  oldBtrSubcycleTime)
-!                 call mpas_pool_get_array(statePool, &
-!                                 'normalBarotropicVelocitySubcycle', &
-!                                  normalBarotropicVelocitySubcycleNew, &
-!                                  newBtrSubcycleTime)
 
                   if (cellHaloComputeCounter <= 1) then
                      nCells = nCellsOwned
@@ -1756,11 +1665,6 @@ module ocn_time_integration_split
                !                      timestep pointers
                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-!              call mpas_pool_get_array(statePool, &
-!                                 'normalBarotropicVelocitySubcycle', &
-!                                  normalBarotropicVelocitySubcycleNew, &
-!                                  newBtrSubcycleTime)
-
                ! normalBarotropicVelocityNew =
                ! normalBarotropicVelocityNew +
                ! normalBarotropicVelocitySubcycleNEW
@@ -1785,12 +1689,6 @@ module ocn_time_integration_split
                !$omp end do
                !$omp end parallel
 #endif
-
-               ! advance time pointers
-!              oldBtrSubcycleTime = mod(oldBtrSubcycleTime,2)+1
-!              newBtrSubcycleTime = mod(newBtrSubcycleTime,2)+1
-
-!              print*, j,oldBtrSubcycleTime, newBtrSubcycleTime
 
 
 #ifdef MPAS_OPENACC
@@ -1842,24 +1740,9 @@ module ocn_time_integration_split
             !$acc           sshSubcycleNew,sshTend, &
             !$acc           normalBarotropicVelocitySubcycleNew)
 
-            !$acc exit data &
-            !$acc    copyout(barotropicForcing,normalBaroclinicVelocityNew, &
-            !$acc            normalVelocity,layerThickness,activeTracers, &
-            !$acc            vertAleTransportTop,highFreqThicknessNew, &
-            !$acc            sfcStress,sfcStressMag, &
-            !$acc            normalTransportVelocity,barotropicThicknessFlux, &
-            !$acc            normalBarotropicVelocityNew) &
-            !$acc    delete( &
-            !$acc            normalVelocityCur,normalVelocityNew, &
-            !$acc       normalBaroclinicVelocityCur,ssh ,sshCur,sshNew,&
-            !$acc       normalBarotropicVelocityCur, &
-            !$acc       layerThicknessCur,layerThicknessNew,restingThickness, &
-            !$acc       normalVelocityTend,nBtrSubcycles)
 
 
             call mpas_timer_stop('btr se subcycle loop')
-
-!           deallocate(btrvel_temp)
 
             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             ! END Barotropic subcycle loop
@@ -1869,8 +1752,14 @@ module ocn_time_integration_split
             ! normalBarotropicVelocity, and F
             call mpas_timer_start('btr se norm')
 
+#ifdef MPAS_OPENACC
+            !$acc parallel loop &
+            !$acc    present(barotropicThicknessFlux,nBtrSubcycles, &
+            !$acc       config_btr_subcycle_loop_factor)
+#else
             !$omp parallel
             !$omp do schedule(runtime)
+#endif
             do iEdge = 1, nEdgesOwned
                barotropicThicknessFlux(iEdge) = &
                barotropicThicknessFlux(iEdge) &
@@ -1880,13 +1769,19 @@ module ocn_time_integration_split
                normalBarotropicVelocityNew(iEdge) &
                      / (nBtrSubcycles*config_btr_subcycle_loop_factor + 1)
             end do
+#ifndef MPAS_OPENACC
             !$omp end do
             !$omp end parallel
+#endif
 
             call mpas_timer_stop('btr se norm')
 
             ! boundary update on F
             call mpas_timer_start("se halo F and btr vel")
+
+            !$acc update self(barotropicThicknessFlux, &
+            !$acc             normalBarotropicVelocityNew)
+
             call mpas_dmpar_exch_group_create(domain, finalBtrGroupName)
 
             call mpas_dmpar_exch_group_add_field(domain, &
@@ -1901,7 +1796,12 @@ module ocn_time_integration_split
                                                       finalBtrGroupName)
 
             call mpas_dmpar_exch_group_destroy(domain,finalBtrGroupName)
+
+            !$acc update device(barotropicThicknessFlux, &
+            !$acc               normalBarotropicVelocityNew)
+
             call mpas_timer_stop("se halo F and btr vel")
+
 
             ! Check that you can compute SSH using the total sum or the
             ! individual increments over the barotropic subcycles.
@@ -1917,44 +1817,59 @@ module ocn_time_integration_split
             ! {\bf u}_k^{avg} \right)
             ! \left/ \sum_{k=1}^{N^{edge}} h_{k,*}^{edge}   \right.
 
-            allocate(uTemp(nVertLevels))
             nEdges = nEdgesHalo(config_num_halos-1 )
 
+#ifdef MPAS_OPENACC
+            !$acc parallel loop &
+            !$acc    present(normalGMBolusVelocity, &
+            !$acc       normalBarotropicVelocityNew, layerThickEdge, &
+            !$acc       normalBaroclinicVelocityNew, minLevelEdgeBot, &
+            !$acc       maxLevelEdgeTop,barotropicThicknessFlux, &
+            !$acc       normalTransportVelocity,edgeMask, &
+            !$acc       temp1Edge,temp1VertEdge) &
+            !$acc    private(k, normalThicknessFluxSum,thicknessSum)
+#else
             !$omp parallel
             !$omp do schedule(runtime) &
-            !$omp private(k, uTemp, normalThicknessFluxSum, &
+            !$omp private(k,normalThicknessFluxSum, &
             !$omp         thicknessSum, normalVelocityCorrection)
+#endif
             do iEdge = 1, nEdges
-
                ! velocity for normalVelocityCorrectionection is
                ! normalBarotropicVelocity +
                ! normalBaroclinicVelocity + uBolus
-               uTemp(:) = normalBarotropicVelocityNew(iEdge) &
-                      + normalBaroclinicVelocityNew(:,iEdge) &
-                      +       normalGMBolusVelocity(:,iEdge)
-
+               do k = 1,nVertLevels
+                  temp1VertEdge(k,iEdge) = normalBarotropicVelocityNew(iEdge) &
+                                         + normalBaroclinicVelocityNew(k,iEdge) &
+                                         +       normalGMBolusVelocity(k,iEdge)
+               end do
+  
                ! thicknessSum is initialized outside the loop because
                ! on land boundaries maxLevelEdgeTop=0, but I want to
                ! initialize thicknessSum with a nonzero value to avoid
                ! a NaN.
                normalThicknessFluxSum = layerThickEdge(minLevelEdgeBot(iEdge),iEdge)* &
-                                        uTemp(minLevelEdgeBot(iEdge))
+                                       temp1VertEdge(minLevelEdgeBot(iEdge),iEdge)
+                                        
                thicknessSum  = layerThickEdge(minLevelEdgeBot(iEdge),iEdge)
 
+               !$acc loop reduction(+:thicknessSum,normalThicknessFluxSum)
                do k = minLevelEdgeBot(iEdge)+1, maxLevelEdgeTop(iEdge)
                   normalThicknessFluxSum = normalThicknessFluxSum + &
                                            layerThickEdge(k,iEdge)*&
-                                           uTemp(k)
+                                           temp1VertEdge(k,iEdge)
                   thicknessSum = thicknessSum + &
                                  layerThickEdge(k,iEdge)
                enddo
 
-               normalVelocityCorrection = useVelocityCorrection* &
+               !normalVelocityCorrection = useVelocityCorrection* &
+               !              ((barotropicThicknessFlux(iEdge) - &
+               !                normalThicknessFluxSum)/thicknessSum)
+               temp1Edge(iEdge) = useVelocityCorrection* &
                              ((barotropicThicknessFlux(iEdge) - &
                                normalThicknessFluxSum)/thicknessSum)
 
                do k = 1, nVertLevels
-
                   ! normalTransportVelocity = normalBarotropicVelocity
                   !                         + normalBaroclinicVelocity
                   !                         + normalGMBolusVelocity
@@ -1969,16 +1884,29 @@ module ocn_time_integration_split
                            *(normalBarotropicVelocityNew(iEdge)   + &
                              normalBaroclinicVelocityNew(k,iEdge) + &
                              normalGMBolusVelocity(k,iEdge) + &
-                             normalVelocityCorrection )
+                             temp1Edge(iEdge) )
                enddo
 
             end do ! iEdge
+#ifndef MPAS_OPENACC
             !$omp end do
             !$omp end parallel
-
-            deallocate(uTemp)
+#endif
 
             call mpas_timer_stop('btr se ssh verif')
+
+            !$acc exit data &
+            !$acc    copyout(barotropicForcing,normalBaroclinicVelocityNew, &
+            !$acc            normalVelocity,layerThickness,activeTracers, &
+            !$acc            vertAleTransportTop,highFreqThicknessNew, &
+            !$acc            sfcStress,sfcStressMag, &
+            !$acc            normalTransportVelocity,barotropicThicknessFlux, &
+            !$acc            normalBarotropicVelocityNew) &
+            !$acc    delete(normalVelocityCur,normalVelocityNew, &
+            !$acc           normalBaroclinicVelocityCur,ssh ,sshCur,sshNew,&
+            !$acc           normalBarotropicVelocityCur, &
+            !$acc           layerThicknessCur,layerThicknessNew, &
+            !$acc           restingThickness,normalVelocityTend,nBtrSubcycles)
 
          endif ! split_explicit
 

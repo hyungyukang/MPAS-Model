@@ -668,7 +668,8 @@ contains
          !$acc                   config_self_attraction_and_loading_beta, &
          !$acc                   config_btr_gam1_velWt1, &
          !$acc                   config_btr_gam2_SSHWt1, &
-         !$acc                   config_btr_gam3_velWt2)
+         !$acc                   config_btr_gam3_velWt2, &
+         !$acc                   config_btr_subcycle_loop_factor)
 
 
          block => block%next
@@ -826,7 +827,8 @@ contains
       !$acc                  config_self_attraction_and_loading_beta, &
       !$acc                  config_btr_gam1_velWt1, &
       !$acc                  config_btr_gam2_SSHWt1, &
-      !$acc                  config_btr_gam3_velWt2)
+      !$acc                  config_btr_gam3_velWt2, &
+      !$acc                  config_btr_subcycle_loop_factor)
 
       ! Reset all scalars to zero
       nCellsAll = 0
