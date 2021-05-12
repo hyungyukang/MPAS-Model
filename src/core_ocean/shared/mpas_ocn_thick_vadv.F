@@ -24,6 +24,7 @@ module ocn_thick_vadv
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
+   use ocn_mesh
    use ocn_config
 
    implicit none
@@ -70,7 +71,8 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_thick_vadv_tend(meshPool, vertAleTransportTop, tend, err)!{{{
+   subroutine ocn_thick_vadv_tend(meshPool, vertAleTransportTop, &
+      layerThicknessTend, err)!{{{
 
       !-----------------------------------------------------------------
       !
@@ -91,7 +93,7 @@ contains
       !-----------------------------------------------------------------
 
       real (kind=RKIND), dimension(:,:), intent(inout) :: &
-         tend          !< Input/Output: velocity tendency
+         layerThicknessTend     !< Input/Output: velocity tendency
 
       !-----------------------------------------------------------------
       !
@@ -108,9 +110,9 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, k, nCells
-      integer, pointer :: nVertLevels
-      integer, dimension(:), pointer :: nCellsArray
-      integer, dimension(:), pointer :: minLevelCell, maxLevelCell
+!     integer, pointer :: nVertLevels
+!     integer, dimension(:), pointer :: nCellsArray
+!     integer, dimension(:), pointer :: minLevelCell, maxLevelCell
 
       !-----------------------------------------------------------------
       !
@@ -126,23 +128,32 @@ contains
 
       call mpas_timer_start("thick vadv")
 
-      call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
-      call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
+!     call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
+!     call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
 
-      call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
-      call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
+!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
+!     call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
 
-      nCells = nCellsArray( 1 )
+!     nCells = nCellsArray( 1 )
 
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(minLevelCell,maxLevelCell,layerThicknessTend, &
+      !$acc       vertAleTransportTop)
+#else
       !$omp parallel
       !$omp do schedule(runtime) private(k)
-      do iCell = 1, nCells
+#endif
+      do iCell = 1, nCellsOwned
          do k = minLevelCell(iCell), maxLevelCell(iCell)
-            tend(k,iCell) = tend(k,iCell) + vertAleTransportTop(k+1,iCell) - vertAleTransportTop(k,iCell)
+            layerThicknessTend(k,iCell) = layerThicknessTend(k,iCell) &
+               + vertAleTransportTop(k+1,iCell) - vertAleTransportTop(k,iCell)
          end do
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
+#endif
 
       call mpas_timer_stop("thick vadv")
 

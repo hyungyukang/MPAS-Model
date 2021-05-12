@@ -91,6 +91,7 @@ module ocn_time_integration_split
       useVelocityCorrection,&! mask for velocity correction
       splitFact          ! mask for terms in split or unsplit cases
 
+   integer :: istep=0
 !***********************************************************************
 
    contains
@@ -260,10 +261,11 @@ module ocn_time_integration_split
          surfaceThicknessFluxRunoff, &
          evaporationFlux,snowFlux,seaIceFreshWaterFlux, &
          icebergFreshWaterFlux,riverRunoffFlux,iceRunoffFlux,rainFlux, &
-         windStressZonal,windStressMerid
+         windStressZonal,windStressMerid,landIceFreshwaterFlux
 
       real (kind=RKIND), dimension(:,:), pointer :: &
-         fractionAbsorbed, fractionAbsorbedRunoff
+         fractionAbsorbed, fractionAbsorbedRunoff, &
+         frazilLayerThicknessTendency,tidalLayerThicknessTendency
 
       ! These are public variables used from the diagnostics module
       ! indexSurfaceVelocityZonal, indexSurfaceVelocityMeridional
@@ -287,6 +289,7 @@ module ocn_time_integration_split
       ! End preamble
       !-----------------------------------------------------------------
       ! Begin code
+      istep = istep +1
 
       !*** Start main time step timer
       call mpas_timer_start("se timestep")
@@ -657,23 +660,29 @@ module ocn_time_integration_split
       call mpas_pool_get_array(forcingPool, 'surfaceStressMagnitude', &
                                              sfcStressMag)
 
-!     call mpas_pool_get_array(forcingPool, 'surfaceThicknessFlux',
-!                                            surfaceThicknessFlux)
-!     call mpas_pool_get_array(forcingPool, 'surfaceThicknessFluxRunoff',
-!                                            surfaceThicknessFluxRunoff)
-!     call mpas_pool_get_array(forcingPool, 'fractionAbsorbed',
-!                                            fractionAbsorbed)
-!     call mpas_pool_get_array(forcingPool, 'fractionAbsorbedRunoff',
-!                                            fractionAbsorbedRunoff)
-!     call mpas_pool_get_array(forcingPool, 'evaporationFlux', evaporationFlux)
-!     call mpas_pool_get_array(forcingPool, 'snowFlux', snowFlux)
-!     call mpas_pool_get_array(forcingPool, 'seaIceFreshWaterFlux', &
-!                                            seaIceFreshWaterFlux)
-!     call mpas_pool_get_array(forcingPool, 'icebergFreshWaterFlux',
-!                                            icebergFreshWaterFlux)
-!     call mpas_pool_get_array(forcingPool, 'riverRunoffFlux', riverRunoffFlux)
-!     call mpas_pool_get_array(forcingPool, 'iceRunoffFlux', iceRunoffFlux)
-!     call mpas_pool_get_array(forcingPool, 'rainFlux', rainFlux)
+      call mpas_pool_get_array(forcingPool, 'surfaceThicknessFlux', &
+                                             surfaceThicknessFlux)
+      call mpas_pool_get_array(forcingPool, 'surfaceThicknessFluxRunoff', &
+                                             surfaceThicknessFluxRunoff)
+      call mpas_pool_get_array(forcingPool, 'fractionAbsorbed', &
+                                             fractionAbsorbed)
+      call mpas_pool_get_array(forcingPool, 'fractionAbsorbedRunoff', &
+                                             fractionAbsorbedRunoff)
+      call mpas_pool_get_array(forcingPool, 'evaporationFlux', evaporationFlux)
+      call mpas_pool_get_array(forcingPool, 'snowFlux', snowFlux)
+      call mpas_pool_get_array(forcingPool, 'seaIceFreshWaterFlux', &
+                                             seaIceFreshWaterFlux)
+      call mpas_pool_get_array(forcingPool, 'icebergFreshWaterFlux', &
+                                             icebergFreshWaterFlux)
+      call mpas_pool_get_array(forcingPool, 'riverRunoffFlux', riverRunoffFlux)
+      call mpas_pool_get_array(forcingPool, 'iceRunoffFlux', iceRunoffFlux)
+      call mpas_pool_get_array(forcingPool, 'rainFlux', rainFlux)
+      call mpas_pool_get_array(forcingPool, 'frazilLayerThicknessTendency', &
+                                             frazilLayerThicknessTendency)
+      call mpas_pool_get_array(forcingPool, 'landIceFreshwaterFlux', &
+                                             landIceFreshwaterFlux)
+      call mpas_pool_get_array(forcingPool, 'tidalLayerThicknessTendency', &
+                                             tidalLayerThicknessTendency)
 
 
       call mpas_timer_start("se bcl vel copyin")
@@ -686,15 +695,17 @@ module ocn_time_integration_split
       !$acc       layerThicknessCur,layerThicknessNew,restingThickness, &
       !$acc       normalVelocityTend,barotropicForcing,nBtrSubcycles, &
       !$acc       normalTransportVelocity,barotropicThicknessFlux, &
+      !$acc       layerThicknessTend, &
                ! Forcing Pool
       !$acc       sfcStress,sfcStressMag, &
-      !$acc       windStressZonal,windStressMerid)
-       
-!     !$acc       sfcStress,sfcStressMag,surfaceThicknessFlux, &
-!     !$acc       surfaceThicknessFluxRunoff,fractionAbsorbed, &
-!     !$acc       fractionAbsorbedRunoff,evaporationFlux,snowFlux,&
-!     !$acc       seaIceFreshWaterFlux,icebergFreshWaterFlux, &
-!     !$acc       riverRunoffFlux,iceRunoffFlux,rainFlux)
+      !$acc       windStressZonal,windStressMerid, &
+      !$acc       surfaceThicknessFlux,surfaceThicknessFluxRunoff, &
+      !$acc       fractionAbsorbed,fractionAbsorbedRunoff,evaporationFlux, &
+      !$acc       snowFlux,seaIceFreshWaterFlux,icebergFreshWaterFlux, &
+      !$acc       riverRunoffFlux,iceRunoffFlux,rainFlux, &
+      !$acc       landIceFreshwaterFlux,frazilLayerThicknessTendency, &
+      !$acc       tidalLayerThicknessTendency)
+
 
       call ocn_diagnostics_variables_update(err)
   
@@ -1963,29 +1974,44 @@ module ocn_time_integration_split
          endif
          call mpas_timer_stop('thick vert trans vel top')
 
+!     if ( istep==2 ) then
+!        stop
+!     endif
+
+
+!         call ocn_tend_thick(tendPool, forcingPool, meshPool)
+         call ocn_tend_thick(tendPool, forcingPool, meshPool, &
+                 layerThicknessTend,surfaceThicknessFlux, &
+                 surfaceThicknessFluxRunoff, fractionAbsorbed, &
+                 fractionAbsorbedRunoff, evaporationFlux, snowFlux, &
+                 seaIceFreshWaterFlux, icebergFreshWaterFlux, &
+                 riverRunoffFlux, iceRunoffFlux, rainFlux, &
+                 frazilLayerThicknessTendency, landIceFreshwaterFlux, &
+                 tidalLayerThicknessTendency,istep)
+
+
          !$acc exit data &
          !$acc    copyout(barotropicForcing,normalBaroclinicVelocityNew, &
          !$acc       normalVelocity,layerThickness,activeTracers, &
          !$acc       vertAleTransportTop,highFreqThicknessNew, &
          !$acc       normalTransportVelocity,barotropicThicknessFlux, &
-         !$acc       normalBarotropicVelocityNew, &
-                  ! Forcing Pool
+         !$acc       normalBarotropicVelocityNew,layerThicknessTend, &
+                     ! Forcing Pool
          !$acc       sfcStress,sfcStressMag, &
-         !$acc       windStressZonal,windStressMerid) &
-
-!        !$acc       sfcStress,sfcStressMag,surfaceThicknessFlux, &
-!        !$acc       surfaceThicknessFluxRunoff,fractionAbsorbed, &
-!        !$acc       fractionAbsorbedRunoff,evaporationFlux,snowFlux,&
-!        !$acc       seaIceFreshWaterFlux,icebergFreshWaterFlux, &
-!        !$acc       riverRunoffFlux,iceRunoffFlux,rainFlux) &
+         !$acc       surfaceThicknessFlux,surfaceThicknessFluxRunoff) &
          !$acc    delete(normalVelocityCur,normalVelocityNew, &
          !$acc       normalBaroclinicVelocityCur,ssh ,sshCur,sshNew,&
          !$acc       normalBarotropicVelocityCur, &
          !$acc       layerThicknessCur,layerThicknessNew, &
-         !$acc       restingThickness,normalVelocityTend,nBtrSubcycles)
-
-
-         call ocn_tend_thick(tendPool, forcingPool, meshPool)
+         !$acc       restingThickness,normalVelocityTend,nBtrSubcycles, &
+                     ! Forcing Pool
+         !$acc       windStressZonal,windStressMerid, &
+         !$acc       fractionAbsorbed, &
+         !$acc       fractionAbsorbedRunoff,evaporationFlux,snowFlux,&
+         !$acc       seaIceFreshWaterFlux,icebergFreshWaterFlux, &
+         !$acc       riverRunoffFlux,iceRunoffFlux,rainFlux, &
+         !$acc       landIceFreshwaterFlux,frazilLayerThicknessTendency, &
+         !$acc       tidalLayerThicknessTendency)
 
          call mpas_timer_stop('se thick tend')
 
@@ -2355,6 +2381,7 @@ module ocn_time_integration_split
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       ! END large iteration loop
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 
       call mpas_timer_start("se implicit vert mix")
 

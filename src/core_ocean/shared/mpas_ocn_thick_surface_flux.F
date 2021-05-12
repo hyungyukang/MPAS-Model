@@ -24,6 +24,7 @@ module ocn_thick_surface_flux
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
+   use ocn_mesh
    use ocn_config
 
    use ocn_forcing
@@ -116,9 +117,9 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, k, nCells
-      integer, pointer :: nVertLevels
-      integer, dimension(:), pointer :: nCellsArray
-      integer, dimension(:), pointer :: minLevelCell, maxLevelCell
+!     integer, pointer :: nVertLevels
+!     integer, dimension(:), pointer :: nCellsArray
+!     integer, dimension(:), pointer :: minLevelCell, maxLevelCell
 
       real (kind=RKIND) :: remainingFlux, remainingFluxRunoff
 
@@ -128,16 +129,25 @@ contains
 
       call mpas_timer_start("thick surface flux")
 
-      call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
-      call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
+!     call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
+!     call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
 
-      call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
+!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
 
-      nCells = nCellsArray( 1 )
+!     nCells = nCellsArray( 1 )
 
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(minLevelCell,maxLevelCell,transmissionCoefficients, &
+      !$acc       transmissionCoefficientsRunoff,tend,surfaceThicknessFlux, &
+      !$acc       transmissionCoefficients,surfaceThicknessFluxRunoff, &
+      !$acc       transmissionCoefficientsRunoff) &
+      !$acc    private(remainingFlux, remainingFluxRunoff, k)
+#else
       !$omp parallel
       !$omp do schedule(runtime) private(remainingFlux, remainingFluxRunoff, k)
-      do iCell = 1, nCells
+#endif
+      do iCell = 1, nCellsOwned
         remainingFlux = 1.0_RKIND
         remainingFluxRunoff = 1.0_RKIND
         do k = minLevelCell(iCell), maxLevelCell(iCell)
@@ -157,8 +167,10 @@ contains
              + remainingFluxRunoff * surfaceThicknessFluxRunoff(iCell)
         end if
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
+#endif
 
       call mpas_timer_stop("thick surface flux")
 

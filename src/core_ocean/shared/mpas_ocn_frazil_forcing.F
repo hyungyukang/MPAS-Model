@@ -26,6 +26,7 @@ module ocn_frazil_forcing
    use mpas_timekeeping
    use mpas_timer
    use ocn_constants
+   use ocn_mesh
    use ocn_config
    use ocn_diagnostics_variables
    use ocn_equation_of_state
@@ -134,7 +135,8 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_frazil_forcing_layer_thickness(meshPool, forcingPool, layerThicknessTend, err)!{{{
+   subroutine ocn_frazil_forcing_layer_thickness(meshPool, forcingPool, &
+      layerThicknessTend, frazilLayerThicknessTendency, err)!{{{
 
       !-----------------------------------------------------------------
       !
@@ -143,6 +145,8 @@ contains
       !-----------------------------------------------------------------
       type (mpas_pool_type), intent(in) :: meshPool !< Input: mesh information
       type (mpas_pool_type), intent(in) :: forcingPool !< Input: Forcing information
+      real (kind=RKIND), dimension(:,:), pointer, intent(in) :: &
+                                          frazilLayerThicknessTendency
 
       !-----------------------------------------------------------------
       !
@@ -166,9 +170,8 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, k, nCells
-      integer, dimension(:), pointer :: nCellsArray
-      integer, dimension(:), pointer :: maxLevelCell
-      real (kind=RKIND), dimension(:,:), pointer :: frazilLayerThicknessTendency
+!     integer, dimension(:), pointer :: nCellsArray
+!     integer, dimension(:), pointer :: maxLevelCell
 
       err = 0
 
@@ -176,23 +179,33 @@ contains
 
       call mpas_timer_start("frazil thickness tendency")
 
-      call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
-      call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-      call mpas_pool_get_array(forcingPool, 'frazilLayerThicknessTendency', frazilLayerThicknessTendency)
+!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
+!     call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
+!     call mpas_pool_get_array(forcingPool, 'frazilLayerThicknessTendency', frazilLayerThicknessTendency)
 
       ! frazil fields are needed only over 0 and 1 halos
-      nCells = nCellsArray( 2 )
+      nCells = nCellsHalo( 1 )
 
       ! Build surface fluxes at cell centers
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(maxLevelCell,layerThicknessTend, &
+      !$acc       frazilLayerThicknessTendency) &
+      !$acc    private(k)
+#elif
       !$omp parallel
       !$omp do schedule(runtime) private(k)
+#endif
       do iCell = 1, nCells
         do k = 1, maxLevelCell(iCell)
-          layerThicknessTend(k,iCell) = layerThicknessTend(k,iCell) + frazilLayerThicknessTendency(k,iCell)
+          layerThicknessTend(k,iCell) = layerThicknessTend(k,iCell) &
+                                      + frazilLayerThicknessTendency(k,iCell)
         end do
       end do
+#ifndef
       !$omp end do
       !$omp end parallel
+#endif
 
       call mpas_timer_stop("frazil thickness tendency")
 

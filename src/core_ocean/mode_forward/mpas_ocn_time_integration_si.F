@@ -2560,7 +2560,8 @@ module ocn_time_integration_si
             endif
             call mpas_timer_stop('thick vert trans vel top')
 
-            call ocn_tend_thick(tendPool, forcingPool, meshPool)
+! Currently commented out for compiling - will be edited later
+!           call ocn_tend_thick(tendPool, forcingPool, meshPool)
 
             block => block % next
          end do

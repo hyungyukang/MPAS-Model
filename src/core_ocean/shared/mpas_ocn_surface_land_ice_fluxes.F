@@ -188,10 +188,6 @@ contains
 
       call mpas_timer_start("top_drag", .false.)
 
-      !*** Transfer data to device
-!     !$acc enter data &
-!     !$acc    copyin(topDrag, topDragMag)
-
       !*** simply add input values to accumulated stresses
 
 #ifdef MPAS_OPENACC
@@ -222,10 +218,6 @@ contains
       !$omp end parallel
 #endif
 
-      !*** Transfer any needed data back to host and delete inputs
-!     !$acc exit data &
-!     !$acc    delete(topDrag, topDragMag)
-
       call mpas_timer_stop("top_drag")
 
    !--------------------------------------------------------------------
@@ -245,7 +237,8 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_surface_land_ice_fluxes_thick(meshPool, forcingPool, surfaceThicknessFlux, err)!{{{
+   subroutine ocn_surface_land_ice_fluxes_thick(meshPool, forcingPool, &
+      surfaceThicknessFlux, landIceFreshwaterFlux, err)!{{{
 
       !-----------------------------------------------------------------
       !
@@ -253,6 +246,7 @@ contains
       !
       !-----------------------------------------------------------------
       type (mpas_pool_type), intent(in) :: meshPool !< Input: mesh information
+      real (kind=RKIND), dimension(:), pointer, intent(in) :: landIceFreshwaterFlux
 
       !-----------------------------------------------------------------
       !
@@ -279,7 +273,6 @@ contains
       integer :: iCell
       integer, pointer :: nCells
 
-      real (kind=RKIND), dimension(:), pointer :: landIceFreshwaterFlux
 
       err = 0
 
@@ -287,19 +280,27 @@ contains
 
       call mpas_timer_start("land_ice_thick")
 
-      call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
+!     call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
 
-      call mpas_pool_get_array(forcingPool, 'landIceFreshwaterFlux', landIceFreshwaterFlux)
+!     call mpas_pool_get_array(forcingPool, 'landIceFreshwaterFlux', landIceFreshwaterFlux)
 
       ! Build surface fluxes at cell centers
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc present(surfaceThicknessFlux,surfaceThicknessFlux, &
+      !$acc    landIceFreshwaterFlux)
+#else
       !$omp parallel
       !$omp do schedule(runtime)
-      do iCell = 1, nCells
-        surfaceThicknessFlux(iCell) = surfaceThicknessFlux(iCell) + landIceFreshwaterFlux(iCell) / rho_sw
+#endif
+      do iCell = 1, nCellsOwned
+        surfaceThicknessFlux(iCell) = surfaceThicknessFlux(iCell)  &
+                                    + landIceFreshwaterFlux(iCell) / rho_sw
       end do
+#ifndef
       !$omp end do
       !$omp end parallel
-
+#endif
       call mpas_timer_stop("land_ice_thick")
 
    end subroutine ocn_surface_land_ice_fluxes_thick!}}}

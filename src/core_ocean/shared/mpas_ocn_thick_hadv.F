@@ -24,6 +24,7 @@ module ocn_thick_hadv
    use mpas_derived_types
    use mpas_pool_routines
    use ocn_constants
+   use ocn_mesh
    use ocn_config
 
    implicit none
@@ -70,7 +71,8 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_thick_hadv_tend(meshPool, normalVelocity, layerThicknessEdge, tend, err)!{{{
+   subroutine ocn_thick_hadv_tend(meshPool, layerThicknessTend, &
+      normalVelocity, layerThicknessEdge, err)!{{{
 
       !-----------------------------------------------------------------
       !
@@ -94,7 +96,7 @@ contains
       !-----------------------------------------------------------------
 
       real (kind=RKIND), dimension(:,:), intent(inout) :: &
-         tend          !< Input/Output: velocity tendency
+         layerThicknessTend          !< Input/Output: velocity tendency
 
       !-----------------------------------------------------------------
       !
@@ -111,14 +113,14 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iEdge, cell1, cell2, k, i, iCell, nCells
-      integer, pointer :: nVertLevels
-      integer, dimension(:), pointer :: nCellsArray
-
-      integer, dimension(:), pointer :: minLevelEdgeBot, maxLevelEdgeTop, MaxLevelCell, nEdgesOnCell
-      integer, dimension(:,:), pointer :: cellsOnEdge, edgesOnCell, edgeSignOnCell
-
+!     integer, pointer :: nVertLevels
+!     integer, dimension(:), pointer :: nCellsArray
+!     integer, dimension(:), pointer :: minLevelEdgeBot, maxLevelEdgeTop, &
+!                                       MaxLevelCell, nEdgesOnCell
+!     integer, dimension(:,:), pointer :: cellsOnEdge, edgesOnCell, &
+!                                         edgeSignOnCell
       real (kind=RKIND) :: flux, invAreaCell, invAreaCell1, invAreaCell2
-      real (kind=RKIND), dimension(:), pointer :: dvEdge, areaCell
+!     real (kind=RKIND), dimension(:), pointer :: dvEdge, areaCell
 
       !-----------------------------------------------------------------
       !
@@ -134,36 +136,49 @@ contains
 
       call mpas_timer_start("thick hadv")
 
-      call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
-      call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
+!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
+!     call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
 
-      call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-      call mpas_pool_get_array(meshPool, 'minLevelEdgeBot', minLevelEdgeBot)
-      call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
-      call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
-      call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
-      call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
+!     call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
+!     call mpas_pool_get_array(meshPool, 'minLevelEdgeBot', minLevelEdgeBot)
+!     call mpas_pool_get_array(meshPool, 'maxLevelEdgeTop', maxLevelEdgeTop)
+!     call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
+!     call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
+!     call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
 
-      call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
-      call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
-      call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
+!     call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
+!     call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
+!     call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
 
-      nCells = nCellsArray( 1 )
+!     nCells = nCellsArray( 1 )
 
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(areaCell,nEdgesOnCell,edgesOnCell, &
+      !$acc        minLevelEdgeBot,maxLevelEdgeTop,normalVelocity,dvEdge, &
+      !$acc        layerThicknessEdge,layerThicknessTend,edgeSignOnCell) &
+      !$acc    private(invAreaCell, i, iEdge, k, flux)
+#else
       !$omp parallel
       !$omp do schedule(runtime) private(invAreaCell, i, iEdge, k, flux)
-      do iCell = 1, nCells
+#endif
+      do iCell = 1, nCellsOwned
         invAreaCell = 1.0_RKIND / areaCell(iCell)
         do i = 1, nEdgesOnCell(iCell)
           iEdge = edgesOnCell(i, iCell)
           do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
-            flux = normalVelocity(k, iEdge) * dvEdge(iEdge) * layerThicknessEdge(k, iEdge)
-            tend(k, iCell) = tend(k, iCell) + edgeSignOnCell(i, iCell) * flux * invAreaCell
+            flux = normalVelocity(k, iEdge) * dvEdge(iEdge) &
+                 * layerThicknessEdge(k, iEdge)
+            layerThicknessTend(k, iCell) = layerThicknessTend(k, iCell) &
+                                         + edgeSignOnCell(i, iCell) &
+                                         * flux * invAreaCell
           end do
         end do
       end do
+#ifndef
       !$omp end do
       !$omp end parallel
+#endif
 
       call mpas_timer_stop("thick hadv")
 

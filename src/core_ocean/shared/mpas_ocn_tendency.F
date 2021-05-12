@@ -110,51 +110,98 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_tend_thick(tendPool, forcingPool, meshPool)!{{{
+   subroutine ocn_tend_thick(tendPool, forcingPool, meshPool, &
+                 layerThicknessTend,surfaceThicknessFlux, &
+                 surfaceThicknessFluxRunoff, fractionAbsorbed, &
+                 fractionAbsorbedRunoff, evaporationFlux, snowFlux, &
+                 seaIceFreshWaterFlux, icebergFreshWaterFlux, &
+                 riverRunoffFlux, iceRunoffFlux, rainFlux, &
+                 frazilLayerThicknessTendency, landIceFreshwaterFlux, &
+                 tidalLayerThicknessTendency,istep )!{{{
 
       type (mpas_pool_type), intent(inout) :: tendPool !< Input/Output: Tendency structure
       type (mpas_pool_type), intent(inout) :: forcingPool !< Input: Forcing information
       type (mpas_pool_type), intent(in) :: meshPool !< Input: Mesh information
+      real (kind=RKIND), dimension(:), pointer, intent(in) :: &
+         evaporationFlux, snowFlux, seaIceFreshWaterFlux, &
+         icebergFreshWaterFlux, riverRunoffFlux, iceRunoffFlux, rainFlux, &
+         landIceFreshwaterFlux
+      real (kind=RKIND), dimension(:,:), pointer, intent(in) :: &
+         frazilLayerThicknessTendency, tidalLayerThicknessTendency
 
-      real (kind=RKIND), dimension(:), pointer :: surfaceThicknessFlux
-      real (kind=RKIND), dimension(:), pointer :: surfaceThicknessFluxRunoff
-      real (kind=RKIND), dimension(:,:), pointer :: &
-         tend_layerThickness, fractionAbsorbed, fractionAbsorbedRunoff
+      real (kind=RKIND), dimension(:), pointer, intent(inout) :: surfaceThicknessFlux
+      real (kind=RKIND), dimension(:), pointer, intent(inout) :: surfaceThicknessFluxRunoff
+      real (kind=RKIND), dimension(:,:), pointer, intent(inout) :: &
+         layerThicknessTend, fractionAbsorbed, fractionAbsorbedRunoff
 
-      integer, pointer :: nCells
-      integer :: err, iCell
+!     integer, pointer :: nCells
+      integer :: err, iCell, k
 
-      call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
+      integer,intent(in) ::istep
 
-      call mpas_pool_get_array(tendPool, 'layerThickness', tend_layerThickness)
+!     call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
 
-      call mpas_pool_get_array(forcingPool, 'surfaceThicknessFlux', surfaceThicknessFlux)
-      call mpas_pool_get_array(forcingPool, 'surfaceThicknessFluxRunoff', surfaceThicknessFluxRunoff)
-      call mpas_pool_get_array(forcingPool, 'fractionAbsorbed', fractionAbsorbed)
-      call mpas_pool_get_array(forcingPool, 'fractionAbsorbedRunoff', fractionAbsorbedRunoff)
+!     call mpas_pool_get_array(tendPool, 'layerThickness', tend_layerThickness)
+
+!     call mpas_pool_get_array(forcingPool, 'surfaceThicknessFlux', surfaceThicknessFlux)
+!     call mpas_pool_get_array(forcingPool, 'surfaceThicknessFluxRunoff', surfaceThicknessFluxRunoff)
+!     call mpas_pool_get_array(forcingPool, 'fractionAbsorbed', fractionAbsorbed)
+!     call mpas_pool_get_array(forcingPool, 'fractionAbsorbedRunoff', fractionAbsorbedRunoff)
 
       !
       ! height tendency: start accumulating tendency terms
       !
+#ifdef MPAS_OPENACC
+      !$acc parallel &
+      !$acc    present(layerThicknessTend, surfaceThicknessFlux, &
+      !$acc       surfaceThicknessFluxRunoff)
+
+      !$acc loop gang vector collapse(2) 
+#else
       !$omp parallel
       !$omp do schedule(runtime)
-      do iCell = 1, nCells
-         tend_layerThickness(:, iCell) = 0.0_RKIND
+#endif
+      do iCell = 1, nCellsOwned
+         do k = 1,nVertLevels
+            layerThicknessTend(k, iCell) = 0.0_RKIND
+         end do
+      end do
+#ifndef MPAS_OPENACC
+      !$omp end do
+#endif
+
+
+#ifdef MPAS_OPENACC
+      !$acc loop gang vector
+#else
+      !$omp do schedule(runtime)
+#endif
+      do iCell = 1, nCellsOwned
          surfaceThicknessFlux(iCell) = 0.0_RKIND
          surfaceThicknessFluxRunoff(iCell) = 0.0_RKIND
       end do
+#ifdef MPAS_OPENACC
+      !$acc end parallel
+#else
       !$omp end do
-      !$omp end parallel
+      !$omp parallel
+#endif
 
       if(config_disable_thick_all_tend) return
 
       call mpas_timer_start("ocn_tend_thick")
 
       ! Build surface mass flux array from bulk
-      call ocn_surface_bulk_forcing_thick(meshPool, forcingPool, surfaceThicknessFlux, surfaceThicknessFluxRunoff, err)
+      call ocn_surface_bulk_forcing_thick(meshPool, forcingPool, &
+              surfaceThicknessFlux, surfaceThicknessFluxRunoff, &
+              evaporationFlux, snowFlux, &
+              seaIceFreshWaterFlux, icebergFreshWaterFlux, &
+              riverRunoffFlux, iceRunoffFlux, rainFlux, err)
 
       ! Build surface thickness flux array from land ice
-      call ocn_surface_land_ice_fluxes_thick(meshPool, forcingPool, surfaceThicknessFlux, err)
+      call ocn_surface_land_ice_fluxes_thick(meshPool, forcingPool, &
+              surfaceThicknessFlux, landIceFreshwaterFlux, err)
+
 
       !
       ! height tendency: horizontal advection term -\nabla\cdot ( hu)
@@ -164,29 +211,31 @@ contains
       !
       ! QC Comment (3/15/12): need to make sure that uTranport is the right
       ! transport velocity here.
-      call ocn_thick_hadv_tend(meshPool, normalTransportVelocity, layerThickEdge, tend_layerThickness, err)
+      call ocn_thick_hadv_tend(meshPool, layerThicknessTend, normalTransportVelocity, layerThickEdge, err)
 
       !
       ! height tendency: vertical advection term -d/dz(hw)
       !
-      call ocn_thick_vadv_tend(meshPool, vertAleTransportTop, tend_layerThickness, err)
+      call ocn_thick_vadv_tend(meshPool, vertAleTransportTop, layerThicknessTend, err)
 
       !
       ! surface flux tendency
       !
 
       call ocn_thick_surface_flux_tend(meshPool, fractionAbsorbed, fractionAbsorbedRunoff, &
-         surfaceThicknessFlux, surfaceThicknessFluxRunoff, tend_layerThickness, err)
+         surfaceThicknessFlux, surfaceThicknessFluxRunoff, layerThicknessTend, err)
 
       !
       ! surface flux tendency
       !
-      call ocn_frazil_forcing_layer_thickness(meshPool, forcingPool, tend_layerThickness, err)
+      call ocn_frazil_forcing_layer_thickness(meshPool, forcingPool, &
+           layerThicknessTend, frazilLayerThicknessTendency, err)
 
       !
       ! tidal boundary condition flux 
       !
-      call ocn_tidal_forcing_layer_thickness(meshPool, forcingPool, tend_layerThickness, err)
+      call ocn_tidal_forcing_layer_thickness(meshPool, forcingPool, &
+              layerThicknessTend, tidalLayerThicknessTendency, err)
 
       call mpas_timer_stop("ocn_tend_thick")
 
