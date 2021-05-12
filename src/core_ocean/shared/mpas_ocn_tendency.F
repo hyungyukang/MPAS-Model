@@ -111,13 +111,13 @@ contains
 !-----------------------------------------------------------------------
 
    subroutine ocn_tend_thick(tendPool, forcingPool, meshPool, &
-                 layerThicknessTend,surfaceThicknessFlux, &
+                 tend_layerThickness,surfaceThicknessFlux, &
                  surfaceThicknessFluxRunoff, fractionAbsorbed, &
                  fractionAbsorbedRunoff, evaporationFlux, snowFlux, &
                  seaIceFreshWaterFlux, icebergFreshWaterFlux, &
                  riverRunoffFlux, iceRunoffFlux, rainFlux, &
                  frazilLayerThicknessTendency, landIceFreshwaterFlux, &
-                 tidalLayerThicknessTendency,istep )!{{{
+                 tidalLayerThicknessTendency)!{{{
 
       type (mpas_pool_type), intent(inout) :: tendPool !< Input/Output: Tendency structure
       type (mpas_pool_type), intent(inout) :: forcingPool !< Input: Forcing information
@@ -132,28 +132,16 @@ contains
       real (kind=RKIND), dimension(:), pointer, intent(inout) :: surfaceThicknessFlux
       real (kind=RKIND), dimension(:), pointer, intent(inout) :: surfaceThicknessFluxRunoff
       real (kind=RKIND), dimension(:,:), pointer, intent(inout) :: &
-         layerThicknessTend, fractionAbsorbed, fractionAbsorbedRunoff
+         tend_layerThickness, fractionAbsorbed, fractionAbsorbedRunoff
 
-!     integer, pointer :: nCells
       integer :: err, iCell, k
-
-      integer,intent(in) ::istep
-
-!     call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
-
-!     call mpas_pool_get_array(tendPool, 'layerThickness', tend_layerThickness)
-
-!     call mpas_pool_get_array(forcingPool, 'surfaceThicknessFlux', surfaceThicknessFlux)
-!     call mpas_pool_get_array(forcingPool, 'surfaceThicknessFluxRunoff', surfaceThicknessFluxRunoff)
-!     call mpas_pool_get_array(forcingPool, 'fractionAbsorbed', fractionAbsorbed)
-!     call mpas_pool_get_array(forcingPool, 'fractionAbsorbedRunoff', fractionAbsorbedRunoff)
 
       !
       ! height tendency: start accumulating tendency terms
       !
 #ifdef MPAS_OPENACC
       !$acc parallel &
-      !$acc    present(layerThicknessTend, surfaceThicknessFlux, &
+      !$acc    present(tend_layerThickness, surfaceThicknessFlux, &
       !$acc       surfaceThicknessFluxRunoff)
 
       !$acc loop gang vector collapse(2) 
@@ -163,7 +151,7 @@ contains
 #endif
       do iCell = 1, nCellsOwned
          do k = 1,nVertLevels
-            layerThicknessTend(k, iCell) = 0.0_RKIND
+            tend_layerThickness(k, iCell) = 0.0_RKIND
          end do
       end do
 #ifndef MPAS_OPENACC
@@ -211,31 +199,31 @@ contains
       !
       ! QC Comment (3/15/12): need to make sure that uTranport is the right
       ! transport velocity here.
-      call ocn_thick_hadv_tend(meshPool, layerThicknessTend, normalTransportVelocity, layerThickEdge, err)
+      call ocn_thick_hadv_tend(meshPool, normalTransportVelocity, layerThickEdge, tend_layerThickness, err)
 
       !
       ! height tendency: vertical advection term -d/dz(hw)
       !
-      call ocn_thick_vadv_tend(meshPool, vertAleTransportTop, layerThicknessTend, err)
+      call ocn_thick_vadv_tend(meshPool, vertAleTransportTop, tend_layerThickness, err)
 
       !
       ! surface flux tendency
       !
 
       call ocn_thick_surface_flux_tend(meshPool, fractionAbsorbed, fractionAbsorbedRunoff, &
-         surfaceThicknessFlux, surfaceThicknessFluxRunoff, layerThicknessTend, err)
+              surfaceThicknessFlux, surfaceThicknessFluxRunoff, tend_layerThickness, err)
 
       !
       ! surface flux tendency
       !
       call ocn_frazil_forcing_layer_thickness(meshPool, forcingPool, &
-           layerThicknessTend, frazilLayerThicknessTendency, err)
+              frazilLayerThicknessTendency, tend_layerThickness, err)
 
       !
       ! tidal boundary condition flux 
       !
       call ocn_tidal_forcing_layer_thickness(meshPool, forcingPool, &
-              layerThicknessTend, tidalLayerThicknessTendency, err)
+              tidalLayerThicknessTendency, tend_layerThickness, err)
 
       call mpas_timer_stop("ocn_tend_thick")
 

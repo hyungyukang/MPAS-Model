@@ -91,7 +91,6 @@ module ocn_time_integration_split
       useVelocityCorrection,&! mask for velocity correction
       splitFact          ! mask for terms in split or unsplit cases
 
-   integer :: istep=0
 !***********************************************************************
 
    contains
@@ -289,7 +288,6 @@ module ocn_time_integration_split
       ! End preamble
       !-----------------------------------------------------------------
       ! Begin code
-      istep = istep +1
 
       !*** Start main time step timer
       call mpas_timer_start("se timestep")
@@ -1974,11 +1972,6 @@ module ocn_time_integration_split
          endif
          call mpas_timer_stop('thick vert trans vel top')
 
-!     if ( istep==2 ) then
-!        stop
-!     endif
-
-
 !         call ocn_tend_thick(tendPool, forcingPool, meshPool)
          call ocn_tend_thick(tendPool, forcingPool, meshPool, &
                  layerThicknessTend,surfaceThicknessFlux, &
@@ -1987,7 +1980,7 @@ module ocn_time_integration_split
                  seaIceFreshWaterFlux, icebergFreshWaterFlux, &
                  riverRunoffFlux, iceRunoffFlux, rainFlux, &
                  frazilLayerThicknessTendency, landIceFreshwaterFlux, &
-                 tidalLayerThicknessTendency,istep)
+                 tidalLayerThicknessTendency)
 
 
          !$acc exit data &

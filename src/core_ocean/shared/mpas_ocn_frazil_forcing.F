@@ -136,7 +136,7 @@ contains
 !-----------------------------------------------------------------------
 
    subroutine ocn_frazil_forcing_layer_thickness(meshPool, forcingPool, &
-      layerThicknessTend, frazilLayerThicknessTendency, err)!{{{
+      frazilLayerThicknessTendency, layerThicknessTend, err)!{{{
 
       !-----------------------------------------------------------------
       !
@@ -170,18 +170,12 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, k, nCells
-!     integer, dimension(:), pointer :: nCellsArray
-!     integer, dimension(:), pointer :: maxLevelCell
 
       err = 0
 
       if ( .not. frazilFormationOn ) return
 
       call mpas_timer_start("frazil thickness tendency")
-
-!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
-!     call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-!     call mpas_pool_get_array(forcingPool, 'frazilLayerThicknessTendency', frazilLayerThicknessTendency)
 
       ! frazil fields are needed only over 0 and 1 halos
       nCells = nCellsHalo( 1 )
@@ -192,7 +186,7 @@ contains
       !$acc    present(maxLevelCell,layerThicknessTend, &
       !$acc       frazilLayerThicknessTendency) &
       !$acc    private(k)
-#elif
+#else
       !$omp parallel
       !$omp do schedule(runtime) private(k)
 #endif

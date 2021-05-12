@@ -322,26 +322,12 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, nCells, nEdges
-!     integer, dimension(:), pointer :: nCellsArray
-!     integer, dimension(:,:), pointer :: cellsOnEdge
 
       err = 0
 
       if (bulkThicknessFluxOff) return
 
       call mpas_timer_start("bulk_thick", .false.)
-
-!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
-
-!     call mpas_pool_get_array(forcingPool, 'evaporationFlux', evaporationFlux)
-!     call mpas_pool_get_array(forcingPool, 'snowFlux', snowFlux)
-!     call mpas_pool_get_array(forcingPool, 'seaIceFreshWaterFlux', seaIceFreshWaterFlux)
-!     call mpas_pool_get_array(forcingPool, 'icebergFreshWaterFlux', icebergFreshWaterFlux)
-!     call mpas_pool_get_array(forcingPool, 'riverRunoffFlux', riverRunoffFlux)
-!     call mpas_pool_get_array(forcingPool, 'iceRunoffFlux', iceRunoffFlux)
-!     call mpas_pool_get_array(forcingPool, 'rainFlux', rainFlux)
-
-!     nCells = nCellsArray( 3 )
 
       nCells = nCellsHalo(2)
 

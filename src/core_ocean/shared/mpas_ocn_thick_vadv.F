@@ -72,7 +72,7 @@ contains
 !-----------------------------------------------------------------------
 
    subroutine ocn_thick_vadv_tend(meshPool, vertAleTransportTop, &
-      layerThicknessTend, err)!{{{
+      tend, err)!{{{
 
       !-----------------------------------------------------------------
       !
@@ -92,8 +92,8 @@ contains
       !
       !-----------------------------------------------------------------
 
-      real (kind=RKIND), dimension(:,:), intent(inout) :: &
-         layerThicknessTend     !< Input/Output: velocity tendency
+      real (kind=RKIND), dimension(:,:), intent(inout) :: tend
+                                      !< Input/Output: velocity tendency
 
       !-----------------------------------------------------------------
       !
@@ -138,7 +138,7 @@ contains
 
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
-      !$acc    present(minLevelCell,maxLevelCell,layerThicknessTend, &
+      !$acc    present(minLevelCell,maxLevelCell,tend, &
       !$acc       vertAleTransportTop)
 #else
       !$omp parallel
@@ -146,7 +146,7 @@ contains
 #endif
       do iCell = 1, nCellsOwned
          do k = minLevelCell(iCell), maxLevelCell(iCell)
-            layerThicknessTend(k,iCell) = layerThicknessTend(k,iCell) &
+            tend(k,iCell) = tend(k,iCell) &
                + vertAleTransportTop(k+1,iCell) - vertAleTransportTop(k,iCell)
          end do
       end do

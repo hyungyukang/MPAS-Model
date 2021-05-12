@@ -280,10 +280,6 @@ contains
 
       call mpas_timer_start("land_ice_thick")
 
-!     call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
-
-!     call mpas_pool_get_array(forcingPool, 'landIceFreshwaterFlux', landIceFreshwaterFlux)
-
       ! Build surface fluxes at cell centers
 #ifdef MPAS_OPENACC
       !$acc parallel loop &

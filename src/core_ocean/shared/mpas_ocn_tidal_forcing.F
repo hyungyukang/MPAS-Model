@@ -76,7 +76,7 @@ contains
 !-----------------------------------------------------------------------
 
    subroutine ocn_tidal_forcing_layer_thickness(meshPool, forcingPool, &
-      layerThicknessTend, tidalLayerThicknessTendency, err)!{{{
+       tidalLayerThicknessTendency, layerThicknessTend, err)!{{{
 
       !-----------------------------------------------------------------
       !
@@ -110,8 +110,6 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, k, nCells
-!     integer, dimension(:), pointer :: nCellsArray
-!     integer, dimension(:), pointer :: maxLevelCell
 
       err = 0
 
@@ -119,13 +117,7 @@ contains
 
       call mpas_timer_start("tidal thickness tendency")
 
-!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
-!     call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-!     call mpas_pool_get_array(forcingPool, 'tidalLayerThicknessTendency', &
-!                                            tidalLayerThicknessTendency)
-
       ! frazil fields are needed only over 0 and 1 halos
-!     nCells = nCellsArray( 2 )
       nCells = nCellsHalo(1)
 
       ! Build surface fluxes at cell centers

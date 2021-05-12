@@ -117,9 +117,6 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, k, nCells
-!     integer, pointer :: nVertLevels
-!     integer, dimension(:), pointer :: nCellsArray
-!     integer, dimension(:), pointer :: minLevelCell, maxLevelCell
 
       real (kind=RKIND) :: remainingFlux, remainingFluxRunoff
 
@@ -128,13 +125,6 @@ contains
       if (.not. surfaceThicknessFluxOn) return
 
       call mpas_timer_start("thick surface flux")
-
-!     call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
-!     call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-
-!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
-
-!     nCells = nCellsArray( 1 )
 
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
