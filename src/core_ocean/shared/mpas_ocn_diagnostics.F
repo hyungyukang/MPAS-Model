@@ -1614,8 +1614,8 @@ contains
 !  subroutine ocn_vert_transport_velocity_top(layerThicknessCur,restingThickness, &
 !    normalVelocityCur, sshCur, dt, err, highFreqThicknessNew)!{{{
 
-   subroutine ocn_vert_transport_velocity_top(meshPool, verticalMeshPool, scratchPool, layerThicknessCur, &
-     normalVelocityCur, sshCur, dt, restingThickness, err, highFreqThicknessNew)!{{{
+   subroutine ocn_vert_transport_velocity_top(meshPool, verticalMeshPool, scratchPool, layerThickness, &
+     normalVelocity, ssh, dt, restingThickness, err, highFreqThicknessNew)!{{{
       !-----------------------------------------------------------------
       !
       ! input variables
@@ -1631,18 +1631,15 @@ contains
       type (mpas_pool_type), intent(in) :: scratchPool !< Input: scratch variables
 
       real (kind=RKIND), dimension(:,:), intent(in),pointer :: &
-         layerThicknessCur    !< Input: layer thickness at old time
+         layerThickness    !< Input: layer thickness at old time
 
       real (kind=RKIND), dimension(:,:), intent(in),pointer :: restingThickness
 
-!     real (kind=RKIND), dimension(:,:), intent(in),pointer :: &
-!        layerThickEdge     !< Input: layerThickness interpolated to an edge
-
       real (kind=RKIND), dimension(:,:), intent(in),pointer :: &
-         normalVelocityCur     !< Input: transport
+         normalVelocity     !< Input: transport
 
       real (kind=RKIND), dimension(:), intent(in),pointer :: &
-         sshCur     !< Input: sea surface height at old time
+         ssh     !< Input: sea surface height at old time
 
       real (kind=RKIND), dimension(:,:), intent(in), optional,pointer :: &
          highFreqThicknessNew   !< Input: high frequency thickness.  Alters ALE thickness.
@@ -1678,19 +1675,8 @@ contains
         return
       end if
 
-      !call mpas_pool_get_array(meshPool, 'edgeSignOnCell', edgeSignOnCell)
-!     call mpas_pool_get_array(verticalMeshPool,'restingThickness',restingThickness)
-
-      nCells = nCellsAll
-
-!     !$acc enter data &
-!     !$acc    copyin(restingThickness)
-!     !$acc    copyin(layerThickEdge,normalVelocityCur,sshCur, &
-!     !$acc           layerThicknessCur,vertAleTransportTop, highFreqThicknessNew, &
-!     !$acc           restingThickness) 
-
 #ifdef MPAS_OPENACC
-      !$acc parallel loop present(temp1Cell) async(1)
+      !$acc parallel loop present(temp1Cell)
 #else
       !$omp parallel
       !$omp do schedule(runtime)
@@ -1728,30 +1714,52 @@ contains
       ! See Ringler et al. (2010) jcp paper, eqn 19, 21, and fig. 3.
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
-      !$acc    present(temp1VertCell,normalVelocityCur,layerThickEdge, &
+      !$acc    present(temp1VertCell,normalVelocity,layerThickEdge, &
       !$acc            temp1Cell,areaCell,nEdgesOnCell, &
-      !$acc            edgesOnCell,minLevelEdgeBot,minLevelEdgeTop, &
-      !$acc            dvEdge,edgeSignOnCell) &
-      !$acc    private(iCell,i,iEdge, k, flux,edgeArea)
+      !$acc            minLevelEdgeBot, maxLevelEdgeTop, &
+      !$acc            edgesOnCell, &
+      !$acc            dvEdge,edgeSignOnCell) 
+      do iCell = 1,nCells
+        do i = 1, nEdgesOnCell(iCell)
+          iEdge = edgesOnCell(i,iCell)
+          do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
+            edgeArea = dvEdge(iEdge)*edgeSignOnCell(i,iCell) / areaCell(iCell)
+            flux = layerThickEdge(k,iEdge) * normalVelocity(k,iEdge) &
+                 * edgeArea
+
+            !$acc atomic update
+            temp1VertCell(k,iCell) = temp1VertCell(k,iCell) - flux
+          end do
+        end do
+      end do
+
+      !$acc parallel loop &
+      !$acc    present(temp1VertCell,temp1Cell,ssh, &
+      !$acc            minLevelCell,maxLevelCell) &
+      !$acc    private(k)
+      do iCell = 1, nCells
+        do k = minLevelCell(iCell), maxLevelCell(iCell)
+          temp1Cell(iCell) = temp1Cell(iCell) + temp1VertCell(k,iCell)
+        end do
+        temp1Cell(iCell) = ssh(iCell) - dt*temp1Cell(iCell)
+      end do
+
 #else
       !$omp parallel
-      !$omp do schedule(runtime) private(invAreaCell, i, iEdge, k, flux,
-      !temp1VertCell_btr)
-#endif
+      !$omp do schedule(runtime) private(invAreaCell,i,iEdge,k,flux,edgeArea)
       do iCell = 1, nCells
          do i = 1, nEdgesOnCell(iCell)
             iEdge = edgesOnCell(i, iCell)
             edgeArea = dvEdge(iEdge)*edgeSignOnCell(i,iCell) / areaCell(iCell)
             do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
-               flux = layerThickEdge(k, iEdge) * normalVelocityCur(k, iEdge) &
+               flux = layerThickEdge(k, iEdge) * normalVelocity(k, iEdge) &
                     * edgeArea
                temp1VertCell(k,iCell) = temp1VertCell(k,iCell) - flux
                temp1Cell(iCell) = temp1Cell(iCell) - flux
             end do
          end do
-         temp1Cell(iCell) = sshCur(iCell) - dt*temp1Cell(iCell)
+         temp1Cell(iCell) = ssh(iCell) - dt*temp1Cell(iCell)
       end do
-#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
 #endif
@@ -1760,13 +1768,9 @@ contains
       ! Compute desired thickness at new time
       !
       if (present(highFreqThicknessNew)) then
-!       call ocn_ALE_thickness(meshPool, verticalMeshPool, &
-!                              restingThickness, err, highFreqThicknessNew)
         call ocn_ALE_thickness(&
                                restingThickness, err, highFreqThicknessNew)
       else
-!       call ocn_ALE_thickness(meshPool, verticalMeshPool, &
-!                              restingThickness, err)
         call ocn_ALE_thickness( &
                                restingThickness, err)
       endif
@@ -1798,7 +1802,7 @@ contains
 
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
-      !$acc    present(vertAleTransportTop,temp1VertCell,temp2VertCell,layerThicknessCur, &
+      !$acc    present(vertAleTransportTop,temp1VertCell,temp2VertCell,layerThickness, &
       !$acc            minLevelCell,maxLevelCell) &
       !$acc    private(k)
 #else
@@ -1808,20 +1812,13 @@ contains
       do iCell = 1,nCells
          do k = maxLevelCell(iCell), minLevelCell(iCell)+1, -1
             vertAleTransportTop(k,iCell) = vertAleTransportTop(k+1,iCell) - temp1VertCell(k,iCell) &
-              - (temp2VertCell(k,iCell) - layerThicknessCur(k,iCell))/dt
+              - (temp2VertCell(k,iCell) - layerThickness(k,iCell))/dt
          end do
       end do
 #ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
 #endif
-
-!     !$acc exit data &
-!     !$acc    delete(restingThickness)
-!     !$acc    copyout(vertAleTransportTop) &
-!     !$acc    delete(layerThicknessCur,highFreqThicknessNew, &
-!     !$acc           layerThickEdge, &
-!     !$acc           restingThickness,normalVelocity,oldSSH)
 
    end subroutine ocn_vert_transport_velocity_top!}}}
 
@@ -1837,13 +1834,13 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_fuperp(normalVelocityNew,normalBaroclinicVelocityNew)!{{{
+   subroutine ocn_fuperp(normalVelocity,normalBaroclinicVelocity)!{{{
 
       !type (mpas_pool_type), intent(inout) :: statePool !< Input/Output: State
       !information
       !type (mpas_pool_type), intent(in) :: meshPool !< Input: mesh information
       real (kind=RKIND), dimension(:,:), pointer,intent(in) :: &
-           normalVelocityNew, normalBaroclinicVelocityNew
+           normalVelocity, normalBaroclinicVelocity
       !integer, intent(in), optional :: timeLevelIn !< Input: Input time level
       !for state pool
 
@@ -1869,26 +1866,26 @@ contains
 
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
-      !$acc    present(normalVelocityNew,minLevelEdgeBot,maxLevelEdgeTop) &
+      !$acc    present(normalVelocity,minLevelEdgeBot,maxLevelEdgeTop) &
       !$acc    collapse(2)
       do iEdge = 1, nEdgesOwned
          do k = 1,nVertLevels
-            normalVelocityNew(k,iEdge) = 0.0_RKIND
+            normalVelocity(k,iEdge) = 0.0_RKIND
          end do
       end do
 
       !$acc parallel loop &
-      !$acc    present(normalVelocityNew,weightsOnEdge, &
-      !$acc            normalBaroclinicVelocityNew,fEdge,nEdgesOnEdge, &
+      !$acc    present(normalVelocity,weightsOnEdge, &
+      !$acc            normalBaroclinicVelocity,fEdge,nEdgesOnEdge, &
       !$acc             minLevelEdgeBot,maxLevelEdgeTop) &
       !$acc    private(eoe,j) collapse(2)
       do iEdge = 1, nEdgesOwned
          do k = 1,nVertLevels
             do j = 1,nEdgesOnEdge(iEdge)
                eoe = edgesOnEdge(j,iEdge)
-               normalVelocityNew(k,iEdge) &
-                  = normalVelocityNew(k,iEdge) + weightsOnEdge(j,iEdge) &
-                  * normalBaroclinicVelocityNew(k,eoe) * fEdge(eoe)
+               normalVelocity(k,iEdge) &
+                  = normalVelocity(k,iEdge) + weightsOnEdge(j,iEdge) &
+                  * normalBaroclinicVelocity(k,eoe) * fEdge(eoe)
             end do
          end do
       end do
@@ -1897,12 +1894,12 @@ contains
       !$omp do schedule(runtime) private(cell1, cell2, k, eoe)
       do iEdge = 1, nEdgesOwned
          do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
-            normalVelocityNew(k,iEdge) = 0.0_RKIND
+            normalVelocity(k,iEdge) = 0.0_RKIND
             do j = 1,nEdgesOnEdge(iEdge)
                eoe = edgesOnEdge(j,iEdge)
-               normalVelocityNew(k,iEdge) &
-                  = normalVelocityNew(k,iEdge) + weightsOnEdge(j,iEdge) &
-                  * normalBaroclinicVelocityNew(k,eoe) * fEdge(eoe)
+               normalVelocity(k,iEdge) &
+                  = normalVelocity(k,iEdge) + weightsOnEdge(j,iEdge) &
+                  * normalBaroclinicVelocity(k,eoe) * fEdge(eoe)
             end do
          end do
       end do

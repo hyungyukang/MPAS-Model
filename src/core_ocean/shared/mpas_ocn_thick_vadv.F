@@ -110,9 +110,6 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, k, nCells
-!     integer, pointer :: nVertLevels
-!     integer, dimension(:), pointer :: nCellsArray
-!     integer, dimension(:), pointer :: minLevelCell, maxLevelCell
 
       !-----------------------------------------------------------------
       !
@@ -128,29 +125,26 @@ contains
 
       call mpas_timer_start("thick vadv")
 
-!     call mpas_pool_get_array(meshPool, 'minLevelCell', minLevelCell)
-!     call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-
-!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
-!     call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
-
-!     nCells = nCellsArray( 1 )
-
 #ifdef MPAS_OPENACC
       !$acc parallel loop &
       !$acc    present(minLevelCell,maxLevelCell,tend, &
-      !$acc       vertAleTransportTop)
+      !$acc       vertAleTransportTop) collapse(2)
+      do iCell = 1, nCellsOwned
+         !do k = minLevelCell(iCell), maxLevelCell(iCell)
+         do k = 1,nVertLevels
+            tend(k,iCell) = tend(k,iCell) &
+               + vertAleTransportTop(k+1,iCell) - vertAleTransportTop(k,iCell)
+         end do
+      end do
 #else
       !$omp parallel
       !$omp do schedule(runtime) private(k)
-#endif
       do iCell = 1, nCellsOwned
          do k = minLevelCell(iCell), maxLevelCell(iCell)
             tend(k,iCell) = tend(k,iCell) &
                + vertAleTransportTop(k+1,iCell) - vertAleTransportTop(k,iCell)
          end do
       end do
-#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
 #endif

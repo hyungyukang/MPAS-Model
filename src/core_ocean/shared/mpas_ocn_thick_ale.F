@@ -129,21 +129,21 @@ contains
 
 
       ! Initialization of temporary arrays
-#ifdef MPAS_OPENACC
-      !$acc parallel loop present(temp1Vert,temp2Vert,temp3Vert)
-#else
-      !$omp parallel
-      !$omp do schedule(runtime)
-#endif
-      do k = 1,nVertLevels
-         temp1Vert(k) = 0.0_RKIND
-         temp2Vert(k) = 0.0_RKIND
-         temp3Vert(k) = 0.0_RKIND
-      end do
-#ifndef MPAS_OPENACC
-      !$omp end do
-      !$omp end parallel
-#endif
+!#ifdef MPAS_OPENACC
+!      !$acc parallel loop present(temp1Vert,temp2Vert,temp3Vert)
+!#else
+!      !$omp parallel
+!      !$omp do schedule(runtime)
+!#endif
+!      do k = 1,nVertLevels
+!         temp1Vert(k) = 0.0_RKIND
+!         temp2Vert(k) = 0.0_RKIND
+!         temp3Vert(k) = 0.0_RKIND
+!      end do
+!#ifndef MPAS_OPENACC
+!      !$omp end do
+!      !$omp end parallel
+!#endif
 
 !#ifdef MPAS_OPENACC
 !      !$acc parallel loop present(temp2Cell)
@@ -206,13 +206,21 @@ contains
          !$acc parallel loop &
          !$acc    present(maxLevelCell,minLevelCell,vertCoordMovementWeights, &
          !$acc            restingThickness,temp2VertCell,temp1Cell,temp2Cell) &
-         !$acc    private(k,thicknessSum)
+         !$acc    private(k,thicknessSum) collapse(2)
+         do iCell = 1, nCells
+
+            ! Note that restingThickness is nonzero, and remaining terms are perturbations about zero.
+            ! This is equation 4 and 6 in Petersen et al 2015, but with eqn 6
+            do k = 1,nVertLevels
+            thicknessSum = temp1Cell(iCell) / temp2Cell(iCell)
+               temp2VertCell(k, iCell) = restingThickness(k, iCell) &
+                  + ( vertCoordMovementWeights(k) * restingThickness(k, iCell) * thicknessSum )
+            end do
+         enddo
 #else
          !$omp parallel
          !$omp do schedule(runtime) private(kMax, thicknessSum, k)
-#endif
          do iCell = 1, nCells
-   
             thicknessSum = temp1Cell(iCell) / temp2Cell(iCell)
 
             ! Note that restingThickness is nonzero, and remaining terms are perturbations about zero.
@@ -223,7 +231,6 @@ contains
                   + ( vertCoordMovementWeights(k) * restingThickness(k, iCell) * thicknessSum )
             end do
          enddo
-#ifndef MPAS_OPENACC
          !$omp end do
          !$omp end parallel
 #endif
@@ -254,11 +261,21 @@ contains
          !$acc parallel loop &
          !$acc    present(maxLevelCell,minLevelCell,vertCoordMovementWeights, &
          !$acc            restingThickness,temp2VertCell,temp1Cell,temp2Cell) &
-         !$acc    private(weightSum,k)
+         !$acc    private(weightSum,k) collapse(2)
+         do iCell = 1, nCells
+            do k = 1,nVertLevels
+               ! Using this, we must require that sum(restingThickness(k, iCell))
+               ! summed over k is equal to bottomDepth.
+               ! This is equation 4 and 6 in Petersen et al 2015, but with eqn 6
+               ! altered so only the W_k weights are used. The resting
+               ! thickness shown in eqn 6 is not included here.
+               temp2VertCell(k, iCell) = restingThickness(k, iCell) + temp1Cell(iCell) &
+                                       * vertCoordMovementWeights(k) / temp2Cell(iCell)
+            end do
+         enddo
 #else
          !$omp parallel
          !$omp do schedule(runtime) private(kMax, weightSum, k)
-#endif
          do iCell = 1, nCells
             do k = minLevelCell(iCell), maxLevelCell(iCell)
                ! Using this, we must require that sum(restingThickness(k, iCell))
@@ -270,7 +287,6 @@ contains
                                        * vertCoordMovementWeights(k) / temp2Cell(iCell)
             end do
          enddo
-#ifndef MPAS_OPENACC
          !$omp end do
          !$omp end parallel
 #endif
@@ -286,8 +302,6 @@ contains
          !$omp do schedule(runtime) private(kMax)
 #endif
          do iCell = 1, nCells
-            !kMax = maxLevelCell(iCell)
-            !kMin = minLevelCell(iCell)
             do k = minLevelCell(iCell),maxLevelCell(iCell)
                temp2VertCell(k, iCell) = &
                    temp2VertCell(k, iCell) + newHighFreqThickness(k,iCell)

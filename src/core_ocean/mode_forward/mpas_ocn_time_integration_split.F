@@ -1983,6 +1983,19 @@ module ocn_time_integration_split
                  tidalLayerThicknessTendency)
 
 
+         call mpas_timer_stop('se thick tend')
+
+         ! update halo for thickness tendencies
+         call mpas_timer_start("se halo thickness")
+
+         !$acc update self(layerThicknessTend)
+         call mpas_dmpar_field_halo_exch(domain, 'tendLayerThickness')
+         !$acc update device(layerThicknessTend)
+
+         call mpas_timer_stop("se halo thickness")
+
+
+
          !$acc exit data &
          !$acc    copyout(barotropicForcing,normalBaroclinicVelocityNew, &
          !$acc       normalVelocity,layerThickness,activeTracers, &
@@ -2005,15 +2018,6 @@ module ocn_time_integration_split
          !$acc       riverRunoffFlux,iceRunoffFlux,rainFlux, &
          !$acc       landIceFreshwaterFlux,frazilLayerThicknessTendency, &
          !$acc       tidalLayerThicknessTendency)
-
-         call mpas_timer_stop('se thick tend')
-
-         ! update halo for thickness tendencies
-         call mpas_timer_start("se halo thickness")
-
-         call mpas_dmpar_field_halo_exch(domain, 'tendLayerThickness')
-
-         call mpas_timer_stop("se halo thickness")
 
          call mpas_timer_start('se tracer tend', .false.)
          call ocn_tend_tracer(tendPool, statePool, forcingPool, &

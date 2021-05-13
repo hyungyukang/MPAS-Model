@@ -114,6 +114,7 @@ contains
 
       integer :: iEdge, cell1, cell2, k, i, iCell, nCells
       real (kind=RKIND) :: flux, invAreaCell, invAreaCell1, invAreaCell2
+      real (kind=RKIND) :: temp2
 
       !-----------------------------------------------------------------
       !
@@ -134,11 +135,23 @@ contains
       !$acc    present(areaCell,nEdgesOnCell,edgesOnCell, &
       !$acc        minLevelEdgeBot,maxLevelEdgeTop,normalVelocity,dvEdge, &
       !$acc        layerThicknessEdge,tend,edgeSignOnCell) &
-      !$acc    private(invAreaCell, i, iEdge, k, flux)
+      !$acc    collapse(2) 
+      do iCell = 1, nCellsOwned
+        do k = 1,nVertLevels
+          do i = 1, nEdgesOnCell(iCell)
+            iEdge = edgesOnCell(i, iCell)
+            flux = normalVelocity(k, iEdge) * dvEdge(iEdge) &
+                 * layerThicknessEdge(k, iEdge)
+            temp2 = edgeSignOnCell(i, iCell) * flux / areaCell(iCell)
+            !!$acc atomic update
+            tend(k,iCell) = tend(k,iCell) + temp2 
+          end do
+        end do
+      end do
+
 #else
       !$omp parallel
       !$omp do schedule(runtime) private(invAreaCell, i, iEdge, k, flux)
-#endif
       do iCell = 1, nCellsOwned
         invAreaCell = 1.0_RKIND / areaCell(iCell)
         do i = 1, nEdgesOnCell(iCell)
@@ -152,7 +165,6 @@ contains
           end do
         end do
       end do
-#ifndef
       !$omp end do
       !$omp end parallel
 #endif
