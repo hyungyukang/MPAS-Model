@@ -263,6 +263,8 @@ contains
       err = 0
 
       if ( .not. frazilFormationOn ) return
+     
+      call mpas_timer_start("frazil ice")
 
       call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
       call mpas_pool_get_dimension(tracersPool, 'index_temperature', indexTemperature)
@@ -287,6 +289,8 @@ contains
       end do
       !$omp end do
       !$omp end parallel
+
+      call mpas_timer_stop("frazil ice")
 
    end subroutine ocn_frazil_forcing_active_tracers!}}}
 

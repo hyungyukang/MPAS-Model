@@ -28,6 +28,7 @@ module ocn_tracer_advection_std
    use mpas_threading
 
    use mpas_tracer_advection_helpers
+   use ocn_mesh
 
    implicit none
    private
@@ -63,37 +64,25 @@ module ocn_tracer_advection_std
 !>  Both horizontal and vertical.
 !
 !-----------------------------------------------------------------------
-   subroutine ocn_tracer_advection_std_tend(tracers, adv_coefs, adv_coefs_3rd, nAdvCellsForEdge, advCellsForEdge, &!{{{
-                                             normalThicknessFlux, w, layerThickness, verticalCellSize, dt, meshPool, &
-                                             tend, maxLevelCell, maxLevelEdgeTop, &
-                                             highOrderAdvectionMask, edgeSignOnCell)
+   subroutine ocn_tracer_advection_std_tend(tracers, & !{{{
+                                            normalThicknessFlux, w, layerThickness, &
+                                            verticalCellSize, dt, tend)
 
       real (kind=RKIND), dimension(:,:,:), intent(in) :: tracers !< Input: current tracer values
-      real (kind=RKIND), dimension(:,:), intent(in) :: adv_coefs !< Input: Advection coefficients for 2nd order advection
-      real (kind=RKIND), dimension(:,:), intent(in) :: adv_coefs_3rd !< Input: Advection coeffs for blending in 3rd/4th order
-      integer, dimension(:), intent(in) :: nAdvCellsForEdge !< Input: Number of advection cells for each edge
-      integer, dimension(:,:), intent(in) :: advCellsForEdge !< Input: List of advection cells for each edge
       real (kind=RKIND), dimension(:,:), intent(in) :: normalThicknessFlux !< Input: Thichness weighted velocitiy
       real (kind=RKIND), dimension(:,:), intent(in) :: w !< Input: Vertical velocity
       real (kind=RKIND), dimension(:,:), intent(in) :: layerThickness !< Input: Thickness
       real (kind=RKIND), dimension(:,:), intent(in) :: verticalCellSize !< Input: Distance between vertical interfaces of a cell
       real (kind=RKIND), intent(in) :: dt !< Input: Timestep
-      type (mpas_pool_type), intent(in) :: meshPool !< Input: Mesh information
       real (kind=RKIND), dimension(:,:,:), intent(inout) :: tend !< Input/Output: Tracer tendency
-      integer, dimension(:), pointer :: maxLevelCell !< Input: Index to max level at cell center
-      integer, dimension(:), pointer :: maxLevelEdgeTop !< Input: Index to max level at edge with non-land cells on both sides
-      integer, dimension(:,:), pointer :: highOrderAdvectionMask !< Input: Mask for high order advection
-      integer, dimension(:, :), pointer :: edgeSignOnCell !< Input: Sign for flux from edge on each cell.
 
-      integer :: i, iCell, iEdge, k, iTracer, cell1, cell2
-      integer :: nVertLevels, num_tracers
-      integer, pointer :: nCells, nEdges, nCellsSolve, maxEdges
-      integer, dimension(:), pointer :: nEdgesOnCell
-      integer, dimension(:,:), pointer :: cellsOnEdge, cellsOnCell, edgesOnCell
+      integer :: nCells, nEdges, i, iCell, iEdge, k, iTracer, cell1, cell2
+      integer :: num_tracers
 
       real (kind=RKIND) :: tracer_weight, invAreaCell1
       real (kind=RKIND) :: verticalWeightK, verticalWeightKm1
-      real (kind=RKIND), dimension(:), pointer :: dvEdge, areaCell, verticalDivergenceFactor
+      !real (kind=RKIND), dimension(:), pointer :: dvEdge, areaCell, verticalDivergenceFactor
+      real (kind=RKIND), dimension(:), pointer :: verticalDivergenceFactor
 
       real (kind=RKIND), dimension(:,:), allocatable :: tracer_cur
       real (kind=RKIND), dimension(:,:), allocatable :: high_order_horiz_flux
@@ -102,20 +91,23 @@ module ocn_tracer_advection_std
       real (kind=RKIND), parameter :: eps = 1.e-10_RKIND
 
       ! Get dimensions
-      call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
-      call mpas_pool_get_dimension(meshPool, 'nCellsSolve', nCellsSolve)
-      call mpas_pool_get_dimension(meshPool, 'nEdges', nEdges)
-      call mpas_pool_get_dimension(meshPool, 'maxEdges', maxEdges)
-      nVertLevels = size(tracers,dim=2)
+!     call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
+!     call mpas_pool_get_dimension(meshPool, 'nCellsSolve', nCellsSolve)
+!     call mpas_pool_get_dimension(meshPool, 'nEdges', nEdges)
+!     call mpas_pool_get_dimension(meshPool, 'maxEdges', maxEdges)
+!     nVertLevels = size(tracers,dim=2)
       num_tracers = size(tracers,dim=1)
 
       ! Initialize pointers
-      call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
-      call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
-      call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
-      call mpas_pool_get_array(meshPool, 'cellsOnCell', cellsOnCell)
-      call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
-      call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
+!     call mpas_pool_get_array(meshPool, 'dvEdge', dvEdge)
+!     call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
+!     call mpas_pool_get_array(meshPool, 'edgesOnCell', edgesOnCell)
+!     call mpas_pool_get_array(meshPool, 'cellsOnCell', cellsOnCell)
+!     call mpas_pool_get_array(meshPool, 'areaCell', areaCell)
+!     call mpas_pool_get_array(meshPool, 'nEdgesOnCell', nEdgesOnCell)
+
+      nCells = nCellsOwned
+      nEdges = nEdgesOwned
 
       allocate(verticalDivergenceFactor(nVertLevels))
       verticalDivergenceFactor = 1.0_RKIND
@@ -181,7 +173,7 @@ module ocn_tracer_advection_std
 
           ! Compute 2nd order fluxes where needed.
           do k = 1, maxLevelEdgeTop(iEdge)
-            tracer_weight = iand(highOrderAdvectionMask(k, iEdge)+1, 1) * (dvEdge(iEdge) * 0.5_RKIND) &
+            tracer_weight = iand(int(highOrderAdvectionMask(k, iEdge))+1, 1) * (dvEdge(iEdge) * 0.5_RKIND) &
                            * normalThicknessFlux(k, iEdge)
 
             high_order_horiz_flux(k, iEdge) = high_order_horiz_flux(k, iedge) + tracer_weight &
@@ -192,8 +184,8 @@ module ocn_tracer_advection_std
           do i = 1, nAdvCellsForEdge(iEdge)
             iCell = advCellsForEdge(i,iEdge)
             do k = 1, maxLevelCell(iCell)
-              tracer_weight = highOrderAdvectionMask(k, iEdge) * (adv_coefs(i,iEdge) + coef3rdOrder &
-                            * sign(1.0_RKIND,normalThicknessFlux(k,iEdge))*adv_coefs_3rd(i,iEdge))
+              tracer_weight = highOrderAdvectionMask(k, iEdge) * (advCoefs(i,iEdge) + coef3rdOrder &
+                            * sign(1.0_RKIND,normalThicknessFlux(k,iEdge))*advCoefs3rd(i,iEdge))
 
               tracer_weight = normalThicknessFlux(k,iEdge)*tracer_weight
               high_order_horiz_flux(k,iEdge) = high_order_horiz_flux(k,iEdge) + tracer_weight * tracer_cur(k,iCell)
@@ -218,7 +210,8 @@ module ocn_tracer_advection_std
 
         ! Accumulate the scaled high order vertical tendencies.
         !$omp do schedule(runtime) private(k)
-        do iCell = 1, nCellsSolve
+        !do iCell = 1, nCellsSolve
+        do iCell = 1, nCellsOwned
           do k = 1,maxLevelCell(iCell)
             tend(iTracer, k, iCell) = tend(iTracer, k, iCell) + verticalDivergenceFactor(k) * (high_order_vert_flux(k+1, iCell) &
                                     - high_order_vert_flux(k, iCell))

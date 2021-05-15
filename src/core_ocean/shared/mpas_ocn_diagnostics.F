@@ -1768,11 +1768,9 @@ contains
       ! Compute desired thickness at new time
       !
       if (present(highFreqThicknessNew)) then
-        call ocn_ALE_thickness(&
-                               restingThickness, err, highFreqThicknessNew)
+        call ocn_ALE_thickness(restingThickness, err, highFreqThicknessNew)
       else
-        call ocn_ALE_thickness( &
-                               restingThickness, err)
+        call ocn_ALE_thickness(restingThickness, err)
       endif
 
       !

@@ -129,36 +129,6 @@ contains
 
 
       ! Initialization of temporary arrays
-!#ifdef MPAS_OPENACC
-!      !$acc parallel loop present(temp1Vert,temp2Vert,temp3Vert)
-!#else
-!      !$omp parallel
-!      !$omp do schedule(runtime)
-!#endif
-!      do k = 1,nVertLevels
-!         temp1Vert(k) = 0.0_RKIND
-!         temp2Vert(k) = 0.0_RKIND
-!         temp3Vert(k) = 0.0_RKIND
-!      end do
-!#ifndef MPAS_OPENACC
-!      !$omp end do
-!      !$omp end parallel
-!#endif
-
-!#ifdef MPAS_OPENACC
-!      !$acc parallel loop present(temp2Cell)
-!#else
-!      !$omp parallel
-!      !$omp do schedule(runtime)
-!#endif
-!      do iCell = 1,nCellsAll
-!         temp2Cell(iCell) = 0.0_RKIND
-!      end do
-!#ifndef MPAS_OPENACC
-!      !$omp end do
-!      !$omp end parallel
-!#endif
-     
 
 #ifdef MPAS_OPENACC
       !$acc parallel loop present(temp2Cell)

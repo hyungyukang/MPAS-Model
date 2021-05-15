@@ -473,7 +473,14 @@ contains
       !$acc    divergence, vertViscTopOfEdge, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
       !$acc    topDrag,topDragMag, layerThickEdge, &
-      !$acc    normalGMBolusVelocity)
+      !$acc    normalGMBolusVelocity, &
+               ! Variables that 'ocn_tend_tracers' uses
+      !$acc    activeTracerHorizontalAdvectionEdgeFlux, &
+      !$acc    activeTracerVerticalAdvectionTendency, &
+      !$acc    activeTracerHorMixTendency, &
+      !$acc    activeTracerSurfaceFluxTendency, &
+      !$acc    temperatureShortWaveTendency, &
+      !$acc    activeTracerNonLocalTendency )
 
     end subroutine ocn_diagnostics_variables_init!}}}
 
@@ -507,7 +514,14 @@ contains
       !$acc    divergence, vertViscTopOfEdge, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
       !$acc    topDrag,topDragMag, layerThickEdge, &
-      !$acc    normalGMBolusVelocity)
+      !$acc    normalGMBolusVelocity, &
+               ! Variables that 'ocn_tend_tracers' uses
+      !$acc    activeTracerHorizontalAdvectionEdgeFlux, &
+      !$acc    activeTracerVerticalAdvectionTendency, &
+      !$acc    activeTracerHorMixTendency, &
+      !$acc    activeTracerSurfaceFluxTendency, &
+      !$acc    temperatureShortWaveTendency, &
+      !$acc    activeTracerNonLocalTendency )
 
 !!! Don't forget later
 !!! [layerThickEdge,normalGMBolusVelocity,normalTransportVelocity]
@@ -544,9 +558,15 @@ contains
       !$acc    normPlanetVortEdge, montgomeryPotential, &
       !$acc    divergence, vertViscTopOfEdge, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
-!     !$acc    topDrag,topDragMag,normalGMBolusVelocity)
       !$acc    topDrag,topDragMag, layerThickEdge, &
-      !$acc    normalGMBolusVelocity)
+      !$acc    normalGMBolusVelocity, &
+               ! Variables that 'ocn_tend_tracers' uses
+      !$acc    activeTracerHorizontalAdvectionEdgeFlux, &
+      !$acc    activeTracerVerticalAdvectionTendency, &
+      !$acc    activeTracerHorMixTendency, &
+      !$acc    activeTracerSurfaceFluxTendency, &
+      !$acc    temperatureShortWaveTendency, &
+      !$acc    activeTracerNonLocalTendency )
 
 !     !$acc update &
 !              ! Variables that 'ocn_tend_vel' uses

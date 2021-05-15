@@ -141,7 +141,9 @@ module ocn_time_integration_split
          tracersTendPool,   &! structure holding tracer tendencies
          forcingPool,       &! structure holding forcing variables
          scratchPool,       &! structure holding temporary variables
-         swForcingPool       ! structure holding short-wave forcing vars
+         swForcingPool,     &! structure holding short-wave forcing vars
+         tracersSurfaceFluxPool ! structure holding tracer surface fluxes
+                       
 
       logical :: &
          activeTracersOnly   ! only compute tendencies for active tracers
@@ -260,11 +262,16 @@ module ocn_time_integration_split
          surfaceThicknessFluxRunoff, &
          evaporationFlux,snowFlux,seaIceFreshWaterFlux, &
          icebergFreshWaterFlux,riverRunoffFlux,iceRunoffFlux,rainFlux, &
-         windStressZonal,windStressMerid,landIceFreshwaterFlux
+         windStressZonal,windStressMerid,landIceFreshwaterFlux, &
+         penetrativeTemperatureFlux, landIceHeatFlux
+         
 
       real (kind=RKIND), dimension(:,:), pointer :: &
-         fractionAbsorbed, fractionAbsorbedRunoff, &
-         frazilLayerThicknessTendency,tidalLayerThicknessTendency
+         frazilLayerThicknessTendency,tidalLayerThicknessTendency, &
+         fractionAbsorbed,fractionAbsorbedRunoff, &
+         activeTracersSurfaceFluxRunoff,activeTracersSurfaceFluxRemoved, &
+         nonLocalSurfaceTracerFlux, activeTracersSurfaceFlux
+         
 
       ! These are public variables used from the diagnostics module
       ! indexSurfaceVelocityZonal, indexSurfaceVelocityMeridional
@@ -319,6 +326,9 @@ module ocn_time_integration_split
                                              tracersPool)
       call mpas_pool_get_subpool(tendPool,  'tracersTend', &
                                              tracersTendPool)
+
+      call mpas_pool_get_subpool(forcingPool, 'tracersSurfaceFlux', &
+                                               tracersSurfaceFluxPool)
 
       !*** Retrieve state variables at two time levels
 
@@ -681,11 +691,39 @@ module ocn_time_integration_split
                                              landIceFreshwaterFlux)
       call mpas_pool_get_array(forcingPool, 'tidalLayerThicknessTendency', &
                                              tidalLayerThicknessTendency)
+      call mpas_pool_get_array(tracersPool, 'activeTracers', &
+                                             tracersGroupCur, 1)
+      call mpas_pool_get_array(tracersPool, 'activeTracers', &
+                                             tracersGroupNew, 2)
+
+      call mpas_pool_get_array(forcingPool, 'penetrativeTemperatureFlux', &
+                                             penetrativeTemperatureFlux)
+      call mpas_pool_get_array(forcingPool, 'fractionAbsorbed', &
+                                             fractionAbsorbed)
+      call mpas_pool_get_array(forcingPool, 'fractionAbsorbedRunoff', &
+                                             fractionAbsorbedRunoff)
+
+      call mpas_pool_get_array(forcingPool, 'landIceHeatFlux', landIceHeatFlux)
+
+      call mpas_pool_get_array(tracersTendPool,'activeTracersTend', &
+                                                activeTracersTend)
+      call mpas_pool_get_array(tracersSurfaceFluxPool,'activeTracersSurfaceFlux', &
+                                                       activeTracersSurfaceFlux)
+      call mpas_pool_get_array(tracersSurfaceFluxPool,'nonLocalSurfaceTracerFlux', &
+                                                       nonLocalSurfaceTracerFlux)
+      call mpas_pool_get_array(tracersSurfaceFluxPool, &
+                                                 'activeTracersSurfaceFluxRunoff', &
+                                                  activeTracersSurfaceFluxRunoff)
+      call mpas_pool_get_array(tracersSurfaceFluxPool, &
+                                                 'activeTracersSurfaceFluxRemoved',&
+                                                  activeTracersSurfaceFluxRemoved)
+
 
 
       call mpas_timer_start("se bcl vel copyin")
       !$acc enter data &
-      !$acc    copyin(normalVelocity,layerThickness,activeTracers, &
+      !$acc    copyin(normalVelocity,layerThickness, &
+      !$acc       tracersGroupCur,tracersGroupNew, &
       !$acc       vertAleTransportTop,highFreqThicknessNew, &
       !$acc       normalVelocityCur,normalVelocityNew,ssh,sshCur,sshNew, &
       !$acc       normalBaroclinicVelocityCur,normalBaroclinicVelocityNew, &
@@ -702,7 +740,13 @@ module ocn_time_integration_split
       !$acc       snowFlux,seaIceFreshWaterFlux,icebergFreshWaterFlux, &
       !$acc       riverRunoffFlux,iceRunoffFlux,rainFlux, &
       !$acc       landIceFreshwaterFlux,frazilLayerThicknessTendency, &
-      !$acc       tidalLayerThicknessTendency)
+      !$acc       tidalLayerThicknessTendency, &
+      !$acc       penetrativeTemperatureFlux, &
+      !$acc       fractionAbsorbed,fractionAbsorbedRunoff, &
+      !$acc       activeTracersTend,activeTracersSurfaceFlux, &
+      !$acc       nonLocalSurfaceTracerFlux,activeTracersSurfaceFluxRunoff, &
+      !$acc       activeTracersSurfaceFluxRemoved, &
+      !$acc       landIceHeatFlux)
 
 
       call ocn_diagnostics_variables_update(err)
@@ -746,7 +790,7 @@ module ocn_time_integration_split
 
          call ocn_tend_vel(tendPool, statePool, forcingPool, &
                            normalVelocity,layerThickness,ssh, &
-                           activeTracers,normalVelocityTend, &
+                           tracersGroupCur,normalVelocityTend, &
                            sfcStress,sfcStressMag, &
                            windStressZonal,windStressMerid,dt)
 
@@ -1994,21 +2038,22 @@ module ocn_time_integration_split
 
          call mpas_timer_stop("se halo thickness")
 
-
-
          !$acc exit data &
          !$acc    copyout(barotropicForcing,normalBaroclinicVelocityNew, &
-         !$acc       normalVelocity,layerThickness,activeTracers, &
+         !$acc       normalVelocity,layerThickness, &
+         !$acc       tracersGroupCur,tracersGroupNew, &
          !$acc       vertAleTransportTop,highFreqThicknessNew, &
          !$acc       normalTransportVelocity,barotropicThicknessFlux, &
          !$acc       normalBarotropicVelocityNew,layerThicknessTend, &
                      ! Forcing Pool
          !$acc       sfcStress,sfcStressMag, &
-         !$acc       surfaceThicknessFlux,surfaceThicknessFluxRunoff) &
+         !$acc       surfaceThicknessFlux,surfaceThicknessFluxRunoff, &
+         !$acc       activeTracersTend,activeTracersSurfaceFlux, &
+         !$acc       layerThicknessNew ) &
          !$acc    delete(normalVelocityCur,normalVelocityNew, &
          !$acc       normalBaroclinicVelocityCur,ssh ,sshCur,sshNew,&
          !$acc       normalBarotropicVelocityCur, &
-         !$acc       layerThicknessCur,layerThicknessNew, &
+         !$acc       layerThicknessCur, &
          !$acc       restingThickness,normalVelocityTend,nBtrSubcycles, &
                      ! Forcing Pool
          !$acc       windStressZonal,windStressMerid, &
@@ -2017,11 +2062,24 @@ module ocn_time_integration_split
          !$acc       seaIceFreshWaterFlux,icebergFreshWaterFlux, &
          !$acc       riverRunoffFlux,iceRunoffFlux,rainFlux, &
          !$acc       landIceFreshwaterFlux,frazilLayerThicknessTendency, &
-         !$acc       tidalLayerThicknessTendency)
+         !$acc       tidalLayerThicknessTendency, &
+         !$acc       penetrativeTemperatureFlux, &
+         !$acc       fractionAbsorbed,fractionAbsorbedRunoff, &
+         !$acc       nonLocalSurfaceTracerFlux,activeTracersSurfaceFluxRunoff, &
+         !$acc       activeTracersSurfaceFluxRemoved, &
+         !$acc       landIceHeatFlux)
 
          call mpas_timer_start('se tracer tend', .false.)
          call ocn_tend_tracer(tendPool, statePool, forcingPool, &
                               meshPool, swForcingPool, scratchPool, &
+                              layerThicknessNew,penetrativeTemperatureFlux, &
+                              fractionAbsorbed,fractionAbsorbedRunoff, &
+                              tracersGroupNew,activeTracersTend, &
+                              activeTracersSurfaceFlux, &
+                              nonLocalSurfaceTracerFlux, &
+                              activeTracersSurfaceFluxRunoff, &
+                              activeTracersSurfaceFluxRemoved, &
+                              landIceHeatFlux, &
                               dt, activeTracersOnly, 2)
 
          call mpas_timer_stop('se tracer tend')
@@ -2222,6 +2280,7 @@ module ocn_time_integration_split
                                 configName, config_use_tracerGroup)
 
                   if ( config_use_tracerGroup ) then
+
                      call mpas_pool_get_array(tracersPool, &
                                               groupItr%memberName, &
                                               tracersGroupCur, 1)
