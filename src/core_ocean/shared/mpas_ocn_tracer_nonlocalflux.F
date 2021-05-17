@@ -26,6 +26,7 @@ module ocn_tracer_nonlocalflux
    use mpas_pool_routines
    use ocn_constants
    use ocn_config
+   use ocn_mesh
 
    implicit none
    private
@@ -70,15 +71,16 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_tracer_nonlocalflux_tend(meshPool, vertNonLocalFlux, surfaceTracerFlux, tend, err)!{{{
+!  subroutine ocn_tracer_nonlocalflux_tend(meshPool, vertNonLocalFlux, surfaceTracerFlux, tend, err)!{{{
+   subroutine ocn_tracer_nonlocalflux_tend(vertNonLocalFlux, surfaceTracerFlux, tend, err)!{{{
       !-----------------------------------------------------------------
       !
       ! input variables
       !
       !-----------------------------------------------------------------
 
-      type (mpas_pool_type), intent(in) :: &
-         meshPool          !< Input: mesh information
+!     type (mpas_pool_type), intent(in) :: &
+!        meshPool          !< Input: mesh information
 
       real (kind=RKIND), dimension(:,:), intent(in) :: &
         surfaceTracerFlux !< Input: surface tracer fluxes
@@ -110,9 +112,9 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, k, iTracer, nTracers, nCells
-      integer, pointer :: nVertLevels
-      integer, dimension(:), pointer :: nCellsArray
-      integer, dimension(:), pointer :: maxLevelCell
+!     integer, pointer :: nVertLevels
+!     integer, dimension(:), pointer :: nCellsArray
+!     integer, dimension(:), pointer :: maxLevelCell
       real (kind=RKIND) :: fluxTopOfCell, fluxBottomOfCell
 
       err = 0
@@ -121,13 +123,14 @@ contains
 
       call mpas_timer_start('non-local flux')
 
-      call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
-      call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
+!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
+!     call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
       nTracers = size(tend, dim=1)
 
-      call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
+!     call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
 
-      nCells = nCellsArray( 1 )
+!     nCells = nCellsArray( 1 )
+      nCells = nCellsOwned
 
       !$omp parallel
       !$omp do schedule(runtime) private(k, iTracer, fluxTopOfCell, fluxBottomOfCell)

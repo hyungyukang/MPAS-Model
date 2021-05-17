@@ -31,6 +31,7 @@ module ocn_equation_of_state
    use ocn_config
    use ocn_diagnostics_variables
    use mpas_log
+   use ocn_mesh
 
    implicit none
    private
@@ -91,9 +92,11 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_equation_of_state_density(statePool, meshPool, tracersSurfaceValue, &
-                           nCells, kDisplaced, displacement_type, density, err,       &
-                           thermalExpansionCoeff, salineContractionCoeff, timeLevelIn)
+   subroutine ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
+                           nCells, kDisplaced, displacement_type, &
+                           activeTracers, density, err, &
+                           thermalExpansionCoeff, salineContractionCoeff, &
+                           timeLevelIn)
       !{{{
       !-----------------------------------------------------------------
       ! Input variables
@@ -113,8 +116,9 @@ contains
          displacement_type    ! choice for adiabatic displacement
 
       type (mpas_pool_type), intent(in) :: &
-         statePool,           &! pool containing state variables
-         meshPool              ! pool containing mesh quantities
+         statePool            ! pool containing state variables
+
+      real (kind=RKIND), dimension(:,:,:), pointer, intent(in) :: activeTracers
 
       !-----------------------------------------------------------------
       ! Output variables
@@ -139,10 +143,8 @@ contains
 
       type (mpas_pool_type), pointer :: tracersPool
 
-      real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers
-      integer, dimension(:), pointer :: maxLevelCell
-      integer :: iCell, k, nVertLevels, indexT, indexS
-      integer, pointer :: indexTptr, indexSptr, nVertLevelsPtr
+      integer :: iCell, k, indexT, indexS
+      integer, pointer :: indexTptr, indexSptr
       integer :: timeLevel
 
       !-----------------------------------------------------------------
@@ -162,20 +164,20 @@ contains
 
       call mpas_pool_get_subpool  (statePool,   'tracers', &
                                                  tracersPool)
-      call mpas_pool_get_array    (tracersPool, 'activeTracers', &
-                                                 activeTracers, timeLevel)
+!     call mpas_pool_get_array    (tracersPool, 'activeTracers', &
+!                                                activeTracers, timeLevel)
       call mpas_pool_get_dimension(tracersPool, 'index_temperature', &
                                                  indexTptr)
       call mpas_pool_get_dimension(tracersPool, 'index_salinity', &
                                                  indexSptr)
-      call mpas_pool_get_dimension(meshPool,    'nVertLevels', &
-                                                 nVertLevelsPtr)
-      call mpas_pool_get_array    (meshPool,    'maxLevelCell', &
-                                                 maxLevelCell)
+!     call mpas_pool_get_dimension(meshPool,    'nVertLevels', &
+!                                                nVertLevelsPtr)
+!     call mpas_pool_get_array    (meshPool,    'maxLevelCell', &
+!                                                maxLevelCell)
 
       indexT      = indexTptr
       indexS      = indexSptr
-      nVertLevels = nVertLevelsPtr
+!     nVertLevels = nVertLevelsPtr
 
       !*** call specific equation of state based on user choice
 
@@ -185,13 +187,13 @@ contains
 
          if (present(thermalExpansionCoeff) .or. &
              present(salineContractionCoeff)) then
-            call ocn_equation_of_state_linear_density(nVertLevels,  &
+            call ocn_equation_of_state_linear_density(  &
                      nCells, kDisplaced, displacement_type,         &
                      indexT, indexS, activeTracers, density, err,   &
                      thermalExpansionCoeff, salineContractionCoeff, &
                      tracersSurfaceValue)
          else
-            call ocn_equation_of_state_linear_density(nVertLevels, &
+            call ocn_equation_of_state_linear_density( &
                      nCells, kDisplaced, displacement_type,        &
                      indexT, indexS, activeTracers, density, err,  &
                      tracersSurfaceValue)
@@ -201,14 +203,14 @@ contains
 
          if (present(thermalExpansionCoeff) .or. &
              present(salineContractionCoeff)) then
-            call ocn_equation_of_state_jm_density(nVertLevels,        &
+            call ocn_equation_of_state_jm_density(        &
                      nCells, kDisplaced, displacement_type,           &
                      indexT, indexS, activeTracers, density, err,     &
                      thermalExpansionCoeff, salineContractionCoeff,   &
                      tracersSurfaceValue)
 
          else
-            call ocn_equation_of_state_jm_density(nVertLevels,        &
+            call ocn_equation_of_state_jm_density(        &
                      nCells, kDisplaced, displacement_type,           &
                      indexT, indexS, activeTracers, density, err,     &
                      tracersSurfaceValue)
@@ -218,18 +220,18 @@ contains
 
          if (present(thermalExpansionCoeff) .or. &
              present(salineContractionCoeff)) then
-            call ocn_equation_of_state_wright_density(nVertLevels,    &
+            call ocn_equation_of_state_wright_density(    &
                      nCells, kDisplaced, displacement_type,           &
                      indexT, indexS, activeTracers, zMid,             &
-                     maxLevelCell, density, err,                      &
+                     density, err,                      &
                      thermalExpansionCoeff, salineContractionCoeff,   &
                      tracersSurfaceValue)
 
          else
-            call ocn_equation_of_state_wright_density(nVertLevels,    &
+            call ocn_equation_of_state_wright_density(    &
                      nCells, kDisplaced, displacement_type,           &
                      indexT, indexS, activeTracers, zMid,             &
-                     maxLevelCell, density, err, tracersSurfaceValue)
+                     density, err, tracersSurfaceValue)
          endif
 
       case default

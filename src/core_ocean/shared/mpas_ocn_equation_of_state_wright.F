@@ -31,6 +31,7 @@ module ocn_equation_of_state_wright
    use mpas_constants
    use ocn_constants
    use ocn_config
+   use ocn_mesh
 
    implicit none
    private
@@ -133,10 +134,10 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_equation_of_state_wright_density_only(nVertLevels,  &
+   subroutine ocn_equation_of_state_wright_density_only( &
                                nCells, kDisplaced, displacementType,  &
                                indexT, indexS, tracers, zMid,         &
-                               maxLevelCell, density, err, &
+                               density, err, &
                                tracersSurfaceLayerValue)
 
    !{{{
@@ -148,7 +149,6 @@ contains
 
       integer, intent(in) :: &
          nCells,             &! number of horizontal cells
-         nVertLevels,        &! max number of verical levels
          kDisplaced,         &! target layer for displacement
          indexT,             &! temperature index in tracer array
          indexS               ! salinity    index in tracer array
@@ -161,9 +161,6 @@ contains
 
       real (kind=RKIND), dimension(:,:), intent(in) :: &
          zMid
-
-      integer, dimension(:), intent(in) :: &
-         maxLevelCell
 
       real (kind=RKIND), dimension(:,:), intent(in) :: &
          tracersSurfaceLayerValue
@@ -202,16 +199,16 @@ contains
       allocate(boussinesqPres(nVertLevels, nCells))
 
       if (displacementType == 'surfaceDisplaced') then
-         call compute_surface_displaced_T_S(nVertLevels, nCells, indexT,      &
+         call compute_surface_displaced_T_S(nCells, indexT,      &
                                             indexS, tracersSurfaceLayerValue, &
                                             tracerTemp, tracerSalt)
       else
-         call compute_bounded_T_S(nVertLevels, nCells, indexT, indexS, tracers, &
+         call compute_bounded_T_S(nCells, indexT, indexS, tracers, &
                                   tracerTemp, tracerSalt)
       end if
 
-      call compute_boussinesq_p(nVertLevels, nCells, kDisplaced,      &
-                                displacementType, zMid, maxLevelCell, &
+      call compute_boussinesq_p(nCells, kDisplaced,      &
+                                displacementType, zMid, &
                                 boussinesqPres)
 
 #ifdef MPAS_OPENACC
@@ -285,9 +282,9 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_equation_of_state_wright_density_exp(nVertLevels,         &
+   subroutine ocn_equation_of_state_wright_density_exp( &
                                nCells, kDisplaced, displacementType,        &
-                               indexT, indexS, tracers, zMid, maxLevelCell, &
+                               indexT, indexS, tracers, zMid,  &
                                density, err, thermalExpansionCoeff,         &
                                salineContractionCoeff,                      &
                                tracersSurfaceLayerValue)
@@ -300,7 +297,6 @@ contains
 
       integer, intent(in) :: &
          nCells,             &! number of horizontal cells
-         nVertLevels,        &! max number of verical levels
          kDisplaced,         &! target layer for displacement
          indexT,             &! temperature index in tracer array
          indexS               ! salinity    index in tracer array
@@ -313,9 +309,6 @@ contains
 
       real (kind=RKIND), dimension(:,:), intent(in) :: &
          zMid
-
-      integer, dimension(:), intent(in) :: &
-         maxLevelCell
 
       real (kind=RKIND), dimension(:,:), intent(in) :: &
          tracersSurfaceLayerValue
@@ -369,15 +362,15 @@ contains
       allocate(boussinesqPres(nVertLevels, nCells))
 
       if (displacementType == 'surfaceDisplaced') then
-         call compute_surface_displaced_T_S(nVertLevels, nCells, indexT,      &
+         call compute_surface_displaced_T_S(nCells, indexT,      &
                                             indexS, tracersSurfaceLayerValue, &
                                             tracerTemp, tracerSalt)
       else
-         call compute_bounded_T_S(nVertLevels, nCells, indexT, indexS, tracers, &
+         call compute_bounded_T_S(nCells, indexT, indexS, tracers, &
                                   tracerTemp, tracerSalt)
       end if
-      call compute_boussinesq_p(nVertLevels, nCells, kDisplaced,      &
-                                displacementType, zMid, maxLevelCell, &
+      call compute_boussinesq_p(nCells, kDisplaced,      &
+                                displacementType, zMid, &
                                 boussinesqPres)
 
 
@@ -502,7 +495,7 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine compute_bounded_T_S(nVertLevels, nCells, indexT, indexS, &
+   subroutine compute_bounded_T_S(nCells, indexT, indexS, &
                                   tracers, tracerTemp, tracerSalt)!{{{
    !--------------------------------------------------------------------
 
@@ -511,7 +504,6 @@ contains
       !-----------------------------------------------------------------
 
       integer, intent(in) :: &
-         nVertLevels,        &! max number of verical levels
          nCells,             &! number of horizontal cells
          indexT,             &! temperature index in tracer array
          indexS               ! salinity    index in tracer array
@@ -565,7 +557,7 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine compute_surface_displaced_T_S(nVertLevels, nCells, indexT,      &
+   subroutine compute_surface_displaced_T_S(nCells, indexT,      &
                                             indexS, tracersSurfaceLayerValue, &
                                             tracerTemp, tracerSalt)!{{{
    !--------------------------------------------------------------------
@@ -575,7 +567,6 @@ contains
       !-----------------------------------------------------------------
 
       integer, intent(in) :: &
-         nVertLevels,        &! max number of verical levels
          nCells,             &! number of horizontal cells
          indexT,             &! temperature index in tracer array
          indexS               ! salinity    index in tracer array
@@ -628,8 +619,8 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine compute_boussinesq_p(nVertLevels, nCells, kDisplaced,      &
-                                   displacementType, zMid, maxLevelCell, &
+   subroutine compute_boussinesq_p(nCells, kDisplaced,      &
+                                   displacementType, zMid, &
                                    boussinesqPres)
    !{{{
    !--------------------------------------------------------------------
@@ -640,7 +631,6 @@ contains
 
       integer, intent(in) :: &
          nCells,             &! number of horizontal cells
-         nVertLevels,        &! max number of verical levels
          kDisplaced           ! target layer for displacement
 
       character(len=*), intent(in) :: &
@@ -648,9 +638,6 @@ contains
 
       real (kind=RKIND), dimension(:,:), intent(in) :: &
          zMid
-
-      integer, dimension(:), intent(in) :: &
-         maxLevelCell
 
       !-----------------------------------------------------------------
       ! Output variables

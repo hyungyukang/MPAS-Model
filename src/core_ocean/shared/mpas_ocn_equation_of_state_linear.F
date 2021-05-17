@@ -27,6 +27,7 @@ module ocn_equation_of_state_linear
    use ocn_config
    use mpas_dmpar
    use mpas_log
+   use ocn_mesh
 
    implicit none
    private
@@ -99,7 +100,7 @@ contains
 !-----------------------------------------------------------------------
 
    subroutine ocn_equation_of_state_linear_density_only(          &
-              nVertLevels, nCells, kDisplaced, displacementType,  &
+              nCells, kDisplaced, displacementType,  &
               indexT, indexS, tracers, density, err,              &
               tracersSurfaceLayerValue)
       !{{{
@@ -111,7 +112,6 @@ contains
 
       integer, intent(in) ::     &
          nCells,                 &! num of horizontal cells
-         nVertLevels,            &! num of vertical levels
          kDisplaced,             &! num of levels to displace parcel
          indexT, indexS           ! index into tracer array for T,S
 
@@ -228,7 +228,7 @@ contains
 !-----------------------------------------------------------------------
 
    subroutine ocn_equation_of_state_linear_density_exp(           &
-              nVertLevels, nCells, kDisplaced, displacementType,  &
+              nCells, kDisplaced, displacementType,  &
               indexT, indexS, tracers, density, err,              &
               thermalExpansionCoeff, salineContractionCoeff,      &
               tracersSurfaceLayerValue)
@@ -241,7 +241,6 @@ contains
 
       integer, intent(in) ::     &
          nCells,                 &! num of horizontal cells
-         nVertLevels,            &! num of vertical levels
          kDisplaced,             &! num of levels to displace parcel
          indexT, indexS           ! index into tracer array for T,S
 

@@ -476,12 +476,18 @@ contains
 !
 !-----------------------------------------------------------------------
    subroutine ocn_tend_tracer(tendPool, statePool, forcingPool, meshPool, swForcingPool, scratchPool, & !{{{
-                              layerThickness,penetrativeTemperatureFlux,fractionAbsorbed, &
+                              layerThickness,normalVelocity, &
+                              penetrativeTemperatureFlux,fractionAbsorbed, &
                               fractionAbsorbedRunoff, &
                               tracerGroup,tracerGroupTend,tracerGroupSurfaceFlux, &
                               nonLocalSurfaceTracerFlux,tracerGroupSurfaceFluxRunoff, &
                               tracerGroupSurfaceFluxRemoved, landIceHeatFlux,&
-                              dt, activeTracersOnlyIn, timeLevelIn )
+                              surfaceThicknessFlux,surfaceThicknessFluxRunoff, & 
+                              surfaceStress,surfaceStressMagnitude, &
+                              rainTemperatureFlux, evapTemperatureFlux, &
+                              seaIceFreshWaterTemperatureFlux, &
+                              icebergFreshWaterTemperatureFlux, &
+                              dt, activeTracersOnlyIn, timeLevelIn)
       implicit none
 
       !
@@ -494,9 +500,13 @@ contains
       type (mpas_pool_type), intent(in)    :: swForcingPool   !< Input: sw data input info
       type (mpas_pool_type), intent(in)    :: scratchPool     !< Input: Scratch information
       real (kind=RKIND), dimension(:), pointer, intent(in) :: &
-        penetrativeTemperatureFlux, landIceHeatFlux
+        penetrativeTemperatureFlux, landIceHeatFlux, &
+        rainTemperatureFlux, evapTemperatureFlux, &
+        icebergFreshWaterTemperatureFlux, seaIceFreshWaterTemperatureFlux, &
+        surfaceThicknessFlux,surfaceThicknessFluxRunoff, &
+        surfaceStress,surfaceStressMagnitude
       real (kind=RKIND), dimension(:,:), pointer, intent(in) :: &
-        layerThickness, &
+        layerThickness,normalVelocity, &
         tracerGroupSurfaceFlux, fractionAbsorbed, &
         fractionAbsorbedRunoff, &
         nonLocalSurfaceTracerFlux
@@ -1005,7 +1015,16 @@ contains
                !
                if (config_use_cvmix_kpp) then
                   call mpas_timer_start("non-local flux from KPP")
-                  call ocn_compute_KPP_input_fields(statePool, forcingPool, meshPool, timeLevel)
+                  !call ocn_compute_KPP_input_fields(statePool, forcingPool, timeLevel)
+                  call ocn_compute_KPP_input_fields(statePool, forcingPool, &
+                       normalVelocity,layerThickness,nonLocalSurfaceTracerFlux, &
+                       surfaceThicknessFlux,surfaceThicknessFluxRunoff, &
+                       penetrativeTemperatureFlux, surfaceStress, &
+                       surfaceStressMagnitude, rainTemperatureFlux, &
+                       evapTemperatureFlux, seaIceFreshWaterTemperatureFlux, &
+                       icebergFreshWaterTemperatureFlux, tracerGroup, &
+                       tracerGroupSurfaceFlux, tracerGroupSurfaceFluxRunoff, &
+                       timeLevel)
                   if (.not. config_cvmix_kpp_nonlocal_with_implicit_mix) then
                      if( trim(groupItr % memberName) == 'activeTracers' ) then
                         if (config_compute_active_tracer_budgets) then
@@ -1017,7 +1036,7 @@ contains
                            !$omp end do
                            !$omp end parallel
                         endif
-                        call ocn_tracer_nonlocalflux_tend(meshPool, vertNonLocalFlux, nonLocalSurfaceTracerFlux, tracerGroupTend, err)
+                        call ocn_tracer_nonlocalflux_tend(vertNonLocalFlux, nonLocalSurfaceTracerFlux, tracerGroupTend, err)
                         if (config_compute_active_tracer_budgets) then
                            !$omp parallel
                            !$omp do schedule(runtime)
@@ -1034,7 +1053,7 @@ contains
                            !$omp end parallel
                         endif
                      else
-                        call ocn_tracer_nonlocalflux_tend(meshPool, vertNonLocalFlux, tracerGroupSurfaceFlux, tracerGroupTend, err)
+                        call ocn_tracer_nonlocalflux_tend(vertNonLocalFlux, tracerGroupSurfaceFlux, tracerGroupTend, err)
                      endif
                   end if
                   call mpas_timer_stop("non-local flux from KPP")

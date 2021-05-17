@@ -26,6 +26,7 @@ module ocn_tracer_surface_flux_to_tend
 
    use ocn_constants
    use ocn_config
+   use ocn_mesh
    use ocn_forcing
 
    implicit none
@@ -121,9 +122,9 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, k, iTracer, nTracers, nCells
-      integer, pointer :: nVertLevels
-      integer, dimension(:), pointer :: nCellsArray
-      integer, dimension(:), pointer :: maxLevelCell
+!     integer, pointer :: nVertLevels
+!     integer, dimension(:), pointer :: nCellsArray
+!     integer, dimension(:), pointer :: maxLevelCell
 
       real (kind=RKIND) :: remainingFlux
 
@@ -133,13 +134,14 @@ contains
 
       call mpas_timer_start("surface_tracer_flux")
 
-      call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
-      call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
+!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
+!     call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
       nTracers = size(tend, dim=1)
 
-      call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
+!     call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
 
-      nCells = nCellsArray( 1 )
+!     nCells = nCellsArray( 1 )
+      nCells = nCellsOwned
 
       !$omp parallel
       !$omp do schedule(runtime) private(remainingFlux, k, iTracer)

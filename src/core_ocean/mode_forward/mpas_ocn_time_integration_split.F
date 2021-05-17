@@ -263,7 +263,10 @@ module ocn_time_integration_split
          evaporationFlux,snowFlux,seaIceFreshWaterFlux, &
          icebergFreshWaterFlux,riverRunoffFlux,iceRunoffFlux,rainFlux, &
          windStressZonal,windStressMerid,landIceFreshwaterFlux, &
-         penetrativeTemperatureFlux, landIceHeatFlux
+         penetrativeTemperatureFlux, landIceHeatFlux,&
+         rainTemperatureFlux, evapTemperatureFlux, &
+         icebergFreshWaterTemperatureFlux, &
+         seaIceFreshWaterTemperatureFlux
          
 
       real (kind=RKIND), dimension(:,:), pointer :: &
@@ -272,7 +275,6 @@ module ocn_time_integration_split
          activeTracersSurfaceFluxRunoff,activeTracersSurfaceFluxRemoved, &
          nonLocalSurfaceTracerFlux, activeTracersSurfaceFlux
          
-
       ! These are public variables used from the diagnostics module
       ! indexSurfaceVelocityZonal, indexSurfaceVelocityMeridional
       ! indexSSHGradientZonal, indexSSHGradientMeridional
@@ -717,6 +719,14 @@ module ocn_time_integration_split
       call mpas_pool_get_array(tracersSurfaceFluxPool, &
                                                  'activeTracersSurfaceFluxRemoved',&
                                                   activeTracersSurfaceFluxRemoved)
+      call mpas_pool_get_array(forcingPool, 'rainTemperatureFlux', &
+                                             rainTemperatureFlux)
+      call mpas_pool_get_array(forcingPool, 'evapTemperatureFlux', &
+                                             evapTemperatureFlux)
+      call mpas_pool_get_array(forcingPool, 'seaIceFreshWaterTemperatureFlux', &
+                                             seaIceFreshWaterTemperatureFlux)
+      call mpas_pool_get_array(forcingPool, 'icebergFreshWaterTemperatureFlux', &
+                                             icebergFreshWaterTemperatureFlux)
 
 
 
@@ -746,7 +756,10 @@ module ocn_time_integration_split
       !$acc       activeTracersTend,activeTracersSurfaceFlux, &
       !$acc       nonLocalSurfaceTracerFlux,activeTracersSurfaceFluxRunoff, &
       !$acc       activeTracersSurfaceFluxRemoved, &
-      !$acc       landIceHeatFlux)
+      !$acc       landIceHeatFlux, &
+      !$acc       rainTemperatureFlux, evapTemperatureFlux, &
+      !$acc       seaIceFreshWaterTemperatureFlux, &
+      !$acc       icebergFreshWaterTemperatureFlux)
 
 
       call ocn_diagnostics_variables_update(err)
@@ -2067,12 +2080,16 @@ module ocn_time_integration_split
          !$acc       fractionAbsorbed,fractionAbsorbedRunoff, &
          !$acc       nonLocalSurfaceTracerFlux,activeTracersSurfaceFluxRunoff, &
          !$acc       activeTracersSurfaceFluxRemoved, &
-         !$acc       landIceHeatFlux)
+         !$acc       landIceHeatFlux, &
+         !$acc       rainTemperatureFlux, evapTemperatureFlux, &
+         !$acc       seaIceFreshWaterTemperatureFlux, &
+         !$acc       icebergFreshWaterTemperatureFlux)
 
          call mpas_timer_start('se tracer tend', .false.)
          call ocn_tend_tracer(tendPool, statePool, forcingPool, &
                               meshPool, swForcingPool, scratchPool, &
-                              layerThicknessNew,penetrativeTemperatureFlux, &
+                              layerThicknessNew, normalVelocityNew, &
+                              penetrativeTemperatureFlux, &
                               fractionAbsorbed,fractionAbsorbedRunoff, &
                               tracersGroupNew,activeTracersTend, &
                               activeTracersSurfaceFlux, &
@@ -2080,6 +2097,11 @@ module ocn_time_integration_split
                               activeTracersSurfaceFluxRunoff, &
                               activeTracersSurfaceFluxRemoved, &
                               landIceHeatFlux, &
+                              surfaceThicknessFlux,surfaceThicknessFluxRunoff, &
+                              sfcStress,sfcStressMag, &
+                              rainTemperatureFlux, evapTemperatureFlux, &
+                              seaIceFreshWaterTemperatureFlux, &
+                              icebergFreshWaterTemperatureFlux, &
                               dt, activeTracersOnly, 2)
 
          call mpas_timer_stop('se tracer tend')

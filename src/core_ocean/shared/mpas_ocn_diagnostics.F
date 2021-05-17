@@ -205,21 +205,21 @@ contains
       nCells = nCellsAll
 
       ! compute in-place density
-      call ocn_equation_of_state_density(statePool, meshPool, tracersSurfaceValue, &
-                                         nCells, 0, 'relative', density, err, &
+      call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
+                                         nCells, 0, 'relative', activeTracers, density, err, &
                                          thermExpCoeff, salineContractCoeff, &
                                          timeLevelIn=timeLevel)
 
       ! compute potentialDensity, the density displaced adiabatically to the mid-depth of top layer.
-      call ocn_equation_of_state_density(statePool, meshPool, tracersSurfaceValue, &
-                                         nCells, 1, 'absolute', potentialDensity, &
-                                         err, timeLevelIn=timeLevel)
+      call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
+                                         nCells, 1, 'absolute', activeTracers, potentialDensity, err, &
+                                         timeLevelIn=timeLevel)
 
       ! compute displacedDensity, density displaced adiabatically to the mid-depth one layer deeper.
       ! That is, layer k has been displaced to the depth of layer k+1.
-      call ocn_equation_of_state_density(statePool, meshPool, tracersSurfaceValue, &
-                                         nCells, 1, 'relative', displacedDensity, &
-                                         err, timeLevelIn=timeLevel)
+      call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
+                                         nCells, 1, 'relative', activeTracers, displacedDensity, err, &
+                                         timeLevelIn=timeLevel)
 
       !
       ! Pressure
@@ -1986,33 +1986,40 @@ contains
 !
 !-----------------------------------------------------------------------
 
-    subroutine ocn_compute_KPP_input_fields(statePool, forcingPool, meshPool, timeLevelIn)!{{{
+    subroutine ocn_compute_KPP_input_fields(statePool, forcingPool, &
+               normalVelocity,layerThickness,nonLocalSurfaceTracerFlux, &
+               surfaceThicknessFlux,surfaceThicknessFluxRunoff, &
+               penetrativeTemperatureFlux, surfaceStress, &
+               surfaceStressMagnitude, rainTemperatureFlux, &
+               evapTemperatureFlux, seaIceFreshWaterTemperatureFlux, &
+               icebergFreshWaterTemperatureFlux, activeTracers, &
+               activeTracersSurfaceFlux, activeTracersSurfaceFluxRunoff, &
+               timeLevelIn)!{{{
 
       type (mpas_pool_type), intent(in) :: statePool !< Input/Output: State information
       type (mpas_pool_type), intent(in) :: forcingPool !< Input: Forcing information
-      type (mpas_pool_type), intent(in) :: meshPool !< Input: Mesh information
       integer, intent(in), optional :: timeLevelIn
 
+
+      ! real pointers
+      real (kind=RKIND), dimension(:), pointer, intent(in):: penetrativeTemperatureFlux, surfaceThicknessFlux, &
+           surfaceThicknessFluxRunoff, rainTemperatureFlux, evapTemperatureFlux, &
+           icebergFreshWaterTemperatureFlux, seaIceFreshWaterTemperatureFlux
+
+      real (kind=RKIND), dimension(:), pointer, intent(in) :: surfaceStress, surfaceStressMagnitude
+      real (kind=RKIND), dimension(:,:), pointer, intent(in) ::  &
+           layerThickness, &
+           normalVelocity, activeTracersSurfaceFlux, &
+           activeTracersSurfaceFluxRunoff, nonLocalSurfaceTracerFlux
+
+      real (kind=RKIND), dimension(:,:,:), pointer, intent(in) :: &
+           activeTracers
       ! pool pointers
       type (mpas_pool_type), pointer :: tracersSurfaceFluxPool
       type (mpas_pool_type), pointer :: tracersPool
 
       ! scalars
       integer :: nCells
-
-      ! real pointers
-      real (kind=RKIND), dimension(:), pointer :: penetrativeTemperatureFlux, surfaceThicknessFlux, &
-           surfaceThicknessFluxRunoff, rainTemperatureFlux, evapTemperatureFlux, &
-           icebergFreshWaterTemperatureFlux, seaIceFreshWaterTemperatureFlux
-
-      real (kind=RKIND), dimension(:), pointer :: surfaceStress, surfaceStressMagnitude
-      real (kind=RKIND), dimension(:,:), pointer ::  &
-           layerThickness, &
-           normalVelocity, activeTracersSurfaceFlux, &
-           activeTracersSurfaceFluxRunoff, nonLocalSurfaceTracerFlux
-
-      real (kind=RKIND), dimension(:,:,:), pointer :: &
-           activeTracers
 
       ! local
       integer :: iCell, iEdge, i, err, timeLevel
@@ -2052,23 +2059,23 @@ contains
       call mpas_pool_get_dimension(tracersSurfaceFluxPool, 'index_salinitySurfaceFlux', indexSaltFlux)
 
       ! set pointers into state, mesh, diagnostics and scratch
-      call mpas_pool_get_array(statePool, 'normalVelocity', normalVelocity, timeLevel)
-      call mpas_pool_get_array(statePool, 'layerThickness', layerThickness, timeLevel)
+!     call mpas_pool_get_array(statePool, 'normalVelocity', normalVelocity, timeLevel)
+!     call mpas_pool_get_array(statePool, 'layerThickness', layerThickness, timeLevel)
 
-      call mpas_pool_get_array(tracersSurfaceFluxPool, 'nonLocalSurfaceTracerFlux', nonLocalSurfaceTracerFlux)
+!     call mpas_pool_get_array(tracersSurfaceFluxPool, 'nonLocalSurfaceTracerFlux', nonLocalSurfaceTracerFlux)
 
-      call mpas_pool_get_array(forcingPool, 'surfaceThicknessFlux', surfaceThicknessFlux)
-      call mpas_pool_get_array(forcingPool, 'surfaceThicknessFluxRunoff', surfaceThicknessFluxRunoff)
-      call mpas_pool_get_array(forcingPool, 'penetrativeTemperatureFlux', penetrativeTemperatureFlux)
-      call mpas_pool_get_array(forcingPool, 'surfaceStress', surfaceStress)
-      call mpas_pool_get_array(forcingPool, 'surfaceStressMagnitude', surfaceStressMagnitude)
-      call mpas_pool_get_array(forcingPool, 'rainTemperatureFlux', rainTemperatureFlux)
-      call mpas_pool_get_array(forcingPool, 'evapTemperatureFlux', evapTemperatureFlux)
-      call mpas_pool_get_array(forcingPool, 'seaIceFreshWaterTemperatureFlux', seaIceFreshWaterTemperatureFlux)
-      call mpas_pool_get_array(forcingPool, 'icebergFreshWaterTemperatureFlux', icebergFreshWaterTemperatureFlux)
-      call mpas_pool_get_array(tracersPool, 'activeTracers', activeTracers, 1)
-      call mpas_pool_get_array(tracersSurfaceFluxPool, 'activeTracersSurfaceFlux', activeTracersSurfaceFlux)
-      call mpas_pool_get_array(tracersSurfaceFluxPool, 'activeTracersSurfaceFluxRunoff', activeTracersSurfaceFluxRunoff)
+!     call mpas_pool_get_array(forcingPool, 'surfaceThicknessFlux', surfaceThicknessFlux)
+!     call mpas_pool_get_array(forcingPool, 'surfaceThicknessFluxRunoff', surfaceThicknessFluxRunoff)
+!     call mpas_pool_get_array(forcingPool, 'penetrativeTemperatureFlux', penetrativeTemperatureFlux)
+!     call mpas_pool_get_array(forcingPool, 'surfaceStress', surfaceStress)
+!     call mpas_pool_get_array(forcingPool, 'surfaceStressMagnitude', surfaceStressMagnitude)
+!     call mpas_pool_get_array(forcingPool, 'rainTemperatureFlux', rainTemperatureFlux)
+!     call mpas_pool_get_array(forcingPool, 'evapTemperatureFlux', evapTemperatureFlux)
+!     call mpas_pool_get_array(forcingPool, 'seaIceFreshWaterTemperatureFlux', seaIceFreshWaterTemperatureFlux)
+!     call mpas_pool_get_array(forcingPool, 'icebergFreshWaterTemperatureFlux', icebergFreshWaterTemperatureFlux)
+!     call mpas_pool_get_array(tracersPool, 'activeTracers', activeTracers, 1)
+!     call mpas_pool_get_array(tracersSurfaceFluxPool, 'activeTracersSurfaceFlux', activeTracersSurfaceFlux)
+!     call mpas_pool_get_array(tracersSurfaceFluxPool, 'activeTracersSurfaceFluxRunoff', activeTracersSurfaceFluxRunoff)
 
       ! allocate scratch space displaced density computation
       ncells = nCellsAll
@@ -2081,8 +2088,8 @@ contains
       nCells = nCellsHalo( 2 )
 
       ! compute EOS by displacing SST/SSS to every vertical layer in column
-      call ocn_equation_of_state_density(statePool, meshPool, tracersSurfaceValue, &
-                                         nCells, 0, 'surfaceDisplaced', densitySurfaceDisplaced, &
+      call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
+                                         nCells, 0, 'surfaceDisplaced', activeTracers, densitySurfaceDisplaced, &
                                          err, thermalExpansionCoeff, salineContractionCoeff, &
                                          timeLevel)
 

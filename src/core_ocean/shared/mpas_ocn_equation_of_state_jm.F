@@ -29,6 +29,7 @@ module ocn_equation_of_state_jm
    use mpas_dmpar
    use mpas_log
    use ocn_constants
+   use ocn_mesh
 
    implicit none
    private
@@ -178,7 +179,7 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_equation_of_state_jm_density_only(nVertLevels,      &
+   subroutine ocn_equation_of_state_jm_density_only( &
                                nCells, kDisplaced, displacementType,  &
                                indexT, indexS, tracers, density, err, &
                                tracersSurfaceLayerValue)
@@ -191,7 +192,6 @@ contains
 
       integer, intent(in) :: &
          nCells,             &! number of horizontal cells
-         nVertLevels,        &! max number of verical levels
          kDisplaced,         &! target layer for displacement
          indexT,             &! temperature index in tracer array
          indexS               ! salinity    index in tracer array
@@ -434,7 +434,7 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_equation_of_state_jm_density_exp(nVertLevels,       &
+   subroutine ocn_equation_of_state_jm_density_exp( &
                                nCells, kDisplaced, displacementType,  &
                                indexT, indexS, tracers, density, err, &
                                thermalExpansionCoeff,                 &
@@ -449,7 +449,6 @@ contains
 
       integer, intent(in) :: &
          nCells,             &! number of horizontal cells
-         nVertLevels,        &! max number of verical levels
          kDisplaced,         &! target layer for displacement
          indexT,             &! temperature index in tracer array
          indexS               ! salinity    index in tracer array
