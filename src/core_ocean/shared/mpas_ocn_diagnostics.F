@@ -206,19 +206,22 @@ contains
 
       ! compute in-place density
       call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
-                                         nCells, 0, 'relative', activeTracers, density, err, &
+                                         nCells, 0, 'relative', activeTracers, density, &
+                                         indexTemperature,indexSalinity, err, &
                                          thermExpCoeff, salineContractCoeff, &
                                          timeLevelIn=timeLevel)
 
       ! compute potentialDensity, the density displaced adiabatically to the mid-depth of top layer.
       call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
-                                         nCells, 1, 'absolute', activeTracers, potentialDensity, err, &
+                                         nCells, 1, 'absolute', activeTracers, potentialDensity, &
+                                         indexTemperature,indexSalinity, err, &
                                          timeLevelIn=timeLevel)
 
       ! compute displacedDensity, density displaced adiabatically to the mid-depth one layer deeper.
       ! That is, layer k has been displaced to the depth of layer k+1.
       call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
-                                         nCells, 1, 'relative', activeTracers, displacedDensity, err, &
+                                         nCells, 1, 'relative', activeTracers, displacedDensity, &
+                                         indexTemperature,indexSalinity, err, &
                                          timeLevelIn=timeLevel)
 
       !
@@ -1994,11 +1997,16 @@ contains
                evapTemperatureFlux, seaIceFreshWaterTemperatureFlux, &
                icebergFreshWaterTemperatureFlux, activeTracers, &
                activeTracersSurfaceFlux, activeTracersSurfaceFluxRunoff, &
+               indexTemperature, indexSalinity, indexTempFlux,indexSaltFlux, &
                timeLevelIn)!{{{
 
       type (mpas_pool_type), intent(in) :: statePool !< Input/Output: State information
       type (mpas_pool_type), intent(in) :: forcingPool !< Input: Forcing information
       integer, intent(in), optional :: timeLevelIn
+      integer, pointer, intent(in) :: &
+         indexSalinity,        &! tracer index for salinity
+         indexTemperature       ! tracer index for temperature
+      integer, pointer, intent(in) :: indexTempFlux, indexSaltFlux
 
 
       ! real pointers
@@ -2023,7 +2031,6 @@ contains
 
       ! local
       integer :: iCell, iEdge, i, err, timeLevel
-      integer, pointer :: indexTempFlux, indexSaltFlux
       real (kind=RKIND) :: turbulentVelocitySquared, fracAbsorbed, fracAbsorbedRunoff
       real (kind=RKIND) :: sumSurfaceStressSquared
 
@@ -2055,8 +2062,8 @@ contains
       turbulentVelocitySquared = 0.001_RKIND
 
       ! set scalar values
-      call mpas_pool_get_dimension(tracersSurfaceFluxPool, 'index_temperatureSurfaceFlux', indexTempFlux)
-      call mpas_pool_get_dimension(tracersSurfaceFluxPool, 'index_salinitySurfaceFlux', indexSaltFlux)
+!     call mpas_pool_get_dimension(tracersSurfaceFluxPool, 'index_temperatureSurfaceFlux', indexTempFlux)
+!     call mpas_pool_get_dimension(tracersSurfaceFluxPool, 'index_salinitySurfaceFlux', indexSaltFlux)
 
       ! set pointers into state, mesh, diagnostics and scratch
 !     call mpas_pool_get_array(statePool, 'normalVelocity', normalVelocity, timeLevel)
@@ -2087,15 +2094,41 @@ contains
       ! Only need to compute over the 0 and 1 halos
       nCells = nCellsHalo( 2 )
 
+
       ! compute EOS by displacing SST/SSS to every vertical layer in column
       call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
                                          nCells, 0, 'surfaceDisplaced', activeTracers, densitySurfaceDisplaced, &
-                                         err, thermalExpansionCoeff, salineContractionCoeff, &
+                                         indexTemperature, indexSalinity, err, &
+                                         thermalExpansionCoeff, salineContractionCoeff, &
                                          timeLevel)
-
+      !$acc enter data &
+      !$acc    copyin(densitySurfaceDisplaced,thermalExpansionCoeff, &
+      !$acc       salineContractionCoeff)
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(layerThickness,nonLocalSurfaceTracerFlux, &
+      !$acc       activeTracersSurfaceFlux, penetrativeTemperatureFlux, &
+      !$acc       penetrativeTemperatureFluxOBL,rainTemperatureFlux, &
+      !$acc       evapTemperatureFlux,seaIceFreshWaterTemperatureFlux, &
+      !$acc       icebergFreshWaterTemperatureFlux, &
+      !$acc       activeTracersSurfaceFluxRunoff,surfaceThicknessFlux, &
+      !$acc       activeTracers,surfaceThicknessFluxRunoff,&
+      !$acc       surfaceBuoyancyForcing,thermalExpansionCoeff,&
+      !$acc       salineContractionCoeff,edgeAreaFractionOfCell, &
+      !$acc       surfaceStress,surfaceStressMagnitude, &
+      !$acc       surfaceFrictionVelocity, &
+      !$acc       nEdgesOnCell,edgesOnCell, &
+      !$acc       indexTempFlux,indexSaltFlux,&
+      !$acc       config_flux_attenuation_coefficient, &
+      !$acc       config_flux_attenuation_coefficient_runoff) &
+      !$acc    private(fracAbsorbed, fracAbsorbedRunoff, &
+      !$acc       sumSurfaceStressSquared, i, iEdge)
+     
+#else
       !$omp parallel
       !$omp do schedule(runtime) &
       !$omp private(fracAbsorbed, fracAbsorbedRunoff, sumSurfaceStressSquared, i, iEdge)
+#endif
       do iCell = 1, nCells
          ! compute surface buoyancy forcing based on surface fluxes of mass, temperature, salinity and frazil
          !                                (frazil to be added later)
@@ -2152,10 +2185,15 @@ contains
          surfaceFrictionVelocity(iCell) = sqrt(surfaceStressMagnitude(iCell) / rho_sw)
 
       enddo
+#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
+#endif
 
       ! deallocate scratch space
+      !$acc exit data &
+      !$acc    delete(densitySurfaceDisplaced,thermalExpansionCoeff, &
+      !$acc       salineContractionCoeff) 
       deallocate(thermalExpansionCoeff, &
                  salineContractionCoeff, &
                  densitySurfaceDisplaced)

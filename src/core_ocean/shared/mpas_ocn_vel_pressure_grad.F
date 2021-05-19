@@ -453,7 +453,8 @@ contains
          !$acc            zMid, tracers, edgeMask, pressure, &
          !$acc            density, tend, thermExpCoeff, &
          !$acc            salineContractCoeff, &
-         !$acc            temp2VertEdge, temp3VertEdge, temp1VertEdge) &
+         !$acc            temp2VertEdge, temp3VertEdge, temp1VertEdge, & 
+         !$acc            indxT,indxS) &
          !$acc    private(cell1, cell2, invdcEdge, k, kMin, kMax, alpha, beta,&
          !$acc         TL, TR, SL, SR, Area, zStar, zC, zGamma, pGrad)
 #else

@@ -92,18 +92,22 @@ contains
      type (block_type), pointer :: block_ptr
 
      type (mpas_pool_type), pointer :: meshPool, forcingPool, statePool, &
-                                       verticalMeshPool
-
-     type (mpas_pool_type), pointer :: tracersPool
+                                       verticalMeshPool,tracersPool
 
      real (kind=RKIND), dimension(:), pointer :: ssh
 
      real (kind=RKIND), dimension(:), pointer :: landIcePressure, landIceDraft, &
                                                  effectiveDensityInLandIce
 
+     real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers
+
      integer, dimension(:), pointer :: minLevelCell
 
      integer, pointer :: nCells
+
+      integer, pointer :: &
+         indexSalinity,        &! tracer index for salinity
+         indexTemperature       ! tracer index for temperature
 
      integer :: iCell
 
@@ -115,11 +119,21 @@ contains
      do while(associated(block_ptr))
        call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
        call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
+       call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
 
        call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
 
-       call ocn_equation_of_state_density(statePool, meshPool, tracersSurfaceValue, &
-           nCells, 0, 'relative', density, iErr, &
+       call mpas_pool_get_array(tracersPool, 'activeTracers', &
+                                              activeTracers, 1)
+
+       call mpas_pool_get_dimension(tracersPool, 'index_temperature', &
+                                                  indexTemperature)
+       call mpas_pool_get_dimension(tracersPool, 'index_salinity', &
+                                                  indexSalinity)
+
+       call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
+           nCells, 0, 'relative', activeTracers, density, &
+           indexTemperature,indexSalinity, iErr, &
            timeLevelIn=1)
 
        if(iErr .ne. 0) then
@@ -149,8 +163,17 @@ contains
        call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
        call mpas_pool_get_array(statePool, 'effectiveDensityInLandIce', effectiveDensityInLandIce, 1)
 
-       call ocn_equation_of_state_density(statePool, meshPool, tracersSurfaceValue, &
-           nCells, 0, 'relative', density, iErr, &
+       call mpas_pool_get_array(tracersPool, 'activeTracers', &
+                                              activeTracers, 1)
+
+       call mpas_pool_get_dimension(tracersPool, 'index_temperature', &
+                                                  indexTemperature)
+       call mpas_pool_get_dimension(tracersPool, 'index_salinity', &
+                                                  indexSalinity)
+
+       call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
+           nCells, 0, 'relative', activeTracers, density, &
+           indexTemperature,indexSalinity, iErr, &
            timeLevelIn=1)
 
        if(iErr .ne. 0) then

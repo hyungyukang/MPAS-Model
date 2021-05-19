@@ -132,8 +132,15 @@ contains
 !     nCells = nCellsArray( 1 )
       nCells = nCellsOwned
 
+#ifdef MPAS_OPENACC
+      !$acc prallel loop &
+      !$acc    present(maxLevelCell,surfaceTracerFlux, &
+      !$acc       vertNonLocalFlux,tend) &
+      !$acc    private(k, iTracer, fluxTopOfCell, fluxBottomOfCell)
+#else
       !$omp parallel
       !$omp do schedule(runtime) private(k, iTracer, fluxTopOfCell, fluxBottomOfCell)
+#endif
       do iCell = 1, nCells
         do k = 2, maxLevelCell(iCell)-1
 
@@ -162,8 +169,10 @@ contains
         end do
 
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
+#endif
 
       call mpas_timer_stop('non-local flux')
 

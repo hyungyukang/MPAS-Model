@@ -116,57 +116,163 @@ module ocn_tracer_advection_std
                tracer_cur(nVertLevels, nCells), &
                high_order_vert_flux(nVertLevels, nCells))
 
+      !$acc enter data copyin(verticalDivergenceFactor, high_order_horiz_flux, &
+      !$acc                    tracer_cur,high_order_vert_flux)    
+
       ! Loop over tracers. One tracer is advected at a time. It is copied into a temporary array in order to improve locality
       do iTracer = 1, num_tracers
         ! Initialize variables for use in this iTracer iteration
+#ifdef MPAS_OPENACC
+        !$acc parallel &
+        !$acc    present(tracer_cur,tracers,high_order_vert_flux,maxLevelCell, &
+        !$acc       verticalCellSize,w,cellsOnEdge,highOrderAdvectionMask, &
+        !$acc       dvEdge,normalThicknessFlux,high_order_horiz_flux, &
+        !$acc       nAdvCellsForEdge,advCellsForEdge,advCoefs,advCoefs3rd, &
+        !$acc       areaCell,nEdgesOnCell,edgesOnCell,tend, &
+        !$acc       edgeSignOnCell,verticalDivergenceFactor)
+
+        !$acc loop gang vector collapse(2)
+#else
         !$omp parallel
-        !$omp do schedule(runtime)
+        !$omp do schedule(runtime) private(k)
+#endif
         do iCell = 1, nCells
-           tracer_cur(:, iCell) = tracers(iTracer, :, iCell)
-
-           high_order_vert_flux(:, iCell) = 0.0_RKIND
+          do k = 1,nVertLevels
+            tracer_cur(k, iCell) = tracers(iTracer, k, iCell)
+            high_order_vert_flux(k, iCell) = 0.0_RKIND
+          end do
         end do
+#ifndef MPAS_OPENACC
         !$omp end do
+#endif
 
-        !$omp do schedule(runtime)
+
+#ifdef MPAS_OPENACC
+        !$acc loop gang vector collapse(2)
+#else
+        !$omp do schedule(runtime) private(k)
+#endif
         do iEdge = 1, nEdges
-           high_order_horiz_flux(:, iEdge) = 0.0_RKIND
+           do k = 1,nVertLevels
+              high_order_horiz_flux(k, iEdge) = 0.0_RKIND
+           end do
         end do
+#ifndef MPAS_OPENACC
         !$omp end do
+#endif
 
         !  Compute the high order vertical flux. Also determine bounds on tracer_cur.
+!----------------
+#ifdef MPAS_OPENACC
+        !$acc loop gang vector private(k, verticalWeightK, verticalWeightKm1)
+#else
         !$omp do schedule(runtime) private(k, verticalWeightK, verticalWeightKm1)
+#endif
         do iCell = 1, nCells
           k = max(1, min(maxLevelCell(iCell), 2))
           verticalWeightK = verticalCellSize(k-1, iCell) / (verticalCellSize(k, iCell) + verticalCellSize(k-1, iCell))
           verticalWeightKm1 = verticalCellSize(k, iCell) / (verticalCellSize(k, iCell) + verticalCellSize(k-1, iCell))
           high_order_vert_flux(k,iCell) = w(k,iCell)*(verticalWeightK*tracer_cur(k,iCell)+verticalWeightKm1*tracer_cur(k-1,iCell))
+        end do ! iCell Loop
+#ifndef MPAS_OPENACC
+        !$omp end do
+#endif
 
-          do k=3,maxLevelCell(iCell)-1
-             select case (vertOrder)
-             case (vertOrder4)
-               high_order_vert_flux(k, iCell) = mpas_tracer_advection_vflux4( tracer_cur(k-2,iCell),tracer_cur(k-1,iCell),  &
-                                      tracer_cur(k  ,iCell),tracer_cur(k+1,iCell), w(k,iCell))
-             case (vertOrder3)
-               high_order_vert_flux(k, iCell) = mpas_tracer_advection_vflux3( tracer_cur(k-2,iCell),tracer_cur(k-1,iCell),  &
-                                      tracer_cur(k  ,iCell),tracer_cur(k+1,iCell), w(k,iCell), coef3rdOrder )
-             case (vertOrder2)
-               verticalWeightK = verticalCellSize(k-1, iCell) / (verticalCellSize(k, iCell) + verticalCellSize(k-1, iCell))
-               verticalWeightKm1 = verticalCellSize(k, iCell) / (verticalCellSize(k, iCell) + verticalCellSize(k-1, iCell))
-               high_order_vert_flux(k,iCell) = w(k, iCell) * (verticalWeightK * tracer_cur(k, iCell) &
-                                             + verticalWeightKm1 * tracer_cur(k-1, iCell))
-             end select ! vertOrder
-          end do
+!----------------
+!       do iCell = 1, nCells
+!         do k=3,maxLevelCell(iCell)-1
+!            select case (vertOrder)
+!            case (vertOrder4)
+!              high_order_vert_flux(k, iCell) = mpas_tracer_advection_vflux4( tracer_cur(k-2,iCell),tracer_cur(k-1,iCell),  &
+!                                     tracer_cur(k  ,iCell),tracer_cur(k+1,iCell), w(k,iCell))
+!            case (vertOrder3)
+!              high_order_vert_flux(k, iCell) = mpas_tracer_advection_vflux3( tracer_cur(k-2,iCell),tracer_cur(k-1,iCell),  &
+!                                     tracer_cur(k  ,iCell),tracer_cur(k+1,iCell), w(k,iCell), coef3rdOrder )
+!            case (vertOrder2)
+!              verticalWeightK = verticalCellSize(k-1, iCell) / (verticalCellSize(k, iCell) + verticalCellSize(k-1, iCell))
+!              verticalWeightKm1 = verticalCellSize(k, iCell) / (verticalCellSize(k, iCell) + verticalCellSize(k-1, iCell))
+!              high_order_vert_flux(k,iCell) = w(k, iCell) * (verticalWeightK * tracer_cur(k, iCell) &
+!                                            + verticalWeightKm1 * tracer_cur(k-1, iCell))
+!            end select ! vertOrder
+!         end do
+!----------------
+        select case (vertOrder)
+          case (vertOrder4)
+#ifdef MPAS_OPENACC
+            !$acc loop gang vector private(k, verticalWeightK, verticalWeightKm1)
+#else
+            !$omp do schedule(runtime) private(k, verticalWeightK, verticalWeightKm1)
+#endif
+            do iCell = 1, nCells
+              do k=3,maxLevelCell(iCell)-1
+                 high_order_vert_flux(k, iCell) = mpas_tracer_advection_vflux4( tracer_cur(k-2,iCell),tracer_cur(k-1,iCell),  &
+                                        tracer_cur(k  ,iCell),tracer_cur(k+1,iCell), w(k,iCell))
 
+
+              end do
+            end do
+#ifndef MPAS_OPENACC
+            !$omp end do
+#endif
+
+          case (vertOrder3)
+#ifdef MPAS_OPENACC
+            !$acc loop gang vector private(k, verticalWeightK, verticalWeightKm1)
+#else
+            !$omp do schedule(runtime) private(k, verticalWeightK, verticalWeightKm1)
+#endif
+            do iCell = 1, nCells
+              do k=3,maxLevelCell(iCell)-1
+                 high_order_vert_flux(k, iCell) = mpas_tracer_advection_vflux3( tracer_cur(k-2,iCell),tracer_cur(k-1,iCell),  &
+                                        tracer_cur(k  ,iCell),tracer_cur(k+1,iCell), w(k,iCell), coef3rdOrder )
+              end do
+            end do
+#ifndef MPAS_OPENACC
+            !$omp end do
+#endif
+
+          case (vertOrder2)
+#ifdef MPAS_OPENACC
+            !$acc loop gang vector private(k, verticalWeightK, verticalWeightKm1)
+#else
+            !$omp do schedule(runtime) private(k, verticalWeightK, verticalWeightKm1)
+#endif
+            do iCell = 1, nCells
+              do k=3,maxLevelCell(iCell)-1
+                 verticalWeightK = verticalCellSize(k-1, iCell) / (verticalCellSize(k, iCell) + verticalCellSize(k-1, iCell))
+                 verticalWeightKm1 = verticalCellSize(k, iCell) / (verticalCellSize(k, iCell) + verticalCellSize(k-1, iCell))
+                 high_order_vert_flux(k,iCell) = w(k, iCell) * (verticalWeightK * tracer_cur(k, iCell) &
+                                               + verticalWeightKm1 * tracer_cur(k-1, iCell))
+              end do
+            end do
+#ifndef MPAS_OPENACC
+            !$omp end do
+#endif
+
+        end select ! vertOrder
+
+#ifdef MPAS_OPENACC
+        !$acc loop gang vector private(k, verticalWeightK, verticalWeightKm1)
+#else
+        !$omp do schedule(runtime) private(k, verticalWeightK, verticalWeightKm1)
+#endif
+        do iCell = 1, nCells
           k = max(1, maxLevelCell(iCell))
           verticalWeightK = verticalCellSize(k-1, iCell) / (verticalCellSize(k, iCell) + verticalCellSize(k-1, iCell))
           verticalWeightKm1 = verticalCellSize(k, iCell) / (verticalCellSize(k, iCell) + verticalCellSize(k-1, iCell))
           high_order_vert_flux(k,iCell) = w(k,iCell)*(verticalWeightK*tracer_cur(k,iCell)+verticalWeightKm1*tracer_cur(k-1,iCell))
         end do ! iCell Loop
+#ifndef MPAS_OPENACC
         !$omp end do
+#endif
+
 
         !  Compute the high order horizontal flux
+#ifdef MPAS_OPENACC
+        !$acc loop gang vector private(cell1, cell2, k, tracer_weight, i, iCell)
+#else
         !$omp do schedule(runtime) private(cell1, cell2, k, tracer_weight, i, iCell)
+#endif
         do iEdge = 1, nEdges
           cell1 = cellsOnEdge(1, iEdge)
           cell2 = cellsOnEdge(2, iEdge)
@@ -192,10 +298,16 @@ module ocn_tracer_advection_std
             end do ! k loop
           end do ! i loop over nAdvCellsForEdge
         end do ! iEdge loop
+#ifndef MPAS_OPENACC
         !$omp end do
+#endif
 
         ! Accumulate the scaled high order horizontal tendencies
+#ifdef MPAS_OPENACC
+        !$acc loop gang vector private(invAreaCell1, i, iEdge, k)
+#else
         !$omp do schedule(runtime) private(invAreaCell1, i, iEdge, k)
+#endif
         do iCell = 1, nCells
           invAreaCell1 = 1.0_RKIND / areaCell(iCell)
           do i = 1, nEdgesOnCell(iCell)
@@ -206,10 +318,16 @@ module ocn_tracer_advection_std
             end do
           end do
         end do
+#ifndef MPAS_OPENACC
         !$omp end do
+#endif
 
         ! Accumulate the scaled high order vertical tendencies.
+#ifdef MPAS_OPENACC
+        !$acc loop gang vector private(k)
+#else
         !$omp do schedule(runtime) private(k)
+#endif
         !do iCell = 1, nCellsSolve
         do iCell = 1, nCellsOwned
           do k = 1,maxLevelCell(iCell)
@@ -217,9 +335,16 @@ module ocn_tracer_advection_std
                                     - high_order_vert_flux(k, iCell))
           end do ! k loop
         end do ! iCell loop
+#ifdef MPAS_OPENACC
+        !$acc end parallel
+#else
         !$omp end do
         !$omp end parallel
+#endif
       end do ! iTracer loop
+
+      !$acc exit data delete(verticalDivergenceFactor, high_order_horiz_flux, &
+      !$acc              tracer_cur,high_order_vert_flux)    
 
       deallocate(tracer_cur, high_order_horiz_flux, high_order_vert_flux)
       deallocate(verticalDivergenceFactor)

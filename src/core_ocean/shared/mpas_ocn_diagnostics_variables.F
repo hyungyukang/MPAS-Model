@@ -476,11 +476,18 @@ contains
       !$acc    normalGMBolusVelocity, &
                ! Variables that 'ocn_tend_tracers' uses
       !$acc    activeTracerHorizontalAdvectionEdgeFlux, &
+      !$acc    activeTracerHorizontalAdvectionTendency, &
       !$acc    activeTracerVerticalAdvectionTendency, &
+      !$acc    activeTracerVerticalAdvectionTopFlux, &
       !$acc    activeTracerHorMixTendency, &
       !$acc    activeTracerSurfaceFluxTendency, &
       !$acc    temperatureShortWaveTendency, &
-      !$acc    activeTracerNonLocalTendency )
+      !$acc    activeTracerNonLocalTendency, &
+      !$acc    vertNonLocalFlux, &
+      !$acc    penetrativeTemperatureFluxOBL, &
+      !$acc    surfaceBuoyancyForcing, &
+      !$acc    edgeAreaFractionOfCell, &
+      !$acc    surfaceFrictionVelocity)
 
     end subroutine ocn_diagnostics_variables_init!}}}
 
@@ -517,14 +524,23 @@ contains
       !$acc    normalGMBolusVelocity, &
                ! Variables that 'ocn_tend_tracers' uses
       !$acc    activeTracerHorizontalAdvectionEdgeFlux, &
+      !$acc    activeTracerHorizontalAdvectionTendency, &
       !$acc    activeTracerVerticalAdvectionTendency, &
+      !$acc    activeTracerVerticalAdvectionTopFlux, &
       !$acc    activeTracerHorMixTendency, &
       !$acc    activeTracerSurfaceFluxTendency, &
       !$acc    temperatureShortWaveTendency, &
-      !$acc    activeTracerNonLocalTendency )
+      !$acc    activeTracerNonLocalTendency, &
+      !$acc    vertNonLocalFlux, &
+      !$acc    penetrativeTemperatureFluxOBL, &
+      !$acc    surfaceBuoyancyForcing, &
+      !$acc    edgeAreaFractionOfCell, &
+      !$acc    surfaceFrictionVelocity)
 
 !!! Don't forget later
-!!! [layerThickEdge,normalGMBolusVelocity,normalTransportVelocity]
+!!! [layerThickEdge,normalGMBolusVelocity,normalTransportVelocity,
+!!!  vertAleTransportTop]
+
    end subroutine ocn_diagnostics_variables_destroy!}}}
 
 !***********************************************************************
@@ -562,11 +578,18 @@ contains
       !$acc    normalGMBolusVelocity, &
                ! Variables that 'ocn_tend_tracers' uses
       !$acc    activeTracerHorizontalAdvectionEdgeFlux, &
+      !$acc    activeTracerHorizontalAdvectionTendency, &
       !$acc    activeTracerVerticalAdvectionTendency, &
+      !$acc    activeTracerVerticalAdvectionTopFlux, &
       !$acc    activeTracerHorMixTendency, &
       !$acc    activeTracerSurfaceFluxTendency, &
       !$acc    temperatureShortWaveTendency, &
-      !$acc    activeTracerNonLocalTendency )
+      !$acc    activeTracerNonLocalTendency, &
+      !$acc    vertNonLocalFlux, &
+      !$acc    penetrativeTemperatureFluxOBL, &
+      !$acc    surfaceBuoyancyForcing, &
+      !$acc    edgeAreaFractionOfCell, &
+      !$acc    surfaceFrictionVelocity)
 
 !     !$acc update &
 !              ! Variables that 'ocn_tend_vel' uses

@@ -669,7 +669,10 @@ contains
          !$acc                   config_btr_gam1_velWt1, &
          !$acc                   config_btr_gam2_SSHWt1, &
          !$acc                   config_btr_gam3_velWt2, &
-         !$acc                   config_btr_subcycle_loop_factor)
+         !$acc                   config_btr_subcycle_loop_factor, &
+         !$acc                   config_flux_attenuation_coefficient, &
+         !$acc                   config_flux_attenuation_coefficient_runoff)
+       
 
 
          block => block%next
@@ -828,7 +831,9 @@ contains
       !$acc                  config_btr_gam1_velWt1, &
       !$acc                  config_btr_gam2_SSHWt1, &
       !$acc                  config_btr_gam3_velWt2, &
-      !$acc                  config_btr_subcycle_loop_factor)
+      !$acc                  config_btr_subcycle_loop_factor, &
+      !$acc                  config_flux_attenuation_coefficient, &
+      !$acc                  config_flux_attenuation_coefficient_runoff)
 
       ! Reset all scalars to zero
       nCellsAll = 0

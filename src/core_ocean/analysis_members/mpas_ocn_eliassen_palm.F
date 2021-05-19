@@ -252,6 +252,7 @@ contains
       type (block_type), pointer :: block
       type (mpas_pool_type), pointer :: am_epftPool
       type (mpas_pool_type), pointer :: statePool
+      type (mpas_pool_type), pointer :: tracersPool
       type (mpas_pool_type), pointer :: meshPool
       type (mpas_pool_type), pointer :: forcingPool
 
@@ -380,6 +381,7 @@ contains
       real(KIND=RKIND), dimension(:,:), allocatable :: uPVMidBuoyCoorEA
       real(KIND=RKIND), dimension(:,:), allocatable :: vPVMidBuoyCoorEA
       real(KIND=RKIND), dimension(:,:,:), allocatable :: PVFluxTest
+      real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers
 
       !-----------------------------------------------------------------
       ! define some arrays in z-coordinates, obtained from diagnostics and forcing
@@ -400,6 +402,9 @@ contains
       ! define local work variables
       !-----------------------------------------------------------------
       integer :: nCellsGlobal, k, i
+      integer, pointer :: &
+         indexSalinity,        &! tracer index for salinity
+         indexTemperature       ! tracer index for temperature
 
       err = 0
 
@@ -429,6 +434,7 @@ contains
          call mpas_pool_get_subpool(block % structs, 'state', statePool)
          call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
          call mpas_pool_get_subpool(block % structs, 'forcing', forcingPool)
+         call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
 
          !--------------------------------------------------
          ! assign pointers for mesh-related variables
@@ -554,12 +560,17 @@ contains
          call mpas_pool_get_array(am_epftPool, 'ErtelPV', ErtelPV)
          call mpas_pool_get_array(am_epftPool, 'ErtelPVGradZonal', ErtelPVGradZonal)
          call mpas_pool_get_array(am_epftPool, 'ErtelPVGradMerid', ErtelPVGradMerid)
+         call mpas_pool_get_array(tracersPool, 'activeTracers', activeTracers, 1)
+         call mpas_pool_get_dimension(tracersPool, 'index_temperature', indexTemperature)
+         call mpas_pool_get_dimension(tracersPool, 'index_salinity', indexSalinity)
+
 
          ! Compute potentialDensity over the entire block to ensure it's valid for EPFT computation
 
-         call ocn_equation_of_state_density(statePool, meshPool, tracersSurfaceValue, &
-                                            nCells, 1, 'absolute', potentialDensity, &
-                                            err) !, timeLevelIn=1)
+         call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
+                                            nCells, 1, 'absolute', activeTracers, &
+                                            potentialDensity, &
+                                            indexTemperature, indexSalinity, err) !, timeLevelIn=1)
 
          !--------------------------------------------------
          ! Get variables associated to diabatic processes

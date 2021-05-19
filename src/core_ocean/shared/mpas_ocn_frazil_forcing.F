@@ -77,7 +77,9 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_frazil_forcing_tracers(meshPool, tracersPool, groupName, forcingPool, tracersTend, err)!{{{
+   subroutine ocn_frazil_forcing_tracers(tracersPool, groupName, forcingPool, &
+              frazilTemperatureTendency,frazilSalinityTendency, &
+              indexTemperature,indexSalinity, tracersTend, err)!{{{
 
       !-----------------------------------------------------------------
       !
@@ -85,13 +87,15 @@ contains
       !
       !-----------------------------------------------------------------
       character (len=*) :: groupName !< Input: Name of tracer group
+      real (kind=RKIND), dimension(:,:), pointer, intent(in) :: &
+           frazilTemperatureTendency,frazilSalinityTendency
+      integer, pointer, intent(in) :: indexTemperature,indexSalinity
 
       !-----------------------------------------------------------------
       !
       ! input/output variables
       !
       !-----------------------------------------------------------------
-      type (mpas_pool_type), intent(inout) :: meshPool !< Input/Output: mesh information
       type (mpas_pool_type), intent(inout) :: tracersPool !< Input/Output: tracer tendency pool
       type (mpas_pool_type), intent(inout) :: forcingPool  !< Input/Output: forcing pool holding frazil-induced tendencies
       real (kind=RKIND), dimension(:,:,:), intent(inout) ::  tracersTend
@@ -116,7 +120,9 @@ contains
       call mpas_timer_start("tracer frazil")
 
       if ( trim(groupName) == 'activeTracers' ) then
-         call ocn_frazil_forcing_active_tracers(meshPool, tracersPool, forcingPool, tracersTend, err)
+         call ocn_frazil_forcing_active_tracers(tracersPool, forcingPool, &
+              frazilTemperatureTendency,frazilSalinityTendency, &
+              indexTemperature,indexSalinity, tracersTend, err)
       end if
 
       call mpas_timer_stop("tracer frazil")
@@ -196,7 +202,7 @@ contains
                                       + frazilLayerThicknessTendency(k,iCell)
         end do
       end do
-#ifndef
+#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
 #endif
@@ -219,16 +225,23 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_frazil_forcing_active_tracers(meshPool, tracersPool, forcingPool, activeTracersTend, err)!{{{
+   subroutine ocn_frazil_forcing_active_tracers(tracersPool, forcingPool, &
+              frazilTemperatureTendency,frazilSalinityTendency, &
+              indexTemperature,indexSalinity, &
+              activeTracersTend, err)!{{{
 
       !-----------------------------------------------------------------
       !
       ! input variables
       !
       !-----------------------------------------------------------------
-      type (mpas_pool_type), intent(in) :: meshPool !< Input: mesh information
       type (mpas_pool_type), intent(inout) :: tracersPool !< Input: tracer tendency pool
       type (mpas_pool_type), intent(inout) :: forcingPool !< Input: Forcing information
+
+      real (kind=RKIND), dimension(:,:), pointer,intent(in) :: &
+           frazilTemperatureTendency,frazilSalinityTendency
+
+      integer, pointer, intent(in) :: indexTemperature,indexSalinity
 
       !-----------------------------------------------------------------
       !
@@ -252,13 +265,9 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell, k, nCells
-      integer, pointer :: indexTemperature
-      integer, pointer :: indexSalinity
-      integer, pointer, dimension(:) :: nCellsArray
-      integer, pointer, dimension(:) :: maxLevelCell
+!     integer, pointer, dimension(:) :: nCellsArray
+!     integer, pointer, dimension(:) :: maxLevelCell
 
-      real (kind=RKIND), dimension(:,:), pointer :: frazilTemperatureTendency
-      real (kind=RKIND), dimension(:,:), pointer :: frazilSalinityTendency
 
       err = 0
 
@@ -266,20 +275,28 @@ contains
      
       call mpas_timer_start("frazil ice")
 
-      call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
+!     call mpas_pool_get_dimension(meshPool, 'nCellsArray', nCellsArray)
       call mpas_pool_get_dimension(tracersPool, 'index_temperature', indexTemperature)
       call mpas_pool_get_dimension(tracersPool, 'index_salinity', indexSalinity)
 
-      call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-      call mpas_pool_get_array(forcingPool, 'frazilTemperatureTendency', frazilTemperatureTendency)
-      call mpas_pool_get_array(forcingPool, 'frazilSalinityTendency', frazilSalinityTendency)
+!     call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
+!     call mpas_pool_get_array(forcingPool, 'frazilTemperatureTendency', frazilTemperatureTendency)
+!     call mpas_pool_get_array(forcingPool, 'frazilSalinityTendency', frazilSalinityTendency)
 
       ! frazil fields are needed only over 0 and 1 halos
-      nCells = nCellsArray( 2 )
+      !nCells = nCellsArray( 2 )
+      nCells = nCellsHalo(1)
 
       ! add to surface fluxes at cell centers
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(activeTracersTend,frazilTemperatureTendency, &
+      !$acc       frazilSalinityTendency,maxLevelCell, &
+      !$acc       indexTemperature,indexSalinity)
+#else
       !$omp parallel
       !$omp do schedule(runtime) private(k)
+#endif
       do iCell = 1, nCells
         do k = 1, maxLevelCell(iCell)
           activeTracersTend(indexTemperature,k,iCell) = activeTracersTend(indexTemperature,k,iCell) &
@@ -287,8 +304,10 @@ contains
           activeTracersTend(indexSalinity,k,iCell) = activeTracersTend(indexSalinity,k,iCell) + frazilSalinityTendency(k,iCell)
         end do
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
+#endif
 
       call mpas_timer_stop("frazil ice")
 

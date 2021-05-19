@@ -247,7 +247,8 @@ contains
                            normalVelocity,layerThickness,ssh, &
                            activeTracers,normalVelocityTend, &
                            sfcStress, sfcStressMag, &
-                           windStressZonal, windStressMerid, dt)!{{{
+                           windStressZonal, windStressMerid, &
+                           indxTemp,indxSalt, dt)!{{{
 
       !-----------------------------------------------------------------
       ! input variables
@@ -281,6 +282,8 @@ contains
          windStressZonal,   &! zonal wind stress from forcing
          windStressMerid     ! meridional wind stress from forcing
 
+      integer, intent(in) :: indxTemp,indxSalt
+
       !-----------------------------------------------------------------
       ! local variables
       !-----------------------------------------------------------------
@@ -288,8 +291,6 @@ contains
       integer ::           &
          err,              &! local error flag
          iEdge, iCell, k,  &! loop indices for edge, cell and vertical
-         indxTemp,         &! tracer index for temperature
-         indxSalt,         &! tracer index for salinity
          timeLevel          ! time level to use for state variables
 
       ! various pointers for array retrievals
@@ -318,12 +319,12 @@ contains
       !*** Retrieve pool variables
       call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
 
-      call mpas_pool_get_dimension(tracersPool, 'index_temperature', &
-                                                 indexTemperature)
-      call mpas_pool_get_dimension(tracersPool, 'index_salinity', &
-                                                 indexSalinity)
-      indxTemp = indexTemperature
-      indxSalt = indexSalinity
+!     call mpas_pool_get_dimension(tracersPool, 'index_temperature', &
+!                                                indexTemperature)
+!     call mpas_pool_get_dimension(tracersPool, 'index_salinity', &
+!                                                indexSalinity)
+!     indxTemp = indexTemperature
+!     indxSalt = indexSalinity
 
       call mpas_timer_start("ocn_tend_vel transfer")
       !*** Transfer data to device
@@ -476,7 +477,7 @@ contains
 !
 !-----------------------------------------------------------------------
    subroutine ocn_tend_tracer(tendPool, statePool, forcingPool, meshPool, swForcingPool, scratchPool, & !{{{
-                              layerThickness,normalVelocity, &
+                              layerThickness,normalVelocity, normalTransportVelocity, &
                               penetrativeTemperatureFlux,fractionAbsorbed, &
                               fractionAbsorbedRunoff, &
                               tracerGroup,tracerGroupTend,tracerGroupSurfaceFlux, &
@@ -487,6 +488,10 @@ contains
                               rainTemperatureFlux, evapTemperatureFlux, &
                               seaIceFreshWaterTemperatureFlux, &
                               icebergFreshWaterTemperatureFlux, &
+                              frazilTemperatureTendency,frazilSalinityTendency, &
+                              indexTemperature,indexSalinity, &
+                              index_temperatureSurfaceFlux, &
+                              index_salinitySurfaceFlux, &
                               dt, activeTracersOnlyIn, timeLevelIn)
       implicit none
 
@@ -506,10 +511,10 @@ contains
         surfaceThicknessFlux,surfaceThicknessFluxRunoff, &
         surfaceStress,surfaceStressMagnitude
       real (kind=RKIND), dimension(:,:), pointer, intent(in) :: &
-        layerThickness,normalVelocity, &
+        layerThickness,normalVelocity,normalTransportVelocity, &
         tracerGroupSurfaceFlux, fractionAbsorbed, &
-        fractionAbsorbedRunoff, &
-        nonLocalSurfaceTracerFlux
+        fractionAbsorbedRunoff, nonLocalSurfaceTracerFlux, &
+        frazilTemperatureTendency,frazilSalinityTendency
 
       real (kind=RKIND), dimension(:,:), pointer, intent(in) :: &
         tracerGroupSurfaceFluxRunoff, &
@@ -519,6 +524,11 @@ contains
         tracerGroup, tracerGroupTend
 
       real (kind=RKIND), intent(in) :: dt                     !< Input: Time step
+
+      integer, pointer, intent(in) :: indexTemperature, indexSalinity, &
+                                      index_temperatureSurfaceFlux, &
+                                      index_salinitySurfaceFlux
+
       logical, intent(in), optional :: activeTracersOnlyIn    !< Input: if true, only compute for active tracers
       integer, intent(in), optional :: timeLevelIn            !< Input/Optional: Time Level Indes
 
@@ -536,7 +546,6 @@ contains
       ! scalar pointers
       integer :: nTracerGroup
       !integer, pointer :: nVertLevels, nEdges, nCells, nCellsSolve, indexTemperature, indexSalinity
-      integer, pointer :: indexTemperature, indexSalinity
       logical, pointer :: config_use_tracerGroup, config_use_tracerGroup_surface_bulk_forcing, &
                           config_use_tracerGroup_surface_restoring, config_use_tracerGroup_interior_restoring, &
                           config_use_tracerGroup_exponential_decay, config_use_tracerGroup_idealAge_forcing, &
@@ -611,8 +620,8 @@ contains
 !     call mpas_pool_get_dimension(meshPool, 'nEdges', nEdges)
 !     call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
 !     call mpas_pool_get_dimension(meshPool, 'nCellsSolve', nCellsSolve)
-      call mpas_pool_get_dimension(tracersPool, 'index_temperature', indexTemperature)
-      call mpas_pool_get_dimension(tracersPool, 'index_salinity', indexSalinity)
+!     call mpas_pool_get_dimension(tracersPool, 'index_temperature', indexTemperature)
+!     call mpas_pool_get_dimension(tracersPool, 'index_salinity', indexSalinity)
 
       !
       ! get arrays
@@ -631,22 +640,31 @@ contains
 
       call mpas_timer_start("ocn_tend_tracer")
 
-      allocate(normalThicknessFlux(nVertLevels, nEdgesAll+1))
+!     allocate(normalThicknessFlux(nVertLevels, nEdgesAll+1))
 
       !
       ! transport velocity for the tracer.
       !
+
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(temp1VertEdge,normalTransportVelocity,layerThickEdge) &
+      !$acc    collapse(2)
+#else
       !$omp parallel
       !$omp do schedule(runtime) private(k)
+#endif
       do iEdge = 1, nEdgesAll
          do k = 1, nVertLevels
-            normalThicknessFlux(k, iEdge) = normalTransportVelocity(k, iEdge) * layerThickEdge(k, iEdge)
-            !temp1VertEdge(k, iEdge) = normalTransportVelocity(k, iEdge) * layerThickEdge(k, iEdge)
+            !normalThicknessFlux(k, iEdge) = normalTransportVelocity(k, iEdge) * layerThickEdge(k, iEdge)
+            temp1VertEdge(k, iEdge) = normalTransportVelocity(k, iEdge) * layerThickEdge(k, iEdge)
          end do
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
-
+#endif
+       
       !
       ! begin iterate over tracer categories
       !
@@ -681,7 +699,8 @@ contains
 
 !              ! Get tracer group, and other groups (tendencies, etc.)
 !              call mpas_pool_get_array(tracersPool, trim(groupItr % memberName), tracerGroup, timeLevel)
-!              nTracerGroup = size(tracerGroup, dim=1)
+
+               nTracerGroup = size(tracerGroup, dim=1)
 
 !              ! Get Tendency array
 !              modifiedGroupName = trim(groupItr % memberName) // "Tend"
@@ -707,14 +726,43 @@ contains
                !
                ! initialize tracer surface flux and tendency to zero.
                !
+#ifdef MPAS_OPENACC
+               !$acc parallel &
+               !$acc    present(tracerGroupTend,tracerGroupSurfaceFlux)
+#else
                !$omp parallel
+#endif
+
+
+#ifdef MPAS_OPENACC
+               !$acc loop gang vector collapse(3)
+#else
                !$omp do schedule(runtime)
+#endif
                do iCell = 1, nCellsAll
-                 tracerGroupTend(:,:, iCell) = 0.0_RKIND
-                 tracerGroupSurfaceFlux(:, iCell) = 0.0_RKIND
+                 do k = 1,nVertLevels
+                   do n = 1,nTracerGroup
+                     tracerGroupTend(n,k,iCell) = 0.0_RKIND
+                   end do
+                 end do
                end do
+                 
+#ifdef MPAS_OPENACC
+               !$acc loop gang vector collapse(2)
+#else
+               !$omp do schedule(runtime)
+#endif
+               do iCell = 1, nCellsAll
+                 do n = 1,nTracerGroup
+                   tracerGroupSurfaceFlux(n,iCell) = 0.0_RKIND
+                 end do
+               end do
+#ifdef MPAS_OPENACC
+               !$acc end parallel
+#else
                !$omp end do
                !$omp end parallel
+#endif
 
 ! For now, skip these parts ------------------------------------------------------------------------------------------------------
 !              !
@@ -810,7 +858,7 @@ contains
 
                ! tracer fluxes at the land-ice / ocean interface
                ! this is a flux at the top ocean surface -- so these fluxes are added into tracerGroupSurfaceFlux
-               call ocn_surface_land_ice_fluxes_tracers(meshPool, groupItr % memberName, forcingPool, landIceHeatFlux, &
+               call ocn_surface_land_ice_fluxes_tracers(groupItr % memberName, forcingPool, landIceHeatFlux, &
                                                         tracerGroupSurfaceFlux, err)
 
                !
@@ -904,7 +952,8 @@ contains
                ! Monotonoic Advection, or standard advection
                ! Tendency for tracer budget is stored within the tracer adv
                ! routine
-               call ocn_tracer_advection_tend(tracerGroup, normalThicknessFlux, vertAleTransportTop, layerThickness, &
+               !call ocn_tracer_advection_tend(tracerGroup, normalThicknessFlux, vertAleTransportTop, layerThickness, &
+               call ocn_tracer_advection_tend(tracerGroup, temp1VertEdge, vertAleTransportTop, layerThickness, &
                                               dt, tracerGroupTend, &
                                               trim(groupItr % memberName))
 
@@ -919,13 +968,25 @@ contains
                if(trim(groupItr % memberName)=='activeTracers') then
                  isActiveTracer = .true.
                  if (config_compute_active_tracer_budgets) then
+#ifdef MPAS_OPENACC
+                    !$acc parallel loop &
+                    !$acc    present(activeTracerHorMixTendency,tracerGroupTend) &
+                    !$acc    collapse(3)
+#else
                     !$omp parallel
-                    !$omp do schedule(runtime)
+                    !$omp do schedule(runtime) private(n,k)
+#endif
                     do iCell = 1, nCellsOwned
-                      activeTracerHorMixTendency(:,:,iCell) = tracerGroupTend(:,:,iCell)
+                      do k = 1,nVertLevels
+                        do n = 1,nTracerGroup
+                           activeTracerHorMixTendency(n,k,iCell) = tracerGroupTend(n,k,iCell)
+                        end do
+                      end do
                     enddo
+#ifndef MPAS_OPENACC
                     !$omp end do
                     !$omp end parallel
+#endif
                  endif
                endif
 
@@ -938,14 +999,26 @@ contains
                if(trim(groupItr % memberName)=='activeTracers') then
                  isActiveTracer = .true.
                  if (config_compute_active_tracer_budgets) then
+#ifdef MPAS_OPENACC
+                    !$acc parallel loop &
+                    !$acc    present(activeTracerHorMixTendency,tracerGroupTend)
+                    !!!!!!$acc    collapse(3)
+#else
                     !$omp parallel
-                    !$omp do schedule(runtime)
+                    !$omp do schedule(runtime) private(k,n)
+#endif
                     do iCell = 1, nCellsOwned
-                      activeTracerHorMixTendency(:,:,iCell) = tracerGroupTend(:,:,iCell) - &
-                                  activeTracerHorMixTendency(:,:,iCell)
+                      do k = 1,nVertLevels
+                        do n = 1,nTracerGroup
+                           activeTracerHorMixTendency(n,k,iCell) = tracerGroupTend(n,k,iCell) - &
+                                       activeTracerHorMixTendency(n,k,iCell)
+                        enddo
+                      enddo
                     enddo
+#ifndef MPAS_OPENACC
                     !$omp end do
                     !$omp end parallel
+#endif
                  endif
                endif
  
@@ -955,13 +1028,25 @@ contains
                !
                if (config_compute_active_tracer_budgets) then
                   if ( trim(groupItr % memberName) == 'activeTracers' ) then
+#ifdef MPAS_OPENACC
+                     !$acc parallel loop &
+                     !$acc    present(activeTracerSurfaceFluxTendency,tracerGroupTend) &
+                     !$acc    collapse(3)
+#else
                      !$omp parallel
-                     !$omp do schedule(runtime)
+                     !$omp do schedule(runtime) private(k,n)
+#endif
                      do iCell = 1, nCellsOwned
-                        activeTracerSurfaceFluxTendency(:,:,iCell) = tracerGroupTend(:,:,iCell)
+                       do k = 1, nVertLevels
+                         do n = 1, nTracerGroup
+                            activeTracerSurfaceFluxTendency(n,k,iCell) = tracerGroupTend(n,k,iCell)
+                         end do
+                       end do
                      end do
-                     !$omp end do
-                     !$omp end parallel
+#ifndef MPAS_OPENACC
+                    !$omp end do
+                    !$omp end parallel
+#endif
                   endif
                endif
 
@@ -969,24 +1054,53 @@ contains
                                                  tracerGroupSurfaceFlux, tracerGroupSurfaceFluxRunoff,  &
                                                  tracerGroupTend, err)
 
-
-
-
                !
                ! Performing shortwave absorption
                !
                if ( trim(groupItr % memberName) == 'activeTracers' ) then
 
                   if (config_compute_active_tracer_budgets) then
+#ifdef MPAS_OPENACC
+                     !$acc parallel loop &
+                     !$acc    present(activeTracerSurfaceFluxTendency, &
+                     !$acc       tracerGroupTend)
+                     !!!$acc  collapse(3)
+#else
                      !$omp parallel
-                     !$omp do schedule(runtime)
+                     !$omp do schedule(runtime) private(k,n)
+#endif
                      do iCell = 1, nCellsOwned
-                        activeTracerSurfaceFluxTendency(:,:,iCell) = tracerGroupTend(:,:,iCell) &
-                           - activeTracerSurfaceFluxTendency(:,:,iCell)
-                        temperatureShortWaveTendency(:,iCell) = tracerGroupTend(indexTemperature,:,iCell)
+                       do k = 1,nVertLevels
+                         do n = 1,nTracerGroup
+                            activeTracerSurfaceFluxTendency(n,k,iCell) = tracerGroupTend(n,k,iCell) &
+                               - activeTracerSurfaceFluxTendency(n,k,iCell)
+                         end do
+                       end do
                      end do
+#ifndef MPAS_OPENACC
                      !$omp end do
                      !$omp end parallel
+#endif
+
+
+#ifdef MPAS_OPENACC
+                     !$acc parallel loop &
+                     !$acc    present(tracerGroupTend,temperatureShortWaveTendency, &
+                     !$acc       indexTemperature) &
+                     !$acc    collapse(2)
+#else
+                     !$omp parallel
+                     !$omp do schedule(runtime) private(k)
+#endif
+                     do iCell = 1, nCellsOwned
+                       do k = 1,nVertLevels
+                          temperatureShortWaveTendency(k,iCell) = tracerGroupTend(indexTemperature,k,iCell)
+                       end do
+                     end do
+#ifndef MPAS_OPENACC
+                     !$omp end do
+                     !$omp end parallel
+#endif
                   endif
 
 ! For now, skip these parts ------------------------------------------------------------------------------------------------------
@@ -996,14 +1110,24 @@ contains
 !---------------------------------------------------------------------------------------------------------------------------------
 
                   if (config_compute_active_tracer_budgets) then
+#ifdef MPAS_OPENACC
+                     !$acc parallel loop &
+                     !$acc    present(temperatureShortWaveTendency, &
+                     !$acc       tracerGroupTend,indexTemperature)
+#else
                      !$omp parallel
-                     !$omp do schedule(runtime)
+                     !$omp do schedule(runtime) private(k)
+#endif
                      do iCell = 1, nCellsOwned
-                        temperatureShortWaveTendency(:,iCell) = tracerGroupTend(indexTemperature,:,iCell) - &
-                                        temperatureShortWaveTendency(:,iCell)
+                        do k = 1,nVertLevels
+                           temperatureShortWaveTendency(k,iCell) = tracerGroupTend(indexTemperature,k,iCell) - &
+                                           temperatureShortWaveTendency(k,iCell)
+                        end do
                      end do
+#ifndef MPAS_OPENACC
                      !$omp end do
                      !$omp end parallel
+#endif
                   endif
                endif
 
@@ -1024,33 +1148,56 @@ contains
                        evapTemperatureFlux, seaIceFreshWaterTemperatureFlux, &
                        icebergFreshWaterTemperatureFlux, tracerGroup, &
                        tracerGroupSurfaceFlux, tracerGroupSurfaceFluxRunoff, &
+                       indexTemperature,indexSalinity, &
+                       index_temperatureSurfaceFlux, &
+                       index_salinitySurfaceFlux, & 
                        timeLevel)
                   if (.not. config_cvmix_kpp_nonlocal_with_implicit_mix) then
                      if( trim(groupItr % memberName) == 'activeTracers' ) then
                         if (config_compute_active_tracer_budgets) then
+#ifdef MPAS_OPENACC
+                           !$acc parallel loop &
+                           !$acc    present(activeTracerNonLocalTendency, &
+                           !$acc       tracerGroupTend)
+#else
                            !$omp parallel
-                           !$omp do schedule(runtime)
+                           !$omp do schedule(runtime) private(k,n)
+#endif
                            do iCell = 1, nCellsOwned
-                              activeTracerNonLocalTendency(:,:,iCell) = tracerGroupTend(:,:,iCell)
+                             do k = 1, nVertLevels
+                               do n = 1, nTracerGroup
+                                  activeTracerNonLocalTendency(n,k,iCell) = tracerGroupTend(n,k,iCell)
+                               end do
+                             end do
                            end do
+#ifndef MPAS_OPENACC
                            !$omp end do
                            !$omp end parallel
+#endif
                         endif
                         call ocn_tracer_nonlocalflux_tend(vertNonLocalFlux, nonLocalSurfaceTracerFlux, tracerGroupTend, err)
                         if (config_compute_active_tracer_budgets) then
+#ifdef MPAS_OPENACC
+                           !$acc parallel loop &
+                           !$acc    present(activeTracerNonLocalTendency, &
+                           !$acc       tracerGroupTend) !! collapse(3)
+#else
                            !$omp parallel
-                           !$omp do schedule(runtime)
+                           !$omp do schedule(runtime) private(k,n)
+#endif
                            do iCell = 1, nCellsOwned
-                           do k = 1, nVertLevels
-                           do n = 1, nTracerGroup
-                              activeTracerNonLocalTendency(n,k,iCell) = &
-                                           tracerGroupTend(n,k,iCell) - &
-                              activeTracerNonLocalTendency(n,k,iCell)
+                             do k = 1, nVertLevels
+                               do n = 1, nTracerGroup
+                                  activeTracerNonLocalTendency(n,k,iCell) = &
+                                               tracerGroupTend(n,k,iCell) - &
+                                  activeTracerNonLocalTendency(n,k,iCell)
+                               end do
+                             end do
                            end do
-                           end do
-                           end do
+#ifndef MPAS_OPENACC
                            !$omp end do
                            !$omp end parallel
+#endif
                         endif
                      else
                         call ocn_tracer_nonlocalflux_tend(vertNonLocalFlux, tracerGroupSurfaceFlux, tracerGroupTend, err)
@@ -1062,13 +1209,15 @@ contains
                !
                ! Compute tracer tendency due to production/destruction of frazil ice
                !
-               call ocn_frazil_forcing_tracers(meshPool, tracersPool, groupItr%memberName, forcingPool, tracerGroupTend, err)
+               call ocn_frazil_forcing_tracers(tracersPool, groupItr%memberName, forcingPool, &
+                    frazilTemperatureTendency,frazilSalinityTendency, &
+                    indexTemperature,indexSalinity, tracerGroupTend, err)
             end if
            end if ! active only
          end if
       end do
 
-      deallocate(normalThicknessFlux)
+!     deallocate(normalThicknessFlux)
 
       call mpas_timer_stop("ocn_tend_tracer")
 

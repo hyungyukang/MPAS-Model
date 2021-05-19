@@ -42,6 +42,7 @@ module mpas_tracer_advection_helpers
 !
 !-----------------------------------------------------------------------
    real (kind=RKIND) function mpas_tracer_advection_vflux4(q_im2, q_im1, q_i, q_ip1, w)!{{{
+        !$acc routine seq
         real (kind=RKIND), intent(in) :: q_im2 !< Input: Tracer value at index i-2
         real (kind=RKIND), intent(in) :: q_im1 !< Input: Tracer value at index i-1
         real (kind=RKIND), intent(in) :: q_i !< Input: Tracer value at index i
@@ -62,6 +63,7 @@ module mpas_tracer_advection_helpers
 !
 !-----------------------------------------------------------------------
    real (kind=RKIND) function mpas_tracer_advection_vflux3( q_im2, q_im1, q_i, q_ip1, w, coef)!{{{
+        !$acc routine seq
         real (kind=RKIND), intent(in) :: q_im2 !< Input: Tracer value at index i-2
         real (kind=RKIND), intent(in) :: q_im1 !< Input: Tracer value at index i-1
         real (kind=RKIND), intent(in) :: q_i !< Input: Tracer value at index i

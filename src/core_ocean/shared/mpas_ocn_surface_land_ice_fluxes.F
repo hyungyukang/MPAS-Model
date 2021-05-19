@@ -89,7 +89,7 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_surface_land_ice_fluxes_tracers(meshPool, groupName, &
+   subroutine ocn_surface_land_ice_fluxes_tracers(groupName, &
       forcingPool,landIceHeatFlux, tracersSurfaceFlux, err)!{{{
 
       !-----------------------------------------------------------------
@@ -97,7 +97,7 @@ contains
       ! input variables
       !
       !-----------------------------------------------------------------
-      type (mpas_pool_type), intent(in) :: meshPool !< Input: mesh information
+      !type (mpas_pool_type), intent(in) :: meshPool !< Input: mesh information
       character (len=*) :: groupName !< Input: Name of tracer group
       real (kind=RKIND), dimension(:), pointer, intent(in) :: landIceHeatFlux
 
@@ -130,7 +130,8 @@ contains
       call mpas_timer_start("land_ice_" // trim(groupName))
 
       if ( trim(groupName) == 'activeTracers' ) then
-         call ocn_surface_land_ice_fluxes_active_tracers(meshPool, &
+         !call ocn_surface_land_ice_fluxes_active_tracers(meshPool, &
+         call ocn_surface_land_ice_fluxes_active_tracers( &
             forcingPool, landIceHeatFlux, tracersSurfaceFlux, err)
       end if
 
@@ -296,7 +297,7 @@ contains
         surfaceThicknessFlux(iCell) = surfaceThicknessFlux(iCell)  &
                                     + landIceFreshwaterFlux(iCell) / rho_sw
       end do
-#ifndef
+#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
 #endif
@@ -317,7 +318,7 @@ contains
 !
 !-----------------------------------------------------------------------
 
-   subroutine ocn_surface_land_ice_fluxes_active_tracers(meshPool, forcingPool, landIceHeatFlux, &
+   subroutine ocn_surface_land_ice_fluxes_active_tracers(forcingPool, landIceHeatFlux, &
                                                          tracersSurfaceFlux, err)!{{{
 
       !-----------------------------------------------------------------
@@ -325,7 +326,7 @@ contains
       ! input variables
       !
       !-----------------------------------------------------------------
-      type (mpas_pool_type), intent(in) :: meshPool !< Input: mesh information
+      !type (mpas_pool_type), intent(in) :: meshPool !< Input: mesh information
       real (kind=RKIND), dimension(:), pointer, intent(in) :: landIceHeatFlux
 
       !-----------------------------------------------------------------
@@ -351,7 +352,7 @@ contains
       !-----------------------------------------------------------------
 
       integer :: iCell
-      integer, pointer :: nCells
+!     integer, pointer :: nCells
 
 
       err = 0
@@ -363,14 +364,21 @@ contains
 !     call mpas_pool_get_array(forcingPool, 'landIceHeatFlux', landIceHeatFlux)
 
       ! add to surface fluxes at cell centers
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(tracersSurfaceFlux,landIceHeatFlux) 
+#else 
       !$omp parallel
       !$omp do schedule(runtime)
+#endif
       do iCell = 1, nCellsOwned
         tracersSurfaceFlux(1, iCell) = tracersSurfaceFlux(1, iCell) &
                                      + landIceHeatFlux(iCell)/(rho_sw*cp_sw)
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
+#endif
 
    end subroutine ocn_surface_land_ice_fluxes_active_tracers!}}}
 

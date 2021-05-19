@@ -143,8 +143,14 @@ contains
 !     nCells = nCellsArray( 1 )
       nCells = nCellsOwned
 
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(maxLevelCell,fractionAbsorbed,tend,surfaceTracerFlux) &
+      !$acc    private(remainingFlux, k, iTracer)
+#else
       !$omp parallel
       !$omp do schedule(runtime) private(remainingFlux, k, iTracer)
+#endif
       do iCell = 1, nCells
         remainingFlux = 1.0_RKIND
         do k = 1, maxLevelCell(iCell)
@@ -162,8 +168,10 @@ contains
           end do
         end if
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
+#endif
 
       call mpas_timer_stop("surface_tracer_flux")
 
@@ -172,8 +180,15 @@ contains
       if (associated(surfaceTracerFluxRunoff)) then
         call mpas_timer_start("surface_tracer_runoff_flux")
 
+#ifdef MPAS_OPENACC
+        !$acc prallel loop &
+        !$acc    present(fractionAbsorbedRunoff,tend,surfaceTracerFluxRunoff, &
+        !$acc            maxLevelCell) &
+        !$acc    private(remainingFlux, k, iTracer)
+#else
         !$omp parallel
         !$omp do schedule(runtime) private(remainingFlux, k, iTracer)
+#endif
         do iCell = 1, nCells
           remainingFlux = 1.0_RKIND
           do k = 1, maxLevelCell(iCell)
@@ -192,8 +207,10 @@ contains
             end do
           end if
         end do
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
 
         call mpas_timer_stop("surface_tracer_runoff_flux")
       end if

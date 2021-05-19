@@ -140,7 +140,8 @@ module ocn_tracer_advection_mono
          verticalWeightKm1, &! vertical weighting
          coef1, coef3        ! temporary coefficients
 
-      real (kind=RKIND), dimension(size(tracers, dim=2)) :: &
+      !real (kind=RKIND), dimension(size(tracers, dim=2)) :: &
+      real (kind=RKIND), dimension(nVertLevels) :: &
          wgtTmp,            &! vertical temporaries for
          flxTmp, sgnTmp      !   high-order flux computation
 
@@ -166,13 +167,17 @@ module ocn_tracer_advection_mono
 
       ! Get dimensions
 !     nVertLevels = size(tracers,dim=2)
+
       numTracers  = size(tracers,dim=1)
+
 !     nCells = nCellsArray(size(nCellsArray))
 !     nEdges = nEdgesArray(size(nEdgesArray))
 
       nCells = nCellsAll
       nEdges = nEdgesAll
 
+
+!--- Need to improve this part later!!!!!!!!!!!!!!!!!!!
       ! allocate temporary arrays
       allocate(tracerCur   (nVertLevels  ,nCells+1), &
                tracerMin   (nVertLevels  ,nCells), &
@@ -186,14 +191,28 @@ module ocn_tracer_advection_mono
                lowOrderFlx (nVertLevels+1,max(nCells,nEdges)+1), &
                highOrderFlx(nVertLevels+1,max(nCells,nEdges)+1))
 
+      !$acc enter data copyin (tracerCur,tracerMin,tracerMax, &
+      !$acc                    hNewInv,hProv,hProvInv, &
+      !$acc                    flxIn,flxOut, &
+      !$acc                    workTend,lowOrderFlx,highOrderFlx, &
+      !$acc                    wgtTmp,flxTmp,sgnTmp)
+
+      
       ! Compute some provisional layer thicknesses
       ! Note: This assumes we are in the first part of the horizontal/
       ! vertical operator splitting, which is true because currently
       ! we dont flip order and horizontal is always first.
       ! See notes in commit 2cd4a89d.
 
+#ifdef MPAS_OPENACC
+      !$acc parallel loop &
+      !$acc    present(areaCell,hProv,layerThickness,nEdgesOnCell,edgesOnCell, &
+      !$acc       dvEdge,edgeSignOnCell,normalThicknessFlux,hProvInv,w) &
+      !$acc    private(invAreaCell1, kmin, kmax, k, i, iEdge, signedFactor)
+#else
       !$omp parallel
       !$omp do schedule(runtime) private(invAreaCell1, kmin, kmax, k, i, iEdge, signedFactor)
+#endif
       do iCell = 1, nCells
         invAreaCell1 = dt/areaCell(iCell)
         kmin = minLevelCell(iCell)
@@ -217,8 +236,10 @@ module ocn_tracer_advection_mono
                                          dt*w(k,iCell) + dt*w(k+1, iCell))
         end do
       end do
+#ifndef MPAS_OPENACC
       !$omp end do
       !$omp end parallel
+#endif
 
 #ifdef _ADV_TIMERS
       call mpas_timer_stop('startup')
@@ -235,15 +256,22 @@ module ocn_tracer_advection_mono
         nCells = nCellsAll
 
         ! Extract current tracer and change index order to improve locality
+#ifdef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(tracerCur,tracers) collapse(2)
+#else
         !$omp parallel
         !$omp do schedule(runtime) private(k)
+#endif
         do iCell = 1, nCells+1
         do k=1, nVertLevels
            tracerCur(k,iCell) = tracers(iTracer,k,iCell)
         end do ! k loop
         end do ! iCell loop
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
 
         ! Compute the high and low order horizontal fluxes.
 #ifdef _ADV_TIMERS
@@ -258,8 +286,15 @@ module ocn_tracer_advection_mono
         ! Determine bounds on tracer (tracerMin and tracerMax) from
         ! surrounding cells for later limiting.
 
+#ifdef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(tracerMin,tracerMax,tracerCur, &
+        !$acc       cellsOnCell,minLevelCell,maxLevelCell, &
+        !$acc       nEdgesOnCell)
+#else
         !$omp parallel
         !$omp do schedule(runtime) private(k, i, cell2, kmin, kmax)
+#endif
         do iCell = 1, nCells
           do k=minLevelCell(iCell), maxLevelCell(iCell)
             tracerMin(k,iCell) = tracerCur(k,iCell)
@@ -279,8 +314,10 @@ module ocn_tracer_advection_mono
             end do ! k loop
           end do ! i loop over nEdgesOnCell
         end do
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
 
         ! Need all the edges around the 1 halo cells and owned cells
         !nEdges = nEdgesArray( 3 )
@@ -288,10 +325,20 @@ module ocn_tracer_advection_mono
 
         ! Compute the high order horizontal flux
 
+#ifdef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(wgtTmp,sgnTmp,flxTmp,cellsOnEdge,normalThicknessFLux, &
+        !$acc       highOrderAdvectionMask,nAdvCellsForEdge,advCellsForEdge, &
+        !$acc       advCoefs,advCoefs3rd,minLevelCell,maxLevelCell,tracerCur, &
+        !$acc       highOrderFlx,lowOrderFlx,dvEdge) &
+        !$acc    private(cell1, cell2, k, wgtTmp, sgnTmp, flxTmp, i, iCell, &
+        !$acc        coef1,coef3,tracerWeight)
+#else
         !$omp parallel
         !$omp do schedule(runtime) &
         !$omp private(cell1, cell2, k, wgtTmp, sgnTmp, flxTmp, i, iCell, coef1, coef3, &
         !$omp         tracerWeight)
+#endif
         do iEdge = 1, nEdges
           cell1 = cellsOnEdge(1, iEdge)
           cell2 = cellsOnEdge(2, iEdge)
@@ -341,8 +388,10 @@ module ocn_tracer_advection_mono
                                   -  lowOrderFlx(k,iEdge)
           end do ! k loop
         end do ! iEdge loop
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
 
 #ifdef _ADV_TIMERS
         call mpas_timer_stop('horiz flux')
@@ -352,8 +401,13 @@ module ocn_tracer_advection_mono
         !nCells = nCellsArray(size(nCellsArray))
         nCells = nCellsAll
 
+#ifdef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(workTend,flxIn,flxOut) collapse(2)
+#else
         !$omp parallel
         !$omp do schedule(runtime)
+#endif
         do iCell = 1, nCells+1
         do k=1, nVertLevels
            workTend(k, iCell) = 0.0_RKIND
@@ -361,17 +415,31 @@ module ocn_tracer_advection_mono
            flxOut  (k, iCell) = 0.0_RKIND
         end do ! k loop
         end do ! iCell loop
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
 
         ! Need one halo of cells around owned cells
         !nCells = nCellsArray( 2 )
         nCells = nCellsHalo(1)
 
+#ifdef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(areaCell,nEdgesOnCell,edgesOnCell, &
+        !$acc       cellsOnEdge,edgeSignOnCell,minLevelEdgeBot, &
+        !$acc       maxLevelEdgeTop,workTend,lowOrderFlx, &
+        !$acc       flxOut,flxIn,highOrderFlx,minLevelCell, &
+        !$acc       maxLevelCell,tracerCur,hProvInv,tracerMax, &
+        !$acc       tracerMin) &
+        !$acc private(invAreaCell1, i, iEdge, cell1, cell2, signedFactor, k, &
+        !$acc         tracerUpwindNew, tracerMinNew, tracerMaxNew, scaleFactor)
+#else
         !$omp parallel
         !$omp do schedule(runtime) &
         !$omp private(invAreaCell1, i, iEdge, cell1, cell2, signedFactor, k, &
         !$omp         tracerUpwindNew, tracerMinNew, tracerMaxNew, scaleFactor)
+#endif
         do iCell = 1, nCells
           invAreaCell1 = 1.0_RKIND / areaCell(iCell)
 
@@ -420,8 +488,10 @@ module ocn_tracer_advection_mono
             flxOut(k,iCell) = min(1.0_RKIND, max(0.0_RKIND, scaleFactor))
           end do ! k loop
         end do ! iCell loop
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
 
 #ifdef _ADV_TIMERS
         call mpas_timer_stop('scale factor build')
@@ -431,20 +501,30 @@ module ocn_tracer_advection_mono
         !nEdges = nEdgesArray( 2 )
         nEdges = nEdgesHalo(1)
         !  rescale the high order horizontal fluxes
+#ifdef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(cellsOnEdge,minLevelEdgeBot,maxLevelEdgeTop, &
+        !$acc       highOrderFlx,flxIn,flxOut) &
+        !$acc    private(cell1,cell2,k)
+#else
         !$omp parallel
         !$omp do schedule(runtime) private(cell1, cell2, k)
+#endif
         do iEdge = 1, nEdges
           cell1 = cellsOnEdge(1,iEdge)
           cell2 = cellsOnEdge(2,iEdge)
           do k = minLevelEdgeBot(iEdge), maxLevelEdgeTop(iEdge)
             highOrderFlx(k,iEdge) = max(0.0_RKIND,highOrderFlx(k,iEdge))* &
-                                    min(flxOut(k,cell1), flxIn (k,cell2)) &
+                                    min(flxOut(k,cell1), flxIn(k,cell2)) &
                                   + min(0.0_RKIND,highOrderFlx(k,iEdge))* &
-                                    min(flxIn (k,cell1), flxOut(k,cell2))
+                                    min(flxIn(k,cell1), flxOut(k,cell2))
           end do ! k loop
         end do ! iEdge loop
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
+
 #ifdef _ADV_TIMERS
         call mpas_timer_stop('rescale horiz fluxes')
         call mpas_timer_start('flux accumulate')
@@ -453,8 +533,15 @@ module ocn_tracer_advection_mono
         !nCells = nCellsArray( 1 )
         nCells = nCellsOwned
         ! Accumulate the scaled high order vertical tendencies, and the upwind tendencies
+#ifdef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(areaCell,nEdgesOnCell,edgesOnCell,edgeSignOnCell, &
+        !$acc       minLevelEdgeBot,maxLevelEdgeTop,workTend,highOrderFlx, &
+        !$acc       tracerCur,layerThickness,hProvInv,tend)
+#else
         !$omp parallel
         !$omp do schedule(runtime) private(invAreaCell1, signedFactor, i, iEdge, k)
+#endif
         do iCell = 1, nCells
           invAreaCell1 = 1.0_RKIND / areaCell(iCell)
 
@@ -479,8 +566,10 @@ module ocn_tracer_advection_mono
           end do
 
         end do ! iCell loop
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
 
 #ifdef _ADV_TIMERS
         call mpas_timer_stop('flux accumulate')
@@ -488,11 +577,22 @@ module ocn_tracer_advection_mono
 #endif
         ! Compute budget and monotonicity diagnostics if needed
         if (computeBudgets) then
-
+           nEdges = nEdgesHalo(1)
+#ifdef MPAS_OPENACC
+           !$acc parallel &
+           !$acc    present(minLevelEdgeBot,maxLevelEdgeTop, &
+           !$acc       activeTracerHorizontalAdvectionEdgeFlux, &
+           !$acc       lowOrderFlx,highOrderFlx,dvEdge, &
+           !$acc       minLevelCell,maxLevelCell, &
+           !$acc       activeTracerHorizontalAdvectionTendency, &
+           !$acc       workTend)
+           !$acc loop gang vector
+#else
            !$omp parallel
            !$omp do schedule(runtime) private(k)
+#endif
            !do iEdge = 1,nEdgesArray( 2 )
-           do iEdge = 1,nEdgesHalo(1)
+           do iEdge = 1,nEdges
            do k = minLevelEdgeBot(iEdge),maxLevelEdgeTop(iEdge)
               ! Save u*h*T flux on edge for analysis. This variable will be
               ! divided by h at the end of the time step.
@@ -500,9 +600,15 @@ module ocn_tracer_advection_mono
                  (lowOrderFlx(k,iEdge) + highOrderFlx(k,iEdge))/dvEdge(iEdge)
            enddo
            enddo
+#ifndef MPAS_OPENACC
            !$omp end do
+#endif
 
+#ifdef MPAS_OPENACC
+           !$acc loop gang vector
+#else
            !$omp do schedule(runtime) private(k)
+#endif
            !do iCell = 1, nCellsArray( 1 )
            do iCell = 1, nCellsOwned
            do k = minLevelCell(iCell), maxLevelCell(iCell)
@@ -510,8 +616,12 @@ module ocn_tracer_advection_mono
                                                      workTend(k,iCell)
            end do
            end do ! iCell loop
+#ifdef MPAS_OPENACC
+           !$acc end parallel
+#else
            !$omp end do
            !$omp end parallel
+#endif
 
         end if ! computeBudgets
 
@@ -520,8 +630,17 @@ module ocn_tracer_advection_mono
            nCells = nCellsOwned
            ! Check tracer values against local min,max to detect
            ! non-monotone values and write warning if found
+
+             
+           !$acc update self(tracerCur,tracerMin,tracerMax)
+!#ifdef MPAS_OPENACC
+!           !$acc parallel loop &
+!           !$acc    present(minLevelCell,maxLevelCell,tracerCur, &
+!           !$acc       tracerMax,tracerMin)
+!#else
            !$omp parallel
            !$omp do schedule(runtime) private(k)
+!#endif
            do iCell = 1, nCells
            do k = minLevelCell(iCell), maxLevelCell(iCell)
               if(tracerCur(k,iCell) < tracerMin(k, iCell)-eps) then
@@ -539,8 +658,10 @@ module ocn_tracer_advection_mono
               end if
            end do
            end do
+!#ifndef MPAS_OPENACC
            !$omp end do
            !$omp end parallel
+!#endif
         end if ! monotonicity check
 #ifdef _ADV_TIMERS
         call mpas_timer_stop('advect diags')
@@ -559,8 +680,13 @@ module ocn_tracer_advection_mono
         !nCells = nCellsArray( size(nCellsArray) )
         nCells = nCellsAll
         ! Initialize variables for use in this iTracer iteration
+#ifdef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(highOrderFlx,workTend) collapse(2)
+#else
         !$omp parallel
         !$omp do schedule(runtime) private(k)
+#endif
         do iCell = 1, nCells
           do k=1, nVertLevels
             highOrderFlx(k, iCell) = 0.0_RKIND
@@ -569,8 +695,11 @@ module ocn_tracer_advection_mono
           highOrderFlx(nVertLevels+1, iCell) = 0.0_RKIND
 
         end do ! iCell loop
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
+
 #ifdef _ADV_TIMERS
         call mpas_timer_stop('cell init')
 #endif
@@ -584,8 +713,14 @@ module ocn_tracer_advection_mono
         nCells = nCellsHalo(1)
 
         ! Determine bounds on tracerCur from neighbor values for limiting
+#ifdef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(minLevelCell,maxLevelCell,tracerMax,tracerMin, &
+        !$acc       tracerCur)
+#else
         !$omp parallel
         !$omp do schedule(runtime) private(kmin, kmax, k)
+#endif
         do iCell = 1, nCells
           kmin = minLevelCell(iCell)
           kmax = maxLevelCell(iCell)
@@ -609,8 +744,10 @@ module ocn_tracer_advection_mono
           tracerMin(kmax,iCell) = min(tracerCur(kmax  ,iCell), &
                                       tracerCur(kmax-1,iCell))
         end do ! cell loop
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
 
         ! Compute the high order vertical fluxes based on order selected.
         ! Special cases for top and bottom layers handled in following loop.
@@ -618,8 +755,14 @@ module ocn_tracer_advection_mono
         select case (vertOrder)
         case (vertOrder4)
 
+#ifdef MPAS_OPENACC
+          !$acc parallel loop &
+          !$acc    present(minLevelCell,maxLevelCell,highOrderFlx,w, &
+          !$acc       tracerCur)
+#else
           !$omp parallel
           !$omp do schedule(runtime) private(kmin, kmax, k)
+#endif
           do iCell = 1, nCells
             kmin = minLevelCell(iCell)
             kmax = maxLevelCell(iCell)
@@ -628,16 +771,23 @@ module ocn_tracer_advection_mono
                   7.0_RKIND*(tracerCur(k  ,iCell) + tracerCur(k-1,iCell)) - &
                             (tracerCur(k+1,iCell) + tracerCur(k-2,iCell)))/ &
                   12.0_RKIND
-
             end do
           end do ! cell loop
+#ifndef MPAS_OPENACC
           !$omp end do
           !$omp end parallel
+#endif
 
         case (vertOrder3)
 
+#ifdef MPAS_OPENACC
+          !$acc parallel loop &
+          !$acc    present(minLevelCell,maxLevelCell,highOrderFlx, &
+          !$acc       w,tracerCur)
+#else
           !$omp parallel
           !$omp do schedule(runtime) private(kmin, kmax, k)
+#endif
           do iCell = 1, nCells
             kmin = minLevelCell(iCell)
             kmax = maxLevelCell(iCell)
@@ -653,13 +803,23 @@ module ocn_tracer_advection_mono
 
             end do
           end do ! cell loop
+#ifndef MPAS_OPENACC
           !$omp end do
           !$omp end parallel
+#endif
 
        case (vertOrder2)
 
+#ifdef MPAS_OPENACC
+          !$acc parallel loop &
+          !$acc    present(minLevelCell,maxLevelCell,hProv, &
+          !$acc       w,tracerCur) &
+          !$acc    private(kmin, kmax, k, verticalWeightK, verticalWeightKm1)
+         
+#else
           !$omp parallel
           !$omp do schedule(runtime) private(kmin, kmax, k, verticalWeightK, verticalWeightKm1)
+#endif
           do iCell = 1, nCells
             kmin = minLevelCell(iCell)
             kmax = maxLevelCell(iCell)
@@ -673,8 +833,10 @@ module ocn_tracer_advection_mono
                                   verticalWeightKm1*tracerCur(k-1,iCell))
             end do
           end do ! cell loop
+#ifndef MPAS_OPENACC
           !$omp end do
           !$omp end parallel
+#endif
 
         end select ! vertical order
 
@@ -682,8 +844,16 @@ module ocn_tracer_advection_mono
         ! Compute low order upwind vertical flux (monotonic and diffused)
         ! Remove low order flux from the high order flux.
         ! Store left over high order flux in highOrderFlx array.
+
+#ifdef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(minLevelCell,maxLevelCell,highOrderFlx,hProv, &
+        !$acc       w,tracerCur,lowOrderFlx,workTend,flxIn,flxOut) &
+        !$acc    private(kmin, kmax, verticalWeightK, verticalWeightKm1, k)
+#else
         !$omp parallel
         !$omp do schedule(runtime) private(kmin, kmax, verticalWeightK, verticalWeightKm1, k)
+#endif
         do iCell = 1, nCells
           kmin = minLevelCell(iCell)
           kmax = maxLevelCell(iCell)
@@ -735,8 +905,10 @@ module ocn_tracer_advection_mono
                              - max(0.0_RKIND, highOrderFlx(k  , iCell))
           end do ! k Loop
         end do ! iCell Loop
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
 
 #ifdef _ADV_TIMERS
         call mpas_timer_stop('vertical flux')
@@ -745,9 +917,18 @@ module ocn_tracer_advection_mono
         ! Need one halo of cells around owned cells
         !nCells = nCellsArray( 2 )
         nCells = nCellsHalo(1)
+
+#ifndef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(minLevelCell,maxLevelCell,tracerCur,hProv, &
+        !$acc       workTend,flxOut,hNewInv,tracerMax,tracerMin, &
+        !$acc       flxIn,flxOut) &
+        !$acc    private(k, tracerMinNew, tracerMaxNew, tracerUpwindNew, scaleFactor)
+#else
         !$omp parallel
         !$omp do schedule(runtime) &
         !$omp private(k, tracerMinNew, tracerMaxNew, tracerUpwindNew, scaleFactor)
+#endif
         do iCell = 1, nCells
 
           ! Build the scale factors to limit flux for FCT
@@ -775,8 +956,11 @@ module ocn_tracer_advection_mono
             flxOut(k,iCell) = min(1.0_RKIND, max(0.0_RKIND, scaleFactor))
           end do ! k loop
         end do ! iCell loop
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
+
 #ifdef _ADV_TIMERS
         call mpas_timer_stop('scale factor build')
         call mpas_timer_start('flux accumulate')
@@ -786,8 +970,15 @@ module ocn_tracer_advection_mono
         nCells = nCellsOwned
         ! Accumulate the scaled high order vertical tendencies
         ! and the upwind tendencies
+#ifdef MPAS_OPENACC
+        !$acc parallel loop &
+        !$acc    present(minLevelCell,maxLevelCell,highOrderFlx, &
+        !$acc       flxOut,flxIn,workTend,tend) &
+        !$acc    private(kmin, kmax, k, flux)
+#else
         !$omp parallel
         !$omp do schedule(runtime) private(kmin, kmax, k, flux)
+#endif
         do iCell = 1, nCells
           kmin = minLevelCell(iCell)
           kmax = maxLevelCell(iCell)
@@ -812,8 +1003,10 @@ module ocn_tracer_advection_mono
           end do ! k loop
 
         end do ! iCell loop
+#ifndef MPAS_OPENACC
         !$omp end do
         !$omp end parallel
+#endif
 
         ! Compute advection diagnostics and monotonicity checks if requested
 #ifdef _ADV_TIMERS
@@ -821,8 +1014,16 @@ module ocn_tracer_advection_mono
         call mpas_timer_start('advect diags')
 #endif
         if (computeBudgets) then
+#ifdef MPAS_OPENACC
+           !$acc parallel loop &
+           !$acc    present(minLevelCell,maxLevelCell, &
+           !$acc       activeTracerVerticalAdvectionTopFlux, &
+           !$acc       lowOrderFlx,highOrderFlx,workTend, &
+           !$acc       activeTracerVerticalAdvectionTendency)
+#else
            !$omp parallel
            !$omp do schedule(runtime) private(k)
+#endif
            do iCell = 1, nCells
               do k = minLevelCell(iCell)+1, maxLevelCell(iCell)
                  activeTracerVerticalAdvectionTopFlux(iTracer,k,iCell) = &
@@ -833,16 +1034,27 @@ module ocn_tracer_advection_mono
                     workTend(k,iCell)
               end do
            end do ! iCell loop
+#ifndef MPAS_OPENACC
            !$omp end do
            !$omp end parallel
+#endif
         end if ! computeBudgets
 
         if (monotonicityCheck) then
           !nCells = nCellsArray( 1 )
           nCells = nCellsOwned
           ! Check for monotonicity of new tracer value
+          !$acc update self(tracerCur,tracerMin,tracerMax)
+!#ifdef MPAS_OPENACC
+!          !$acc parallel loop &
+!          !$acc    present(minLevelCell,maxLevelCell, &
+!          !$acc       tracerCur,hProv,workTend,hNewInv, &
+!          !$acc       tracerMin,tracerMax) &
+!          !$acc    private(k,tracerNew)
+!#else
           !$omp parallel
           !$omp do schedule(runtime) private(k, tracerNew)
+!#endif
           do iCell = 1, nCells
           do k = minLevelCell(iCell), maxLevelCell(iCell)
              ! workTend on the RHS is the total vertical advection tendency
@@ -864,8 +1076,10 @@ module ocn_tracer_advection_mono
              end if
           end do
           end do
+!#ifndef MPAS_OPENACC
           !$omp end do
           !$omp end parallel
+!#endif
         end if ! monotonicity check
 #ifdef _ADV_TIMERS
         call mpas_timer_stop('advect diags')
@@ -875,6 +1089,13 @@ module ocn_tracer_advection_mono
 #ifdef _ADV_TIMERS
       call mpas_timer_start('deallocates')
 #endif
+
+      !$acc exit data delete (tracerCur,tracerMin,tracerMax, &
+      !$acc                   hNewInv,hProv,hProvInv, &
+      !$acc                   flxIn,flxOut, &
+      !$acc                   workTend,lowOrderFlx,highOrderFlx, &
+      !$acc                   wgtTmp,flxTmp,sgnTmp)
+
       deallocate(tracerCur,    &
                  tracerMin,    &
                  tracerMax,    &

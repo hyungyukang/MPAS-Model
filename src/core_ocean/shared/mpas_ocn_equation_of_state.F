@@ -94,7 +94,7 @@ contains
 
    subroutine ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
                            nCells, kDisplaced, displacement_type, &
-                           activeTracers, density, err, &
+                           activeTracers, density, indexT,indexS, err, &
                            thermalExpansionCoeff, salineContractionCoeff, &
                            timeLevelIn)
       !{{{
@@ -120,6 +120,8 @@ contains
 
       real (kind=RKIND), dimension(:,:,:), pointer, intent(in) :: activeTracers
 
+      integer, pointer, intent(in) :: indexT, indexS
+
       !-----------------------------------------------------------------
       ! Output variables
       !-----------------------------------------------------------------
@@ -143,8 +145,8 @@ contains
 
       type (mpas_pool_type), pointer :: tracersPool
 
-      integer :: iCell, k, indexT, indexS
-      integer, pointer :: indexTptr, indexSptr
+      integer :: iCell, k !, indexT, indexS
+!     integer, pointer :: indexTptr, indexSptr
       integer :: timeLevel
 
       !-----------------------------------------------------------------
@@ -166,17 +168,17 @@ contains
                                                  tracersPool)
 !     call mpas_pool_get_array    (tracersPool, 'activeTracers', &
 !                                                activeTracers, timeLevel)
-      call mpas_pool_get_dimension(tracersPool, 'index_temperature', &
-                                                 indexTptr)
-      call mpas_pool_get_dimension(tracersPool, 'index_salinity', &
-                                                 indexSptr)
+!     call mpas_pool_get_dimension(tracersPool, 'index_temperature', &
+!                                                indexTptr)
+!     call mpas_pool_get_dimension(tracersPool, 'index_salinity', &
+!                                                indexSptr)
 !     call mpas_pool_get_dimension(meshPool,    'nVertLevels', &
 !                                                nVertLevelsPtr)
 !     call mpas_pool_get_array    (meshPool,    'maxLevelCell', &
 !                                                maxLevelCell)
 
-      indexT      = indexTptr
-      indexS      = indexSptr
+!     indexT      = indexTptr
+!     indexS      = indexSptr
 !     nVertLevels = nVertLevelsPtr
 
       !*** call specific equation of state based on user choice

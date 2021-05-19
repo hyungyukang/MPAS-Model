@@ -192,7 +192,9 @@ contains
 
       integer, intent(in) :: &
          nCells,             &! number of horizontal cells
-         kDisplaced,         &! target layer for displacement
+         kDisplaced           ! target layer for displacement
+
+      integer,pointer, intent(in) :: &
          indexT,             &! temperature index in tracer array
          indexS               ! salinity    index in tracer array
 
@@ -245,7 +247,7 @@ contains
 
       !*** allocate and compute pressure array
 
-      allocate(p(nVertLevels),p2(nVertLevels))
+!     allocate(p(nVertLevels),p2(nVertLevels))
 
       ! Determine pressure to use in density calculation
       !  If kDisplaced=0, in-situ density is returned (no displacement)
@@ -278,8 +280,8 @@ contains
       if (kDisplacedLocal == 0) then
          ! use pressure at in situ level
          do k=1,nVertLevels
-            p (k) = ocnEqStatePRef(k)
-            p2(k) = ocnEqStatePRef(k)*ocnEqStatePRef(k)
+            temp1Vert(k) = ocnEqStatePRef(k)
+            temp2Vert(k) = ocnEqStatePRef(k)*ocnEqStatePRef(k)
          enddo
       else ! kDisplacedLocal /= 0
          do k=1,nVertLevels
@@ -291,8 +293,8 @@ contains
                kTmp = min(kDisplacedLocal, nVertLevels)
             endif
             kRef  = max(kTmp, 1)  ! make sure index bounded to 1
-            p (k) = ocnEqStatePRef(kRef)
-            p2(k) = ocnEqStatePRef(kRef)*ocnEqStatePRef(kRef)
+            temp1Vert(k) = ocnEqStatePRef(kRef)
+            temp2Vert(k) = ocnEqStatePRef(kRef)*ocnEqStatePRef(kRef)
          enddo
       endif
 
@@ -337,9 +339,11 @@ contains
       endif
 
 #ifdef MPAS_OPENACC
-      !$acc enter data copyin(density, p, p2, tracerTemp, tracerSalt)
+      !$acc update device(temp1Vert,temp2Vert)
+
+      !$acc enter data copyin(density, tracerTemp, tracerSalt)
       !$acc parallel loop gang vector collapse(2) &
-      !$acc&   present(density, p, p2, tracerTemp, tracerSalt)
+      !$acc    present(density, temp1Vert, temp2Vert, tracerTemp, tracerSalt)
 #else
       !$omp parallel
       !$omp do schedule(runtime) &
@@ -372,22 +376,22 @@ contains
 
          work3 = bup0s1t0 + bup0s1t1*tq +     &
                 (bup0s1t2 + bup0s1t3*tq)*t2 + &
-          p(k) *(bup1s1t0 + bup1s1t1*tq + bup1s1t2*t2) + &
-          p2(k)*(bup2s1t0 + bup2s1t1*tq + bup2s1t2*t2)
+          temp1Vert(k) *(bup1s1t0 + bup1s1t1*tq + bup1s1t2*t2) + &
+          temp2Vert(k)*(bup2s1t0 + bup2s1t1*tq + bup2s1t2*t2)
 
          work4 = sqr*(bup0sqt0 + bup0sqt1*tq + bup0sqt2*t2 + &
-                      bup1sqt0*p(k))
+                      bup1sqt0*temp1Vert(k))
 
          bulkMod = bup0s0t0 + bup0s0t1*tq +                    &
                   (bup0s0t2 + bup0s0t3*tq + bup0s0t4*t2)*t2 + &
-            p(k) *(bup1s0t0 + bup1s0t1*tq +                &
+            temp1Vert(k) *(bup1s0t0 + bup1s0t1*tq +                &
                   (bup1s0t2 + bup1s0t3*tq)*t2) +           &
-            p2(k)*(bup2s0t0 + bup2s0t1*tq + bup2s0t2*t2) + &
+            temp2Vert(k)*(bup2s0t0 + bup2s0t1*tq + bup2s0t2*t2) + &
                    sq*(work3 + work4)
 
 
          density(k,iCell) = (unt0 + rhosfc)*bulkMod/ &
-                            (bulkMod - p(k))
+                            (bulkMod - temp1Vert(k))
 
       end do
       end do
@@ -399,7 +403,7 @@ contains
       !$omp end parallel
 #endif
 
-      deallocate(p,p2)
+!     deallocate(p,p2)
       deallocate(tracerTemp)
       deallocate(tracerSalt)
 
@@ -515,7 +519,7 @@ contains
 
       !*** allocate and compute pressure array
 
-      allocate(p(nVertLevels),p2(nVertLevels))
+!     allocate(p(nVertLevels),p2(nVertLevels))
 
       ! Determine pressure to use in density calculation
       !  If kDisplaced=0, in-situ density is returned (no displacement)
@@ -548,8 +552,8 @@ contains
       if (kDisplacedLocal == 0) then
          ! use pressure at in situ level
          do k=1,nVertLevels
-            p (k) = ocnEqStatePRef(k)
-            p2(k) = ocnEqStatePRef(k)*ocnEqStatePRef(k)
+            temp1Vert(k) = ocnEqStatePRef(k)
+            temp2Vert(k) = ocnEqStatePRef(k)*ocnEqStatePRef(k)
          enddo
       else ! kDisplacedLocal /= 0
          do k=1,nVertLevels
@@ -561,8 +565,8 @@ contains
                kTmp = min(kDisplacedLocal, nVertLevels)
             endif
             kRef  = max(kTmp, 1)  ! make sure index bounded to 1
-            p (k) = ocnEqStatePRef(kRef)
-            p2(k) = ocnEqStatePRef(kRef)*ocnEqStatePRef(kRef)
+            temp1Vert(k) = ocnEqStatePRef(kRef)
+            temp2Vert(k) = ocnEqStatePRef(kRef)*ocnEqStatePRef(kRef)
          enddo
       endif
 
@@ -607,11 +611,17 @@ contains
       endif
 
 #ifdef MPAS_OPENACC
-      !$acc enter data copyin(density, p, p2, tracerTemp, tracerSalt, &
+
+      !$acc update device(temp1Vert,temp2Vert)
+
+      !!$acc enter data copyin(density, p, p2, tracerTemp, tracerSalt, &
+      !$acc enter data copyin(density, &
+      !$acc                   tracerTemp, tracerSalt, &
       !$acc&                  thermalExpansionCoeff,  &
       !$acc&                  salineContractionCoeff)
       !$acc parallel loop gang vector collapse(2)     &
-      !$acc&   present(density, p, p2, tracerTemp, tracerSalt, &
+      !$acc&   present(density, temp1Vert, temp2Vert, &
+      !$acc            tracerTemp, tracerSalt, &
       !$acc&           thermalExpansionCoeff,         &
       !$acc&           salineContractionCoeff)
 #else
@@ -647,24 +657,24 @@ contains
 
          work3 = bup0s1t0 + bup0s1t1*tq +                    &
                 (bup0s1t2 + bup0s1t3*tq)*t2 +                &
-          p(k) *(bup1s1t0 + bup1s1t1*tq + bup1s1t2*t2) + &
-          p2(k)*(bup2s1t0 + bup2s1t1*tq + bup2s1t2*t2)
+          temp1Vert(k) *(bup1s1t0 + bup1s1t1*tq + bup1s1t2*t2) + &
+          temp2Vert(k)*(bup2s1t0 + bup2s1t1*tq + bup2s1t2*t2)
 
          work4 = sqr*(bup0sqt0 + bup0sqt1*tq + bup0sqt2*t2 + &
-                                 bup1sqt0*p(k))
+                                 bup1sqt0*temp1Vert(k))
 
          bulkMod  = bup0s0t0 + bup0s0t1*tq +                    &
                    (bup0s0t2 + bup0s0t3*tq + bup0s0t4*t2)*t2 + &
-             p(k) *(bup1s0t0 + bup1s0t1*tq +                &
+             temp1Vert(k) *(bup1s0t0 + bup1s0t1*tq +                &
                    (bup1s0t2 + bup1s0t3*tq)*t2) +           &
-             p2(k)*(bup2s0t0 + bup2s0t1*tq + bup2s0t2*t2) + &
+             temp2Vert(k)*(bup2s0t0 + bup2s0t1*tq + bup2s0t2*t2) + &
                                         sq*(work3 + work4)
 
          !***
          !*** compute density
          !***
 
-         denomk = 1.0_RKIND/(bulkMod - p(k))
+         denomk = 1.0_RKIND/(bulkMod - temp1Vert(k))
 
          density(k, iCell) = (unt0 + rhosfc)*bulkMod*denomk
 
@@ -682,17 +692,17 @@ contains
 
          dkdt  =            bup0s0t1 + 2.0_RKIND*bup0s0t2*tq +      &
                  (3.0_RKIND*bup0s0t3 + 4.0_RKIND*bup0s0t4*tq)*t2 +  &
-                     p(k) *(bup1s0t1 + 2.0_RKIND*bup1s0t2*tq +      &
+                     temp1Vert(k) *(bup1s0t1 + 2.0_RKIND*bup1s0t2*tq +      &
                                        3.0_RKIND*bup1s0t3*t2) +     &
-                     p2(k)*(bup2s0t1 + 2.0_RKIND*bup2s0t2*tq) +     &
+                     temp2Vert(k)*(bup2s0t1 + 2.0_RKIND*bup2s0t2*tq) +     &
                         sq*(bup0s1t1 + 2.0_RKIND*bup0s1t2*tq +      &
                                        3.0_RKIND*bup0s1t3*t2 +      &
-                    p(k)  *(bup1s1t1 + 2.0_RKIND*bup1s1t2*tq) +     &
-                    p2(k) *(bup2s1t1 + 2.0_RKIND*bup2s1t2*tq) +     &
+                    temp1Vert(k)  *(bup1s1t1 + 2.0_RKIND*bup1s1t2*tq) +     &
+                    temp2Vert(k) *(bup2s1t1 + 2.0_RKIND*bup2s1t2*tq) +     &
                        sqr*(bup0sqt1 + 2.0_RKIND*bup0sqt2*tq))
 
          drhodt = (denomk*(drdt0*bulkMod -                    &
-                  p(k)*(unt0+rhosfc)*dkdt*denomk))
+                  temp1Vert(k)*(unt0+rhosfc)*dkdt*denomk))
 
          thermalExpansionCoeff(k,iCell) = -drhodt/density(k,iCell)
 
@@ -705,7 +715,7 @@ contains
          dkds   = work3 + 1.5_RKIND*work4
 
          drhods = denomk*(drds0*bulkMod -                    &
-                   p(k)*(unt0+rhosfc)*dkds*denomk)
+                   temp1Vert(k)*(unt0+rhosfc)*dkds*denomk)
 
          salineContractionCoeff(k,iCell) = drhods/density(k,iCell)
 
@@ -715,7 +725,8 @@ contains
       !$acc update host(density,                &
       !$acc&            thermalExpansionCoeff,  &
       !$acc&            salineContractionCoeff)
-      !$acc exit data delete(density, p, p2, tracerTemp, tracerSalt, &
+      !!$acc exit data delete(density, p, p2, tracerTemp, tracerSalt, &
+      !$acc exit data delete(density, tracerTemp, tracerSalt, &
       !$acc&                 thermalExpansionCoeff,  &
       !$acc&                 salineContractionCoeff)
 #else
@@ -723,7 +734,7 @@ contains
       !$omp end parallel
 #endif
 
-      deallocate(p,p2)
+!     deallocate(p,p2)
       deallocate(tracerTemp)
       deallocate(tracerSalt)
 
