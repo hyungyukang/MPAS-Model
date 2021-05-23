@@ -97,6 +97,8 @@ module ocn_tracer_advection
       logical :: &
          computeBudgets      ! flag to compute active tracer budget
 
+      integer :: iCell
+
 !     real (kind=RKIND), dimension(:,:), pointer, contiguous :: &
 !        advCoefs, advCoefs3rd ! advection coefficients
 
@@ -136,7 +138,8 @@ module ocn_tracer_advection
       ! determine whether active tracer budgets should be computed
       computeBudgets = (budgetDiagsOn .and. tracerGroupName == 'activeTracers')
 
-
+      !$acc update host(w)
+      
       ! call specific advection routine based on choice of monotonicity
       if (monotonicOn) then
          call ocn_tracer_advection_mono_tend(tend, tracers, layerThickness,    &

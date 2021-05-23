@@ -149,6 +149,15 @@ contains
       !$omp end parallel
 #endif
 
+!     !$acc update host(vertAleTransportTop)
+!     do iCell = 1, nCellsOwned
+!        do k = minLevelCell(iCell), maxLevelCell(iCell)
+!           print*, vertAleTransportTop(k,iCell)
+!        end do
+!     end do
+
+!     stop
+ 
       call mpas_timer_stop("thick vadv")
 
    !--------------------------------------------------------------------

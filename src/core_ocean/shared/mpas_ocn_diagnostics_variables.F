@@ -466,7 +466,7 @@ contains
       !$acc    copyin( &
                ! Variables that 'ocn_tend_vel' uses
       !$acc    sfcFlxAttCoeff, &
-      !$acc    tangentialVelocity, density, potentialDensity, zMid, &
+      !$acc    tangentialVelocity, density, potentialDensity, zMid, zTop, &
       !$acc    pressure,circulation,&
       !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
       !$acc    normPlanetVortEdge, montgomeryPotential, &
@@ -514,7 +514,7 @@ contains
       !$acc    delete( &
                ! Variables that 'ocn_tend_vel' uses
       !$acc    sfcFlxAttCoeff, &
-      !$acc    tangentialVelocity, density, potentialDensity, zMid, &
+      !$acc    tangentialVelocity, density, potentialDensity, zMid, zTop, &
       !$acc    pressure,circulation,&
       !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
       !$acc    normPlanetVortEdge, montgomeryPotential, &
@@ -568,7 +568,7 @@ contains
                ! Variables that 'ocn_tend_vel' uses
       !$acc    device ( &
       !$acc    sfcFlxAttCoeff, &
-      !$acc    tangentialVelocity, density, potentialDensity, zMid, &
+      !$acc    tangentialVelocity, density, potentialDensity, zMid, zTop, &
       !$acc    pressure,circulation,&
       !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
       !$acc    normPlanetVortEdge, montgomeryPotential, &

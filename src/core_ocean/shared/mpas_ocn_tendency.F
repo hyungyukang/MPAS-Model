@@ -957,7 +957,6 @@ contains
                                               dt, tracerGroupTend, &
                                               trim(groupItr % memberName))
 
-
  
 
                !
@@ -1053,6 +1052,7 @@ contains
                call ocn_tracer_surface_flux_tend(meshPool, fractionAbsorbed, fractionAbsorbedRunoff, layerThickness, &
                                                  tracerGroupSurfaceFlux, tracerGroupSurfaceFluxRunoff,  &
                                                  tracerGroupTend, err)
+
 
                !
                ! Performing shortwave absorption
@@ -1212,6 +1212,8 @@ contains
                call ocn_frazil_forcing_tracers(tracersPool, groupItr%memberName, forcingPool, &
                     frazilTemperatureTendency,frazilSalinityTendency, &
                     indexTemperature,indexSalinity, tracerGroupTend, err)
+
+
             end if
            end if ! active only
          end if

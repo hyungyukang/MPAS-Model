@@ -653,12 +653,19 @@ end subroutine ocn_init_routines_compute_min_max_level!}}}
 
       integer, dimension(:,:), pointer :: highOrderAdvectionMaskTmp, boundaryCellTmp
       integer, dimension(:,:), pointer :: edgeSignOnCellTmp, edgeSignOnVertexTmp
+      real (kind=RKIND), dimension(:), pointer :: ssh,seaIcePressure, &
+           atmosphericPressure,frazilSurfacePressure,landIcePressure, &
+           landIceFraction,landIceDraft
       real (kind=RKIND), dimension(:,:), pointer :: layerThickness
       real (kind=RKIND), dimension(:,:), pointer :: normalVelocity
+      real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers
 
       real (kind=RKIND), dimension(:,:,:), pointer :: tracersGroup
 
+      integer, dimension(:), pointer :: landIceMask
+
       integer, pointer :: nCells, nEdges, nVertices, nVertLevels
+      integer, pointer :: indexTemperature,indexSalinity
 
       type (mpas_pool_iterator_type) :: groupItr
 
@@ -710,7 +717,35 @@ end subroutine ocn_init_routines_compute_min_max_level!}}}
          end do
       end if
 
-      call ocn_diagnostic_solve(dt,  statePool, forcingPool, meshPool, scratchPool, tracersPool)
+
+      call mpas_pool_get_dimension(tracersPool, 'index_temperature', &
+                                                 indexTemperature)
+      call mpas_pool_get_dimension(tracersPool, 'index_salinity', &
+                                                 indexSalinity)
+      call mpas_pool_get_array(tracersPool, 'activeTracers', &
+                                             activeTracers, 1)
+      call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
+
+      call mpas_pool_get_array(forcingPool, 'seaIcePressure', seaIcePressure)
+      call mpas_pool_get_array(forcingPool, 'atmosphericPressure', &
+                                             atmosphericPressure)
+      call mpas_pool_get_array(forcingPool, 'frazilSurfacePressure', &
+                                             frazilSurfacePressure)
+      call mpas_pool_get_array(forcingPool, 'landIcePressure', landIcePressure)
+ 
+      call mpas_pool_get_array(forcingPool, 'landIceFraction', landIceFraction)
+      call mpas_pool_get_array(forcingPool, 'landIceMask', landIceMask)
+      call mpas_pool_get_array(forcingPool, 'landIceDraft', landIceDraft)
+
+
+      !call ocn_diagnostic_solve(dt,  statePool, forcingPool, meshPool, scratchPool, tracersPool)
+      call ocn_diagnostic_solve(dt, statePool, forcingPool, &
+           meshPool, scratchPool, tracersPool, &
+           indexTemperature,indexSalinity,layerThickness, &
+           normalVelocity,activeTracers,ssh, &
+           seaIcePressure,atmosphericPressure, &
+           frazilSurfacePressure,landIcePressure, &
+           landIceFraction,landIceMask,landIceDraft)
 
       ! initialize velocities and active tracers on land to be zero.
       areaCell(nCells+1) = -1.0e34_RKIND
@@ -774,8 +809,6 @@ end subroutine ocn_init_routines_compute_min_max_level!}}}
       call ocn_surface_land_ice_fluxes_build_arrays(meshPool, &
                                                     forcingPool, scratchPool, statePool, dt, err1)
       err = ior(err, err1)
-
-
 
    end subroutine ocn_init_routines_block!}}}
 
