@@ -231,6 +231,15 @@ module ocn_analysis_mode
       type (mpas_pool_type), pointer :: meshPool
       type (mpas_pool_type), pointer :: scratchPool
 
+      real (kind=RKIND), dimension(:), pointer :: ssh,seaIcePressure, &
+           atmosphericPressure,frazilSurfacePressure,landIcePressure, &
+           landIceFraction,landIceDraft
+      real (kind=RKIND), dimension(:,:), pointer :: layerThickness
+      real (kind=RKIND), dimension(:,:), pointer :: normalVelocity
+      real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers
+      integer, dimension(:), pointer :: landIceMask
+      integer, pointer :: indexTemperature,indexSalinity
+
       type (MPAS_timeInterval_type) :: timeStep
       character (len=StrKIND), pointer :: config_dt
       logical, pointer :: config_write_output_on_startup
@@ -256,7 +265,54 @@ module ocn_analysis_mode
          call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
          call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
 
-         call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 1)
+         call mpas_pool_get_array(statePool, 'normalVelocity', normalVelocity, 1)
+         call mpas_pool_get_array(statePool, 'layerThickness', layerThickness, 1)
+         call mpas_pool_get_dimension(tracersPool, 'index_temperature', &
+                                                    indexTemperature)
+         call mpas_pool_get_dimension(tracersPool, 'index_salinity', &
+                                                    indexSalinity)
+         call mpas_pool_get_array(tracersPool, 'activeTracers', &
+                                                activeTracers, 1)
+         call mpas_pool_get_array(statePool, 'ssh', ssh, 1)
+         call mpas_pool_get_array(forcingPool, 'seaIcePressure', seaIcePressure)
+         call mpas_pool_get_array(forcingPool, 'atmosphericPressure', &
+                                                atmosphericPressure)
+         call mpas_pool_get_array(forcingPool, 'frazilSurfacePressure', &
+                                                frazilSurfacePressure)
+         call mpas_pool_get_array(forcingPool, 'landIcePressure', landIcePressure)
+   
+         call mpas_pool_get_array(forcingPool, 'landIceFraction', landIceFraction)
+         call mpas_pool_get_array(forcingPool, 'landIceMask', landIceMask)
+         call mpas_pool_get_array(forcingPool, 'landIceDraft', landIceDraft)
+
+!        call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 1)
+
+         !$acc enter data &
+         !$acc    copyin(indexTemperature,indexSalinity,activeTracers,ssh, &
+         !$acc       seaIcePressure,atmosphericPressure,frazilSurfacePressure, &
+         !$acc       landIcePressure,landIceFraction,landIceMask,landIceDraft, &
+         !$acc       layerThickness,normalVelocity)
+   
+         !call ocn_diagnostic_solve(dt,  statePool, forcingPool, meshPool,
+         !scratchPool, tracersPool)
+         call ocn_diagnostic_solve(dt, statePool, forcingPool, &
+              meshPool, scratchPool, tracersPool, &
+              indexTemperature,indexSalinity,layerThickness, &
+              normalVelocity,activeTracers,ssh, &
+              seaIcePressure,atmosphericPressure, &
+              frazilSurfacePressure,landIcePressure, &
+              landIceFraction,landIceMask,landIceDraft)
+   
+         call ocn_diagnostics_variables_update_host(err)
+   
+         !$acc exit data &
+         !$acc    delete(indexTemperature,indexSalinity,activeTracers,ssh, &
+         !$acc       seaIcePressure,atmosphericPressure,frazilSurfacePressure, &
+         !$acc       landIcePressure,landIceFraction,landIceMask,landIceDraft, &
+         !$acc       layerThickness,normalVelocity)
+
+
+
          block_ptr => block_ptr % next
       end do
 

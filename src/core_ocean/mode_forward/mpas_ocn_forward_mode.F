@@ -230,20 +230,17 @@ module ocn_forward_mode
       ierr = ior(ierr,err_tmp)
       call ocn_tracer_MacroMolecules_init(domain, err_tmp)
       ierr = ior(ierr,err_tmp)
-
       call ocn_vmix_init(domain, err_tmp)
       ierr = ior(ierr, err_tmp)
-
       call ocn_equation_of_state_init(domain, err_tmp)
       ierr = ior(ierr, err_tmp)
-
       call ocn_tendency_init(err_tmp)
       ierr = ior(ierr,err_tmp)
       call ocn_diagnostics_init(domain, err_tmp)
       ierr = ior(ierr,err_tmp)
-
       call ocn_forcing_init(err_tmp)
       ierr = ior(ierr,err_tmp)
+
 
       if(ierr.eq.1) then
           call mpas_log_write('An error was encountered while initializing the MPAS-Ocean forward mode', MPAS_LOG_CRIT)
@@ -296,12 +293,12 @@ module ocn_forward_mode
       if (config_maxMeshDensity < 0.0_RKIND) then
         maxDensity=-1
         block => domain % blocklist
-        do while (associated(block))
+!       do while (associated(block))
           call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
           call mpas_pool_get_array(meshPool, 'meshDensity', meshDensity)
           maxDensity = max(maxDensity, maxval(meshDensity))
-          block => block % next
-        end do
+!         block => block % next
+!       end do
         call mpas_dmpar_max_real(domain % dminfo, maxDensity, maxDensity_global)
         config_maxMeshDensity = maxDensity_global
       endif
@@ -312,13 +309,18 @@ module ocn_forward_mode
 
       ! fill the ocean mesh structure
       call ocn_meshCreate(domain)
+      call mpas_log_write('aaa')
 
       timeStep = mpas_get_clock_timestep(domain % clock, ierr=err_tmp)
       call mpas_get_timeInterval(timeStep, dt=dt)
 
       block => domain % blocklist
-      do while (associated(block))
+!     do while (associated(block))
          call ocn_init_routines_block(block, dt, ierr)
+      call mpas_log_write('bbb')
+       
+!        print*, 'STOP here'
+!        STOP
 
          if(ierr.eq.1) then
              call mpas_log_write('An error was encountered in ocn_init_routines_block', MPAS_LOG_CRIT)
@@ -331,19 +333,20 @@ module ocn_forward_mode
             simulationStartTime = startTimeStamp
          end if
 
-         block => block % next
-      end do
+!        block => block % next
+!     end do
+      call mpas_log_write('ccc')
 
-      block => domain % blocklist
-      do while (associated(block))
+!     block => domain % blocklist
+!     do while (associated(block))
          ! compute time since start of simulation, in days
          call mpas_set_time(xtime_timeType, dateTimeString=xtime)
          call mpas_set_time(simulationStartTime_timeType, dateTimeString=simulationStartTime)
          call mpas_get_timeInterval(xtime_timeType - simulationStartTime_timeType,dt=daysSinceStartOfSim)
          daysSinceStartOfSim = daysSinceStartOfSim*days_per_second
 
-         block => block % next
-      end do
+!        block => block % next
+!     end do
 
       ! Update any mesh fields that may have been modified during init
       call ocn_meshUpdateFields(domain)
@@ -360,6 +363,8 @@ module ocn_forward_mode
           call mpas_log_write('An error was encountered while initializing ' &
                // 'the analysis members in the MPAS-Ocean forward mode', MPAS_LOG_CRIT)
       endif
+
+      call mpas_log_write('ddd')
 
       if (config_use_surface_salinity_monthly_restoring) then
       !initialize the alarm for reading salinity data for restoring
@@ -396,6 +401,7 @@ module ocn_forward_mode
       call mpas_dmpar_exch_group_add_field(domain, 'subcycleFields', 'normalBarotropicVelocitySubcycle')
       call mpas_dmpar_exch_group_build_reusable_buffers(domain, 'subcycleFields')
 
+      call mpas_log_write('eee')
    end function ocn_forward_mode_init!}}}
 
 !***********************************************************************
@@ -515,6 +521,8 @@ module ocn_forward_mode
           call mpas_timer_stop('io_write')
       endif
 
+       call mpas_log_write('!!!')
+
       ! read initial data required for variable shortwave
       call mpas_timer_start('io_shortwave',.false.)
       call ocn_get_shortWaveData(domain % streamManager, domain, domain % clock, .true.)
@@ -535,6 +543,7 @@ module ocn_forward_mode
         call mpas_timer_stop('io_monthly_surface_salinity')
       endif
 
+       call mpas_log_write('@@@')
       ! initialize time-varying forcing
       call ocn_time_varying_forcing_init(domain)
       call ocn_time_varying_forcing_get(domain % streamManager, domain, domain % clock)
@@ -558,6 +567,7 @@ module ocn_forward_mode
 
          itimestep = itimestep + 1
          call mpas_advance_clock(domain % clock)
+       call mpas_log_write('###')
 
          currTime = mpas_get_clock_time(domain % clock, MPAS_NOW, ierr)
          call mpas_get_time(curr_time=currTime, dateTimeString=timeStamp, ierr=ierr)
@@ -710,11 +720,15 @@ module ocn_forward_mode
 
       integer :: ierr
 
+      ! destroy the ocean mesh structure
+      call ocn_meshDestroy(ierr)
+
       ! destroy the ocean diagnostic variables
       call ocn_diagnostics_variables_destroy(ierr)
 
-      ! destroy the ocean mesh structure
-      call ocn_meshDestroy(ierr)
+      ! destory the ocean equation of state
+!     call ocn_equation_of_state_destroy(ierr)
+!     !$acc exit data copyin(implicitBottomDragCoef)
 
       call mpas_dmpar_exch_group_destroy_reusable_buffers(domain, 'subcycleFields')
 

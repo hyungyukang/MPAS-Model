@@ -2737,7 +2737,8 @@ module ocn_time_integration_si
 
                ! Efficiency note: We really only need this to compute layerThickEdge, density, pressure, and SSH
                ! in this diagnostics solve.
-               call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 2)
+! Currently commented out for compiling - will be edited later
+!              call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 2)
 
 
             !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -2905,7 +2906,8 @@ module ocn_time_integration_si
         ! be computed.  For kpp, more variables may be needed.  Either way, this
         ! could be made more efficient by only computing what is needed for the
         ! implicit vmix routine that follows.
-        call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 2)
+! Currently commented out for compiling - will be edited later
+!       call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 2)
 
         block => block % next
       end do
@@ -2925,7 +2927,9 @@ module ocn_time_integration_si
         !if (config_use_GM) then
         !   call ocn_gm_compute_Bolus_velocity(meshPool, scratchPool)
         !end if
-        call ocn_vmix_implicit(dt, meshPool, statePool, forcingPool, scratchPool, err, 2)
+
+! Currently commented out for compiling - will be edited later
+!       call ocn_vmix_implicit(dt, meshPool, statePool, forcingPool, scratchPool, err, 2)
 
         block => block % next
       end do
@@ -2995,7 +2999,8 @@ module ocn_time_integration_si
             !$omp end parallel
          end if
 
-         call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 2)
+! Currently commented out for compiling - will be edited later
+!        call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 2)
 
          ! Update the effective desnity in land ice if we're coupling to land ice
          call ocn_effective_density_in_land_ice_update(meshPool, forcingPool, statePool, err)

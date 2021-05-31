@@ -738,6 +738,12 @@ end subroutine ocn_init_routines_compute_min_max_level!}}}
       call mpas_pool_get_array(forcingPool, 'landIceDraft', landIceDraft)
 
 
+      !$acc enter data &
+      !$acc    copyin(indexTemperature,indexSalinity,activeTracers,ssh, &
+      !$acc       seaIcePressure,atmosphericPressure,frazilSurfacePressure, &
+      !$acc       landIcePressure,landIceFraction,landIceMask,landIceDraft, &
+      !$acc       layerThickness,normalVelocity)
+
       !call ocn_diagnostic_solve(dt,  statePool, forcingPool, meshPool, scratchPool, tracersPool)
       call ocn_diagnostic_solve(dt, statePool, forcingPool, &
            meshPool, scratchPool, tracersPool, &
@@ -746,6 +752,15 @@ end subroutine ocn_init_routines_compute_min_max_level!}}}
            seaIcePressure,atmosphericPressure, &
            frazilSurfacePressure,landIcePressure, &
            landIceFraction,landIceMask,landIceDraft)
+
+      call ocn_diagnostics_variables_update_host(err)
+
+      !$acc exit data &
+      !$acc    delete(indexTemperature,indexSalinity,activeTracers,ssh, &
+      !$acc       seaIcePressure,atmosphericPressure,frazilSurfacePressure, &
+      !$acc       landIcePressure,landIceFraction,landIceMask,landIceDraft, &
+      !$acc       layerThickness,normalVelocity)
+      
 
       ! initialize velocities and active tracers on land to be zero.
       areaCell(nCells+1) = -1.0e34_RKIND

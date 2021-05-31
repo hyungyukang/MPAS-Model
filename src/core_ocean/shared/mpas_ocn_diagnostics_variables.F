@@ -48,8 +48,8 @@ module ocn_diagnostics_variables
    real (kind=RKIND), dimension(:,:), pointer :: normRelVortEdge
    real (kind=RKIND), dimension(:,:), pointer :: normalizedRelativeVorticityCell
    real (kind=RKIND), dimension(:,:), pointer :: density
-   real (kind=RKIND), dimension(:,:), pointer :: displaceddensity
-   real (kind=RKIND), dimension(:,:), pointer :: potentialdensity
+   real (kind=RKIND), dimension(:,:), pointer :: displacedDensity
+   real (kind=RKIND), dimension(:,:), pointer :: potentialDensity
    real (kind=RKIND), dimension(:,:), pointer :: montgomeryPotential
    real (kind=RKIND), dimension(:,:), pointer :: pressure
    real (kind=RKIND), dimension(:,:), pointer :: thermExpCoeff
@@ -205,6 +205,7 @@ module ocn_diagnostics_variables
 
    public :: ocn_diagnostics_variables_init, &
              ocn_diagnostics_variables_update, &
+             ocn_diagnostics_variables_update_host, &
              ocn_diagnostics_variables_destroy
 
 !***********************************************************************
@@ -467,10 +468,10 @@ contains
                ! Variables that 'ocn_tend_vel' uses
       !$acc    sfcFlxAttCoeff, &
       !$acc    tangentialVelocity, density, potentialDensity, zMid, zTop, &
-      !$acc    pressure,circulation,&
+      !$acc    pressure,circulation,normalTransportVelocity, &
       !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
       !$acc    normPlanetVortEdge, montgomeryPotential, &
-      !$acc    divergence, vertViscTopOfEdge, &
+      !$acc    divergence, vertViscTopOfEdge, relativeVorticityCell, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
       !$acc    topDrag,topDragMag, layerThickEdge, &
       !$acc    normalGMBolusVelocity, &
@@ -479,15 +480,20 @@ contains
       !$acc    activeTracerHorizontalAdvectionTendency, &
       !$acc    activeTracerVerticalAdvectionTendency, &
       !$acc    activeTracerVerticalAdvectionTopFlux, &
-      !$acc    activeTracerHorMixTendency, &
+      !$acc    activeTracerHorMixTendency, landIceTracerTransferVelocities, &
       !$acc    activeTracerSurfaceFluxTendency, &
-      !$acc    temperatureShortWaveTendency, &
-      !$acc    activeTracerNonLocalTendency, &
-      !$acc    vertNonLocalFlux, &
-      !$acc    penetrativeTemperatureFluxOBL, &
-      !$acc    surfaceBuoyancyForcing, &
-      !$acc    edgeAreaFractionOfCell, &
-      !$acc    surfaceFrictionVelocity)
+      !$acc    temperatureShortWaveTendency, activeTracerVertMixTendency, &
+      !$acc    activeTracerNonLocalTendency, landIceFrictionVelocity, &
+      !$acc    vertNonLocalFlux, vertVelocityTop, vertGMBolusVelocityTop, &
+      !$acc    penetrativeTemperatureFluxOBL, vertTransportVelocityTop,  &
+      !$acc    surfaceBuoyancyForcing, surfacePressure, &
+      !$acc    edgeAreaFractionOfCell, RiTopOfCell, &
+      !$acc    surfaceFrictionVelocity, displacedDensity, &
+      !$acc    normalizedRelativeVorticityCell,BruntVaisalaFreqTop, &
+      !$acc    landIceBoundaryLayerTracers, vertDiffTopOfCell, &
+      !$acc    surfaceFluxAttenuationCoefficientRunoff, &
+      !$acc    tracersSurfaceValue,tracersSurfaceLayerValue, &
+      !$acc    normalVelocitySurfaceLayer)
 
     end subroutine ocn_diagnostics_variables_init!}}}
 
@@ -515,10 +521,10 @@ contains
                ! Variables that 'ocn_tend_vel' uses
       !$acc    sfcFlxAttCoeff, &
       !$acc    tangentialVelocity, density, potentialDensity, zMid, zTop, &
-      !$acc    pressure,circulation,&
+      !$acc    pressure,circulation,normalTransportVelocity, &
       !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
       !$acc    normPlanetVortEdge, montgomeryPotential, &
-      !$acc    divergence, vertViscTopOfEdge, &
+      !$acc    divergence, vertViscTopOfEdge, relativeVorticityCell, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
       !$acc    topDrag,topDragMag, layerThickEdge, &
       !$acc    normalGMBolusVelocity, &
@@ -527,15 +533,20 @@ contains
       !$acc    activeTracerHorizontalAdvectionTendency, &
       !$acc    activeTracerVerticalAdvectionTendency, &
       !$acc    activeTracerVerticalAdvectionTopFlux, &
-      !$acc    activeTracerHorMixTendency, &
+      !$acc    activeTracerHorMixTendency, landIceTracerTransferVelocities, &
       !$acc    activeTracerSurfaceFluxTendency, &
-      !$acc    temperatureShortWaveTendency, &
-      !$acc    activeTracerNonLocalTendency, &
-      !$acc    vertNonLocalFlux, &
-      !$acc    penetrativeTemperatureFluxOBL, &
-      !$acc    surfaceBuoyancyForcing, &
-      !$acc    edgeAreaFractionOfCell, &
-      !$acc    surfaceFrictionVelocity)
+      !$acc    temperatureShortWaveTendency, activeTracerVertMixTendency, &
+      !$acc    activeTracerNonLocalTendency, landIceFrictionVelocity, &
+      !$acc    vertNonLocalFlux, vertVelocityTop, vertGMBolusVelocityTop, &
+      !$acc    penetrativeTemperatureFluxOBL, vertTransportVelocityTop, &
+      !$acc    surfaceBuoyancyForcing, surfacePressure, &
+      !$acc    edgeAreaFractionOfCell, RiTopOfCell, &
+      !$acc    surfaceFrictionVelocity, displacedDensity, &
+      !$acc    normalizedRelativeVorticityCell,BruntVaisalaFreqTop, &
+      !$acc    landIceBoundaryLayerTracers, vertDiffTopOfCell, &
+      !$acc    surfaceFluxAttenuationCoefficientRunoff, &
+      !$acc    tracersSurfaceValue,tracersSurfaceLayerValue, &
+      !$acc    normalVelocitySurfaceLayer)
 
 !!! Don't forget later
 !!! [layerThickEdge,normalGMBolusVelocity,normalTransportVelocity,
@@ -548,9 +559,9 @@ contains
 
 !***********************************************************************
 !
-!  routine ocn_diagnostics_variables_destroy
+!  routine ocn_diagnostics_variables_update
 !
-!> \brief   Destroy variables in the diagnosticsPool from device
+!> \brief   Update variables in the diagnosticsPool to device
 !> \author  Matt Turner and Hyun-Gyu Kang
 !> \date    26 Apr 2021
 !> \details
@@ -569,10 +580,10 @@ contains
       !$acc    device ( &
       !$acc    sfcFlxAttCoeff, &
       !$acc    tangentialVelocity, density, potentialDensity, zMid, zTop, &
-      !$acc    pressure,circulation,&
+      !$acc    pressure,circulation,normalTransportVelocity, &
       !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
       !$acc    normPlanetVortEdge, montgomeryPotential, &
-      !$acc    divergence, vertViscTopOfEdge, &
+      !$acc    divergence, vertViscTopOfEdge, relativeVorticityCell, &
       !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
       !$acc    topDrag,topDragMag, layerThickEdge, &
       !$acc    normalGMBolusVelocity, &
@@ -581,15 +592,76 @@ contains
       !$acc    activeTracerHorizontalAdvectionTendency, &
       !$acc    activeTracerVerticalAdvectionTendency, &
       !$acc    activeTracerVerticalAdvectionTopFlux, &
-      !$acc    activeTracerHorMixTendency, &
+      !$acc    activeTracerHorMixTendency, landIceTracerTransferVelocities, &
       !$acc    activeTracerSurfaceFluxTendency, &
-      !$acc    temperatureShortWaveTendency, &
-      !$acc    activeTracerNonLocalTendency, &
-      !$acc    vertNonLocalFlux, &
-      !$acc    penetrativeTemperatureFluxOBL, &
-      !$acc    surfaceBuoyancyForcing, &
-      !$acc    edgeAreaFractionOfCell, &
-      !$acc    surfaceFrictionVelocity)
+      !$acc    temperatureShortWaveTendency, activeTracerVertMixTendency, &
+      !$acc    activeTracerNonLocalTendency, landIceFrictionVelocity, &
+      !$acc    vertNonLocalFlux, vertVelocityTop, vertGMBolusVelocityTop, &
+      !$acc    penetrativeTemperatureFluxOBL, vertTransportVelocityTop, &
+      !$acc    surfaceBuoyancyForcing, surfacePressure, &
+      !$acc    edgeAreaFractionOfCell, RiTopOfCell, &
+      !$acc    surfaceFrictionVelocity, displacedDensity, &
+      !$acc    normalizedRelativeVorticityCell,BruntVaisalaFreqTop, &
+      !$acc    landIceBoundaryLayerTracers, vertDiffTopOfCell, &
+      !$acc    surfaceFluxAttenuationCoefficientRunoff, &
+      !$acc    tracersSurfaceValue,tracersSurfaceLayerValue, &
+      !$acc    normalVelocitySurfaceLayer)
+
+!!! Don't forget later
+!!! [layerThickEdge,normalGMBolusVelocity,normalTransportVelocity]
+   end subroutine ocn_diagnostics_variables_update!}}}
+
+!***********************************************************************
+
+!***********************************************************************
+!
+!  routine ocn_diagnostics_variables_update_host
+!
+!> \brief   Update variables in the diagnosticsPool to host
+!> \author  Matt Turner and Hyun-Gyu Kang
+!> \date    26 Apr 2021
+!> \details
+!>  This routine destroys all of the pointers associated with
+!>  variables contained in the diagnosticsPool from the device.
+!
+!-----------------------------------------------------------------------
+   subroutine ocn_diagnostics_variables_update_host(err)!{{{
+
+   integer,intent(out) :: err
+  
+      err = 0   
+
+      !$acc update &
+               ! Variables that 'ocn_tend_vel' uses
+      !$acc    host ( &
+      !$acc    sfcFlxAttCoeff, &
+      !$acc    tangentialVelocity, density, potentialDensity, zMid, zTop, &
+      !$acc    pressure,circulation,normalTransportVelocity, &
+      !$acc    relativeVorticity, kineticEnergyCell, normRelVortEdge, &
+      !$acc    normPlanetVortEdge, montgomeryPotential, &
+      !$acc    divergence, vertViscTopOfEdge, relativeVorticityCell, &
+      !$acc    thermExpCoeff, salineContractCoeff, wettingVelocity, &
+      !$acc    topDrag,topDragMag, layerThickEdge, &
+      !$acc    normalGMBolusVelocity, &
+               ! Variables that 'ocn_tend_tracers' uses
+      !$acc    activeTracerHorizontalAdvectionEdgeFlux, &
+      !$acc    activeTracerHorizontalAdvectionTendency, &
+      !$acc    activeTracerVerticalAdvectionTendency, &
+      !$acc    activeTracerVerticalAdvectionTopFlux, &
+      !$acc    activeTracerHorMixTendency, landIceTracerTransferVelocities, &
+      !$acc    activeTracerSurfaceFluxTendency, &
+      !$acc    temperatureShortWaveTendency, activeTracerVertMixTendency, &
+      !$acc    activeTracerNonLocalTendency, landIceFrictionVelocity, &
+      !$acc    vertNonLocalFlux, vertVelocityTop, vertGMBolusVelocityTop, &
+      !$acc    penetrativeTemperatureFluxOBL, vertTransportVelocityTop, &
+      !$acc    surfaceBuoyancyForcing, surfacePressure, &
+      !$acc    edgeAreaFractionOfCell, RiTopOfCell, &
+      !$acc    surfaceFrictionVelocity, displacedDensity, &
+      !$acc    normalizedRelativeVorticityCell,BruntVaisalaFreqTop, &
+      !$acc    landIceBoundaryLayerTracers, vertDiffTopOfCell, &
+      !$acc    surfaceFluxAttenuationCoefficientRunoff, &
+      !$acc    tracersSurfaceValue,tracersSurfaceLayerValue, &
+      !$acc    normalVelocitySurfaceLayer)
 
 !     !$acc update &
 !              ! Variables that 'ocn_tend_vel' uses
@@ -606,7 +678,7 @@ contains
 
 !!! Don't forget later
 !!! [layerThickEdge,normalGMBolusVelocity,normalTransportVelocity]
-   end subroutine ocn_diagnostics_variables_update!}}}
+   end subroutine ocn_diagnostics_variables_update_host!}}}
 
 !***********************************************************************
 

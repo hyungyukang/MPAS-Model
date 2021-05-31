@@ -133,7 +133,7 @@ contains
       nCells = nCellsOwned
 
 #ifdef MPAS_OPENACC
-      !$acc prallel loop &
+      !$acc parallel loop &
       !$acc    present(maxLevelCell,surfaceTracerFlux, &
       !$acc       vertNonLocalFlux,tend) &
       !$acc    private(k, iTracer, fluxTopOfCell, fluxBottomOfCell)

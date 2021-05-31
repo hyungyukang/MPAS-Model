@@ -51,6 +51,7 @@ module ocn_equation_of_state
 
    public :: ocn_equation_of_state_density, &
              ocn_equation_of_state_init, &
+             ocn_equation_of_state_destroy, &
              ocn_freezing_temperature, &
              ocn_freezing_temperature_salinity_deriv
 
@@ -320,6 +321,56 @@ contains
 
    end subroutine ocn_equation_of_state_init!}}}
 
+!***********************************************************************
+!
+!  routine ocn_equation_of_state_destroy
+!
+!> \brief  Destroys ocean equation of state quantities
+!-----------------------------------------------------------------------
+
+   subroutine ocn_equation_of_state_destroy(err)!{{{
+
+   !--------------------------------------------------------------------
+
+      !-----------------------------------------------------------------
+      ! Output variables
+      !-----------------------------------------------------------------
+
+      integer, intent(out) :: err
+
+      err = 0
+
+      !*** set use choice based on config and call appropriate
+      !***  destroy routine
+
+      select case (trim(config_eos_type))
+
+      case ('linear','Linear','LINEAR')
+
+!        ocnEqStateChoice  = ocnEqStateTypeLinear
+!        call ocn_equation_of_state_linear_init(err)
+
+      case ('jm','JM')
+
+         ocnEqStateChoice  = ocnEqStateTypeJM
+         call ocn_equation_of_state_jm_destroy(err)
+
+      case ('wright', 'Wright', 'WRIGHT')
+
+!        ocnEqStateChoice  = ocnEqStateTypeWright
+!        call ocn_equation_of_state_wright_init(domain, err)
+
+      case default
+
+         call mpas_log_write(&
+         'Invalid choice for config_eos_type. Choices are: linear, jm, wright')
+         err = 1
+
+      end select
+      
+   !--------------------------------------------------------------------
+
+   end subroutine ocn_equation_of_state_destroy!}}}
 
 !***********************************************************************
 !

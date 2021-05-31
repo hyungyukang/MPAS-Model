@@ -671,7 +671,8 @@ module ocn_time_integration_rk4
            end do
          end if
 
-         call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 2)
+! Currently commented out for compiling - will be edited later
+!        call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 2)
 
          ! Update the effective desnity in land ice if we're coupling to land ice
          call ocn_effective_density_in_land_ice_update(meshPool, forcingPool, statePool, err)
@@ -1173,7 +1174,8 @@ module ocn_time_integration_rk4
          !$omp end parallel
       end if
 
-      call ocn_diagnostic_solve(dt, provisStatePool, forcingPool, meshPool, scratchPool, tracersPool, 1)
+! Currently commented out for compiling - will be edited later
+!     call ocn_diagnostic_solve(dt, provisStatePool, forcingPool, meshPool, scratchPool, tracersPool, 1)
 
       ! ------------------------------------------------------------------
       ! Accumulating various parametrizations of the transport velocity
@@ -1392,9 +1394,11 @@ module ocn_time_integration_rk4
          end if
       end do
 
-      call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 2)
+! Currently commented out for compiling - will be edited later
+!     call ocn_diagnostic_solve(dt, statePool, forcingPool, meshPool, scratchPool, tracersPool, 2)
 
-      call ocn_vmix_implicit(dt, meshPool, statePool, forcingPool, scratchPool, err, 2)
+! Currently commented out for compiling - will be edited later
+!     call ocn_vmix_implicit(dt, meshPool, statePool, forcingPool, scratchPool, err, 2)
 
    end subroutine ocn_time_integrator_rk4_cleanup!}}}
 

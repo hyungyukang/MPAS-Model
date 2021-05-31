@@ -191,6 +191,8 @@ contains
       ! only build up viscosity/diffusivity if CVMix is turned on
       !
       if ( .not. cvmixOn ) return
+      print*, 'STOP at cvmixOn'
+      STOP
 
       !
       ! set parameters

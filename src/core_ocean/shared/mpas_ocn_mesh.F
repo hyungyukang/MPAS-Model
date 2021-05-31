@@ -150,11 +150,12 @@ module ocn_mesh
 
    ! Temporary arrays to reduce data trasfer between host and device
    real(kind=RKIND), public, dimension(:), allocatable :: &
-      temp1Vert,temp2Vert,temp3Vert,temp1Edge,temp2Edge,temp1Cell,temp2Cell
+      temp1Vert,temp2Vert,temp3Vert,temp4Vert,temp5Vert,temp6Vert,temp7Vert, &
+      temp1Edge,temp2Edge,temp1Cell,temp2Cell
    real(kind=RKIND), public, dimension(:,:), allocatable :: &
       temp1VertEdge,temp2VertEdge,temp3VertEdge, &
-      temp1VertCell,temp2VertCell, &
-      temp1VertVertex
+      temp1VertCell,temp2VertCell,temp3VertCell, &
+      temp1VertVertex,temp2VertVertex
    !}}}
 
    !----------------------------------------------------------------------------
@@ -434,8 +435,8 @@ contains
          call mpas_pool_get_array(meshPool, 'angleEdge', &
                                   angleEdge)
 
-         call mpas_pool_get_array(meshPool, 'weightsOnEdge', &
-                                  weightsOnEdge)
+!        call mpas_pool_get_array(meshPool, 'weightsOnEdge', &
+!                                 weightsOnEdge)
          call mpas_pool_get_array(meshPool, 'kiteAreasOnVertex', &
                                   kiteAreasOnVertex)
          call mpas_pool_get_array(meshPool, 'edgeTangentVectors', &
@@ -529,6 +530,10 @@ contains
             temp1Vert(nVertLevels), &
             temp2Vert(nVertLevels), &
             temp3Vert(nVertLevels), &
+            temp4Vert(nVertLevels), &
+            temp5Vert(nVertLevels), &
+            temp6Vert(nVertLevels), &
+            temp7Vert(nVertLevels), &
             temp1Edge(nEdgesAll+1), &
             temp2Edge(nEdgesAll+1), &
             temp1Cell(nCellsAll+1), &
@@ -538,11 +543,17 @@ contains
             temp3VertEdge(nVertLevels,nEdgesAll+1), &
             temp1VertCell(nVertLevels,nCellsAll+1), &
             temp2VertCell(nVertLevels,nCellsAll+1), & 
-            temp1VertVertex(nVertLevels,nVerticesAll+1) )
+            temp3VertCell(nVertLevels,nCellsAll+1), & 
+            temp1VertVertex(nVertLevels,nVerticesAll+1), &
+            temp2VertVertex(nVertLevels,nVerticesAll+1) )
  
          temp1Vert(:) = 0.0_RKIND
          temp2Vert(:) = 0.0_RKIND
          temp3Vert(:) = 0.0_RKIND
+         temp4Vert(:) = 0.0_RKIND
+         temp5Vert(:) = 0.0_RKIND
+         temp6Vert(:) = 0.0_RKIND
+         temp7Vert(:) = 0.0_RKIND
          temp1Edge(:) = 0.0_RKIND
          temp2Edge(:) = 0.0_RKIND
          temp1Cell(:) = 0.0_RKIND
@@ -552,7 +563,9 @@ contains
          temp3VertEdge(:,:) = 0.0_RKIND
          temp1VertCell(:,:) = 0.0_RKIND
          temp2VertCell(:,:) = 0.0_RKIND
+         temp3VertCell(:,:) = 0.0_RKIND
          temp1VertVertex(:,:) = 0.0_RKIND
+         temp2VertVertex(:,:) = 0.0_RKIND
 
 
          ! Copy structure and components to accelerator
@@ -652,6 +665,10 @@ contains
          !$acc                   temp1Vert,                &
          !$acc                   temp2Vert,                &
          !$acc                   temp3Vert,                &
+         !$acc                   temp4Vert,                &
+         !$acc                   temp5Vert,                &
+         !$acc                   temp6Vert,                &
+         !$acc                   temp7Vert,                &
          !$acc                   temp1Edge,                &
          !$acc                   temp2Edge,                &
          !$acc                   temp1Cell,                &
@@ -661,7 +678,9 @@ contains
          !$acc                   temp3VertEdge,            &
          !$acc                   temp1VertCell,            &
          !$acc                   temp2VertCell,            &
+         !$acc                   temp3VertCell,            &
          !$acc                   temp1VertVertex,          &
+         !$acc                   temp2VertVertex,          &
       ! ocn Configurations
          !$acc                   config_max_thickness_factor, &
          !$acc                   config_min_thickness, &
@@ -671,7 +690,18 @@ contains
          !$acc                   config_btr_gam3_velWt2, &
          !$acc                   config_btr_subcycle_loop_factor, &
          !$acc                   config_flux_attenuation_coefficient, &
-         !$acc                   config_flux_attenuation_coefficient_runoff)
+         !$acc                   config_flux_attenuation_coefficient_runoff, &
+         !$acc                   config_apvm_scale_factor, &
+         !$acc                   config_land_ice_flux_topDragCoeff, &
+         !$acc                   config_land_ice_flux_rms_tidal_velocity, &
+         !$acc                   config_land_ice_flux_boundaryLayerThickness, &
+         !$acc                   config_land_ice_flux_boundaryLayerNeighborWeight, &
+         !$acc                   config_land_ice_flux_jenkins_heat_transfer_coefficient, &
+         !$acc                   config_land_ice_flux_jenkins_salt_transfer_coefficient, &
+         !$acc                   config_land_ice_flux_attenuation_coefficient, &
+         !$acc                   config_cvmix_kpp_nonlocal_with_implicit_mix)
+
+          
        
 
 
@@ -814,6 +844,10 @@ contains
       !$acc                  temp1Vert,         &
       !$acc                  temp2Vert,         &
       !$acc                  temp3Vert,         &
+      !$acc                  temp4Vert,         &
+      !$acc                  temp5Vert,         &
+      !$acc                  temp6Vert,         &
+      !$acc                  temp7Vert,         &
       !$acc                  temp1Edge,         &
       !$acc                  temp2Edge,         &
       !$acc                  temp1Cell,         &
@@ -823,7 +857,9 @@ contains
       !$acc                  temp3VertEdge,     &
       !$acc                  temp1VertCell,     &
       !$acc                  temp2VertCell,     &
+      !$acc                  temp3VertCell,     &
       !$acc                  temp1VertVertex,   &
+      !$acc                  temp2VertVertex,   &
    ! ocn Configurations
       !$acc                  config_max_thickness_factor, &
       !$acc                  config_min_thickness, &
@@ -833,7 +869,16 @@ contains
       !$acc                  config_btr_gam3_velWt2, &
       !$acc                  config_btr_subcycle_loop_factor, &
       !$acc                  config_flux_attenuation_coefficient, &
-      !$acc                  config_flux_attenuation_coefficient_runoff)
+      !$acc                  config_flux_attenuation_coefficient_runoff, &
+      !$acc                  config_apvm_scale_factor, &
+      !$acc                  config_land_ice_flux_topDragCoeff, &
+      !$acc                  config_land_ice_flux_rms_tidal_velocity, &
+      !$acc                  config_land_ice_flux_boundaryLayerThickness, &
+      !$acc                  config_land_ice_flux_boundaryLayerNeighborWeight, &
+      !$acc                  config_land_ice_flux_jenkins_heat_transfer_coefficient, &
+      !$acc                  config_land_ice_flux_jenkins_salt_transfer_coefficient, &
+      !$acc                  config_land_ice_flux_attenuation_coefficient, &
+      !$acc                  config_cvmix_kpp_nonlocal_with_implicit_mix)
 
       ! Reset all scalars to zero
       nCellsAll = 0
@@ -935,6 +980,11 @@ contains
                ! Temporary arrays
                   temp1Vert, &
                   temp2Vert, &
+                  temp3Vert, &
+                  temp4Vert, &
+                  temp5Vert, &
+                  temp6Vert, &
+                  temp7Vert, &
                   temp1Edge, &
                   temp2Edge, &
                   temp1Cell, &
@@ -944,7 +994,9 @@ contains
                   temp3VertEdge, &
                   temp1VertCell, &
                   temp2VertCell, &
-                  temp1VertVertex)
+                  temp3VertCell, &
+                  temp1VertVertex, &
+                  temp2VertVertex)
 
 !-------------------------------------------------------------------------------
 

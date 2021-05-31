@@ -131,10 +131,17 @@ contains
        call mpas_pool_get_dimension(tracersPool, 'index_salinity', &
                                                   indexSalinity)
 
+
+       !$acc enter data &
+       !$acc    copyin(activeTracers,density,indexTemperature,indexSalinity)
+
        call ocn_equation_of_state_density(statePool, tracersSurfaceValue, &
            nCells, 0, 'relative', activeTracers, density, &
            indexTemperature,indexSalinity, iErr, &
            timeLevelIn=1)
+
+       !$acc exit data copyout(density) &
+       !$acc    delete(activeTracers,indexTemperature,indexSalinity)
 
        if(iErr .ne. 0) then
          call mpas_log_write( 'ocn_equation_of_state_density failed.', MPAS_LOG_CRIT)
