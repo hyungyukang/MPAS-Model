@@ -2713,9 +2713,9 @@ module ocn_time_integration_si
                block => block % next
             end do  ! block
 
-!              if ( rank == 0 ) then
-!                print*,'Iteration',iter
-!              end if
+               if ( rank == 0 ) then
+                 print*,'Iteration',iter
+               end if
 !              call mpi_barrier(dminfo%comm,mpi_ierr)
 !              stop
 
@@ -3557,28 +3557,6 @@ module ocn_time_integration_si
             call ocn_reconstruct_gm_vectors(diagnosticsPool, meshPool)
          end if
 
-
-!---- To save matrix components
-
-!         layerThicknessNew(:,:) = 1.0e20
-!
-!         if ( rank == 20 ) then
-!!        do k = 1,nVertLevels
-!!           do iCell = 1, nCells
-!         do k = 1,nVertLevels
-!            do iCell = 1, nCells
-!               if ( dabs(prec_ivmat(k,iCell)) > 0.d0) then
-!                  !layerThicknessNew(k, iCell) = dlog10(dabs(prec_ivmat(k,iCell)))
-!                  layerThicknessNew(k, iCell) = dlog10(dabs(prec_ivmat(k+100,iCell)))
-!               end if
-!            end do
-!         end do
-!         endif
- 
-!----------------------------------------------------------------------------------------------
-          
-
-
          block => block % next
       end do
 
@@ -3824,7 +3802,7 @@ module ocn_time_integration_si
       real (kind=RKIND), dimension(:)  , pointer :: dcEdge,bottomDepth
       real (kind=RKIND), dimension(:)  , pointer :: dvEdge,areaCell
       real (kind=RKIND), dimension(:)  , pointer :: CGvec_u1
-      real (kind=RKIND) :: temp1,temp2,sum1,sum2
+      real (kind=RKIND) :: temp1,temp2
       !------------------------------------------!
       integer,dimension(:)  ,pointer     :: globalCellId
       integer,dimension(:)  ,allocatable :: numCellRank,numCellRankA2,myGlobalCellId
@@ -3832,7 +3810,7 @@ module ocn_time_integration_si
       integer :: rank,ncpus,mpi_ierr
       integer :: local_num_cells,total_num_cells,itmp1,itmp2
       integer :: maxNumCell,maxNumCellA2,isum1,isum2
-      integer :: local_start,local_end,nCellsA2,nCellsA3,targetCell
+      integer :: local_start,local_end,nCellsA2,nCellsA3
       !include 'mpif.h'
       !------------------------------------------!
       character(100) :: iname
@@ -3842,9 +3820,7 @@ module ocn_time_integration_si
       real (kind=RKIND),allocatable, dimension(:) :: amat,bmat
       real (kind=RKIND),allocatable, dimension(:) :: avec,bvec
       integer, allocatable,dimension(:) :: idx,loc_max,idx2,loc_min
-      integer :: nPrecVecMin,nPrecVecMax,nCellsMin,nDL
-
-      include 'mpif.h'
+      integer :: nPrecVecMin,nPrecVecMax,nCellsMin
 
       dminfo = domain % dminfo
         rank = dminfo % my_proc_id
@@ -3892,267 +3868,249 @@ module ocn_time_integration_si
          local_num_cells = nCellsArray(1)
          call mpas_dmpar_sum_int(dminfo,local_num_cells,total_num_cells)
 
-!        allocate(avec(total_num_cells))
-!        avec(:) = 0.0_RKIND
-
-      
-
 
          ! Restricted Additive Schwarz preconditioner ---------------------------------------------!
          if ( trim(config_btr_si_preconditioner) == 'ras' ) then
 
-!!           nPrecVec = nCellsA2
-!            nPrecVec = nCellsA3
-!  
-!            allocate(prec_ivmat(1:nPrecVec,1:nPrecVec))
-!                     prec_ivmat(:,:) = 0.0_RKIND
-!!           allocate(prec_mat(1:nPrecVec,1:nPrecVec))
-!!                    prec_mat(:,:) = 0.0_RKIND
-!
-!         do k  = 1,7234
-!         targetCell = k
-!  
-!            !do iCell = 1, nPrecVec
-!            do iCell = 1, nCells
-!
-!  
-!               do i = 1, nEdgesOnCell(iCell)
-!                  iEdge = edgesOnCell(i, iCell)
-!                  cell1 = cellsOnEdge(1, iEdge)
-!                  cell2 = cellsOnEdge(2, iEdge)
-!    
-!                  ! method 1, matches method 0 without pbcs, works with pbcs.
-!                  thicknessSum = min(bottomDepth(cell1), bottomDepth(cell2))
-!                        fluxAx = edgeSignOnCell(i,iCell)*dvEdge(iEdge)*thicknessSum / dcEdge(iEdge)
-!    
-!            if ( globalCellId(iCell) == targetCell ) then
-!               avec(globalCellId(cell1)) = avec(globalCellId(cell1)) + fluxAx
-!            endif
-!            if ( globalCellId(iCell) == targetCell ) then
-!               avec(globalCellId(cell2)) = avec(globalCellId(cell2)) - fluxAx
-!            endif
-!                  !-------------------------------------------------------------------------------!
-!!                 if ( globalCellId(cell1) > 0 .and. globalCellId(cell1) < total_num_cells+1 ) then
-!!                    
-!!                    if ( cell1 <= nPrecVec) then
-!!                       prec_ivmat(iCell,cell1) = prec_ivmat(iCell,cell1) + fluxAx
-!!                       prec_mat(iCell,cell1) = prec_mat(iCell,cell1) + fluxAx
-!!                    endif
-!
-!!                 endif
-!    
-!!                 if ( globalCellId(cell2) > 0 .and. globalCellId(cell2) < total_num_cells+1 ) then
-!!                    if ( cell2 <= nPrecVec) then
-!!                       prec_ivmat(iCell,cell2) = prec_ivmat(iCell,cell2) - fluxAx
-!!                       prec_mat(iCell,cell2) = prec_mat(iCell,cell2) - fluxAx
-!!                    endif
-!!                 endif
-!
-!                  !-------------------------------------------------------------------------------!
-!   
-!               end do ! i
-!  
-!               prec_ivmat(iCell,iCell) = prec_ivmat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0)) * areaCell(iCell)
-!!              prec_mat(iCell,iCell) = prec_mat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0)) * areaCell(iCell)
-!
-!            if ( globalCellId(iCell) == targetCell ) then
-!               avec(globalCellId(iCell)) = avec(globalCellId(iCell)) - (4.0_RKIND/(gravity*dt**2.0)) * areaCell(iCell)
-!            endif
-!
-!            if ( globalCellId(iCell) == targetCell ) then
-!              sum1 = 0.d0
-!              isum1 = 0
-!              do i = 1,total_num_cells
-!                 
-!                 sum1 = sum1 + avec(i)
-!!                print*, avec(i)
-!                 if ( dabs(avec(i)) > 0.0_RKIND ) then
-!                    isum1 = isum1 + 1
-!                 endif
-!              end do
-!              print*,targetCell, isum1,sum1
-!            endif       
-!  
-!            end do ! iCell
-!
-!
-!            avec(:) = 0.0_RKIND
-!
-!            end do ! k
-!
-!            call mpi_barrier (dminfo%comm,mpi_ierr)
-!            stop
-!  
-!           ! Preconditioning matrix inversion
-!            call inverse(nPrecVec,prec_ivmat)
-!
-!            call mpas_dmpar_max_int(dminfo, nPrecVec, nPrecVecMax)
-!            call mpas_dmpar_min_int(dminfo, nPrecVec, nPrecVecMin)
-!            call mpas_dmpar_min_int(dminfo, nCells  , nCellsMin  )
+!           nPrecVec = nCellsA2
+            nPrecVec = nCellsA3
+  
+            allocate(prec_ivmat(1:nPrecVec,1:nPrecVec))
+                     prec_ivmat(:,:) = 0.0_RKIND
+            allocate(prec_mat(1:nPrecVec,1:nPrecVec))
+                     prec_mat(:,:) = 0.0_RKIND
+  
+            do iCell = 1, nPrecVec
+  
+               do i = 1, nEdgesOnCell(iCell)
+                  iEdge = edgesOnCell(i, iCell)
+                  cell1 = cellsOnEdge(1, iEdge)
+                  cell2 = cellsOnEdge(2, iEdge)
+    
+                  ! method 1, matches method 0 without pbcs, works with pbcs.
+                  thicknessSum = min(bottomDepth(cell1), bottomDepth(cell2))
+                        fluxAx = edgeSignOnCell(i,iCell)*dvEdge(iEdge)*thicknessSum / dcEdge(iEdge)
+    
+                  !-------------------------------------------------------------------------------!
+                  if ( globalCellId(cell1) > 0 .and. globalCellId(cell1) < total_num_cells+1 ) then
+                     if ( cell1 <= nPrecVec) then
+                        prec_ivmat(iCell,cell1) = prec_ivmat(iCell,cell1) + fluxAx
+                        prec_mat(iCell,cell1) = prec_mat(iCell,cell1) + fluxAx
+                     endif
+                  endif
+    
+                  if ( globalCellId(cell2) > 0 .and. globalCellId(cell2) < total_num_cells+1 ) then
+                     if ( cell2 <= nPrecVec) then
+                        prec_ivmat(iCell,cell2) = prec_ivmat(iCell,cell2) - fluxAx
+                        prec_mat(iCell,cell2) = prec_mat(iCell,cell2) - fluxAx
+                     endif
+                  endif
+                  !-------------------------------------------------------------------------------!
+   
+               end do ! i
+  
+               prec_ivmat(iCell,iCell) = prec_ivmat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0)) * areaCell(iCell)
+               prec_mat(iCell,iCell) = prec_mat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0)) * areaCell(iCell)
+  
+            end do ! iCell
+
+  
+           ! Preconditioning matrix inversion
+            call inverse(nPrecVec,prec_ivmat)
+
+            call mpas_dmpar_max_int(dminfo, nPrecVec, nPrecVecMax)
+            call mpas_dmpar_min_int(dminfo, nPrecVec, nPrecVecMin)
+            call mpas_dmpar_min_int(dminfo, nCells  , nCellsMin  )
   
 ! Write part 
 
-!           allocate(amat(nPrecVecMin*nPrecVecMin))
-!           allocate(avec(nPrecVecMin))
-!           amat(:) = 0.d0
-!           do j = 1,nPrecVecMin
-!              avec(:) = 0.d0
-!              avec(1:nPrecVecMin) = prec_ivmat(j,1:nPrecVecMin)
-!              call PIKSRT(nPrecVecMin,avec)
-!              amat(((j-1)*nPrecVecMin+1):j*nPrecVecMin) = avec(:)
-!           end do
+            allocate(amat(nPrecVecMin*nPrecVecMin))
+            allocate(avec(nPrecVecMin))
+            amat(:) = 0.d0
+            do j = 1,nPrecVecMin
+               avec(:) = -1.d-15
+               avec(1:nPrecVecMin) = prec_ivmat(j,1:nPrecVecMin)
+               do i = 1,nPrecVecMin
+                 if ( dabs(avec(i)) == 0.d0 ) avec(i)=-1.d-30
+               end do 
+               avec(:) = -dlog10(-avec(:))
 
-!     
-!           write(iname,('(A,i3.3,A)')) 'mata_',rank,'.bin'
-!           open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
-!                recl=nPrecVecMin*nPrecVecMin*8,convert='little_endian')
-!           write(rank+1,rec=1) amat
-!           close(rank+1)
+               call PIKSRT(nPrecVecMin,avec)
 
-!           call mpi_barrier (dminfo%comm,mpi_ierr)
+               do i = 1,nPrecVecMin
+                 if ( dabs(avec(i)) == 30.d0 ) avec(i)=avec(i-1)
+               end do 
+               avec(nPrecVecMin) = avec(nPrecVecMin-1)
 
-!           allocate(bmat2d(nPrecVecMin,nPrecVecMin))
-!           allocate(bmat(nPrecVecMin*nPrecVecMin))
-!           allocate(bvec(nPrecVec))
-!           bmat2d(:,:) = 0.d0
-!             do j = 1,nPrecVecMin
-!                bvec(:) = 0.d0
-!                bvec(1:nPrecVec) = prec_mat(j,1:nPrecVec)
-!                call PIKSRT(nPrecVec,bvec)
-!                bmat2d(j,1:nPrecVecMin) = bvec(1:nPrecVecMin)
-!             end do
-
-!           do j = 1,nPrecVecMin
-!             bvec(:) = bmat2d(j,:)
-!             bmat2d(j,:) = 0.d0
-!             isum1 = 0
-
-!             do iCell = 1,nPrecVecMin
-!               if ( dabs(bvec(iCell)) > 0.d0 ) then
-!                 isum1 = isum1 + 1
-!                 bmat2d(j,isum1) = bvec(iCell)
-!               end if
-!             end do
-!             bmat(((j-1)*nPrecVecMin+1):j*nPrecVecMin) = bmat2d(j,:)
-!           end do
-!         
-!           write(iname,('(A,i3.3,A)')) 'matb_',rank,'.bin'
-!           open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
-!                recl=nPrecVecMin*nPrecVecMin*8,convert='little_endian')
-!           write(rank+1,rec=1) bmat
-!           close(rank+1)
-!  
-!           call mpi_barrier (dminfo%comm,mpi_ierr)
+               amat(((j-1)*nPrecVecMin+1):j*nPrecVecMin) = avec(:)
+            end do
+!           print*, avec
+!           call mpi_barrier(dminfo%comm,mpi_ierr)
 !           stop
+
+            write(iname,('(A,i3.3,A)')) 'mata_',rank,'.bin'
+            open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
+                 recl=nPrecVecMin*nPrecVecMin*8,convert='little_endian')
+            write(rank+1,rec=1) amat
+            close(rank+1)
+
+            call mpi_barrier (dminfo%comm,mpi_ierr)
+
+            allocate(bmat2d(nPrecVecMin,nPrecVecMin))
+            allocate(bmat(nPrecVecMin*nPrecVecMin))
+            allocate(bvec(nPrecVec))
+            bmat2d(:,:) = 0.d0
+              do j = 1,nPrecVecMin
+                 bvec(:) = 0.d0
+                 bvec(1:nPrecVec) = prec_mat(j,1:nPrecVec)
+                 call PIKSRT(nPrecVec,bvec)
+                 bmat2d(j,1:nPrecVecMin) = bvec(1:nPrecVecMin)
+!                if (rank==0)then
+!                print*, bvec(:)
+!                endif
+              end do
+
+            do j = 1,nPrecVecMin
+              bvec(:) = bmat2d(j,:)
+              bmat2d(j,:) = 0.d0
+              isum1 = 0
+
+              do iCell = 1,nPrecVecMin
+                if ( dabs(bvec(iCell)) > 0.d0 ) then
+                  isum1 = isum1 + 1
+                  bmat2d(j,isum1) = bvec(iCell)
+                end if
+              end do
+              bmat(((j-1)*nPrecVecMin+1):j*nPrecVecMin) = bmat2d(j,:)
+            end do
+          
+!           print*, minval(bmat2d),maxval(bmat2d)
+                
+            write(iname,('(A,i3.3,A)')) 'matb_',rank,'.bin'
+            open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
+                 recl=nPrecVecMin*nPrecVecMin*8,convert='little_endian')
+            write(rank+1,rec=1) bmat
+            close(rank+1)
+   
+            call mpi_barrier (dminfo%comm,mpi_ierr)
+            stop
 
 
 ! Read part ------------------------------------------------------------------------------------!
 
-!            allocate(amat2d(nPrecVecMin,nPrecVecMin))
-!            allocate(bmat2d(nPrecVecMin,nPrecVecMin))
-!
-!            write(iname,('(A,i3.3,A)')) 'output2/matp_',rank,'.csv'
-!
-!            open(11,file=trim(iname),action='read')
-!              do j = 1,nPrecVecMin
-!                read(11,*) amat2d(j,:)
-!              end do
-!            close(11)
-! 
-!            allocate( loc_max(2))
-!            loc_max = maxloc(amat2d)
-!            allocate( loc_min(2))
-!            loc_min = maxloc(amat2d)
-!
-!            allocate(prec_mat(nCells,nCells))
-!            prec_mat(:,:) = 0.d0
-!
-!            do iCell = 1, nCells
-!  
-!               do i = 1, nEdgesOnCell(iCell)
-!                  iEdge = edgesOnCell(i, iCell)
-!                  cell1 = cellsOnEdge(1, iEdge)
-!                  cell2 = cellsOnEdge(2, iEdge)
-!    
-!                  ! method 1, matches method 0 without pbcs, works with pbcs.
-!                  thicknessSum = min(bottomDepth(cell1), bottomDepth(cell2))
-!                        fluxAx = edgeSignOnCell(i,iCell)*dvEdge(iEdge)*thicknessSum / dcEdge(iEdge)
-!    
-!                  !-------------------------------------------------------------------------------!
-!                  if ( globalCellId(cell1) > 0 .and. globalCellId(cell1) < total_num_cells+1 ) then
-!                     if ( cell1 <= nCells) then
-!                        prec_mat(iCell,cell1) = prec_mat(iCell,cell1) + fluxAx
-!                     endif
-!                  endif
-!    
-!                  if ( globalCellId(cell2) > 0 .and. globalCellId(cell2) < total_num_cells+1 ) then
-!                     if ( cell2 <= nCells) then
-!                        prec_mat(iCell,cell2) = prec_mat(iCell,cell2) - fluxAx
-!                     endif
-!                  endif
-!                  !-------------------------------------------------------------------------------!
-!   
-!               end do ! i
-!  
-!               prec_mat(iCell,iCell) = prec_mat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0)) * areaCell(iCell)
-!  
-!            end do ! iCell
-!
-!            call inverse(nCells,prec_mat)
-!
-!
-!            ! ---- Distance 
-!!           deallocate(prec_ivmat)
-!            nPrecVec = nCells
-!            config_btr_si_preconditioner = 'block_jacobi'
-!
-!!           allocate(prec_ivmat(nCells,nCells))
-!
-!            allocate(avec(nCells))
-!            allocate( idx(nCells))
-!
-!            allocate(bvec(nPrecVecMin))
-!            allocate(idx2(nPrecVecMin))
-!!           allocate(bvec(nPrecVec))
-!!           allocate(idx2(nPrecVec))
-!
-!
-!              do j = 1,nCells
-!
-!                avec(:) = prec_mat(j,:)
-!                do iCell = 1,nPrecVec
-!                  idx(iCell) = iCell
-!                end do
-!                call PIKSRTIDX(nCells,avec,idx)
-!
-!
-!                do iCell = 1,nPrecVecMin
-!                   idx2(iCell) = iCell
-!                end do
-!                bvec(:) = 0.d0
-!                bvec(1:nPrecVecMin) = -amat2d(j,1:nPrecVecMin)
-!                !bvec(1:nPrecVecMin) = -amat2d(loc_min(1),1:nPrecVecMin)
-!!               bvec(1:nPrecVec) = prec_ivmat(j,1:nPrecVec)
-!                call PIKSRTIDX(nPrecVecMin,bvec,idx2)
-!                 
-!                do iCell = 1,nCells
-!!                 prec_ivmat(j,idx(iCell)) = bvec(nPrecVecMin-iCell+1)
-!                  prec_mat(j,idx(iCell)) = bvec(iCell)
-!                end do
-!!               if ( rank == 0 ) then
-!!                 print*,bvec(1:nCells)
-!!               endif
-!!               call mpi_barrier(dminfo%comm,mpi_ierr)
-!!               stop
-!              end do ! j
-!
-!            deallocate(prec_ivmat)
-!            allocate(prec_ivmat(nCells,nCells))
-!            prec_ivmat(:,:) = prec_mat(:,:)
-!            deallocate(prec_mat)
+!           allocate(amat2d(nPrecVecMin,nPrecVecMax))
+!           allocate(bmat2d(nPrecVecMin,nPrecVecMax))
 
-!---------------------------------------------------------------------------
-!---------------------------------------------------------------------------
+!           write(iname,('(A,i3.3,A)')) 'output2/matp_',rank,'.csv'
+
+!           open(11,file=trim(iname),action='read')
+!             do j = 1,nPrecVecMin
+!               read(11,*) amat2d(j,:)
+!             end do
+!           close(11)
+!
+!           allocate( loc_max(2))
+!           loc_max = maxloc(amat2d)
+
+!           allocate(prec_mat(nCells,nCells))
+!           prec_mat(:,:) = 0.d0
+
+!           do iCell = 1, nCells
+! 
+!              do i = 1, nEdgesOnCell(iCell)
+!                 iEdge = edgesOnCell(i, iCell)
+!                 cell1 = cellsOnEdge(1, iEdge)
+!                 cell2 = cellsOnEdge(2, iEdge)
+!   
+!                 ! method 1, matches method 0 without pbcs, works with pbcs.
+!                 thicknessSum = min(bottomDepth(cell1), bottomDepth(cell2))
+!                       fluxAx = edgeSignOnCell(i,iCell)*dvEdge(iEdge)*thicknessSum / dcEdge(iEdge)
+!   
+!                 !-------------------------------------------------------------------------------!
+!                 if ( globalCellId(cell1) > 0 .and. globalCellId(cell1) < total_num_cells+1 ) then
+!                    if ( cell1 <= nCells) then
+!                       prec_mat(iCell,cell1) = prec_mat(iCell,cell1) + fluxAx
+!                    endif
+!                 endif
+!   
+!                 if ( globalCellId(cell2) > 0 .and. globalCellId(cell2) < total_num_cells+1 ) then
+!                    if ( cell2 <= nCells) then
+!                       prec_mat(iCell,cell2) = prec_mat(iCell,cell2) - fluxAx
+!                    endif
+!                 endif
+!                 !-------------------------------------------------------------------------------!
+!  
+!              end do ! i
+! 
+!              prec_mat(iCell,iCell) = prec_mat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0)) * areaCell(iCell)
+! 
+!           end do ! iCell
+
+!           call inverse(nCells,prec_mat)
+
+
+!           ! ---- Distance 
+!           deallocate(prec_ivmat)
+!           nPrecVec = nCells
+!           config_btr_si_preconditioner = 'block_jacobi'
+
+!           allocate(prec_ivmat(nCells,nCells))
+
+!           allocate(avec(nCells))
+!           allocate( idx(nCells))
+
+!           allocate(bvec(nPrecVecMax))
+!           allocate(idx2(nPrecVecMax))
+
+
+!             do j = 1,nCells
+
+!               avec(:) = prec_mat(j,:)
+!               do iCell = 1,nPrecVec
+!                 idx(iCell) = iCell
+!               end do
+!               call PIKSRTIDX(nCells,avec,idx)
+
+
+!               do iCell = 1,nPrecVecMax
+!                  idx2(iCell) = iCell
+!               end do
+!               bvec(1:nPrecVecMax) = amat2d(j,1:nPrecVecMax)
+!               call PIKSRTIDX(nPrecVecMax,bvec,idx2)
+
+!                
+!               do iCell = 1,nCells
+!                 prec_ivmat(j,idx(iCell)) = bvec(nPrecVecMax-iCell+1)
+!               end do
+!             end do ! j
+
+!           deallocate(prec_mat)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 !           if ( rank == 0 ) then
@@ -4310,120 +4268,62 @@ module ocn_time_integration_si
                end do ! i
    
                prec_ivmat(iCell,iCell) = prec_ivmat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
-                 prec_mat(iCell,iCell) = prec_mat(iCell,iCell)   - (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
+               prec_mat(iCell,iCell) = prec_mat(iCell,iCell) - (4.0_RKIND/(gravity*dt**2.0))*areaCell(iCell)
   
             end do ! iCell
   
             ! Preconditioning matrix inversion
             call inverse(nPrecVec,prec_ivmat)
 
-!           print*, prec_ivmat(1,:)
+
+            prec_mat(:,:) = prec_ivmat(:,:)
+
+            write(iname,('(A,i3.3,A)')) 'output/matp_',rank,'.csv'
+            print*, trim(iname)
+ 
+            allocate(amat2d(121,121))
+            allocate(bmat2d(121,121))
+
+            open(11,file=trim(iname),action='read')
+              do j = 1,121
+                read(11,*) amat2d(j,:)
+              end do
+            close(11)
+ 
+            call mpi_barrier (dminfo%comm,mpi_ierr)
+
+            ! ---- Distance 
+            allocate(avec(nPrecVec))
+            allocate(bvec(nPrecVec))
+            allocate( idx(nPrecVec))
+            allocate(idx2(nPrecVec))
+ 
+              do j = 1,nPrecVec
+                avec(:) = prec_ivmat(j,:)
+                do iCell = 1,nPrecVec
+                  idx(i) = iCell
+                end do
+                call PIKSRTIDX(nPrecVec,avec,idx)
+
+                do iCell = 1,nPrecVec
+                  idx2(i) = iCell
+                end do
+                avec(1:nPrecVec) = amat2d(j,1:nPrecVec)
+                call PIKSRTIDX(nPrecVec,avec,idx2)
+                 
+                do iCell = 1,nPrecVec
+                  prec_ivmat(j,idx(iCell)) = avec(nPrecVec-iCell+1)
+                end do
+              end do ! j
 
 
-!            do i = 1,nPrecVec 
-!               isum1 = 0
-!               do j = 1,nPrecVec 
-!                  if ( dabs(prec_ivmat(i,j)) > 1.0d-5 ) then
-!                     prec_ivmat(i,j) = 0.0_RKIND
-!                     isum1 = isum1 + 1
-!                  end if 
-!!                 if ( isum1 > 7 ) then
-!!                    if ( dabs(prec_ivmat(i,j)) < 3.0d-5 ) then
-!!                       prec_ivmat(i,j) = 0.0_RKIND
-!!                    end if 
-!!                 else
-!!                    if ( dabs(prec_ivmat(i,j)) < 1.0d-5 ) then
-!!                       prec_ivmat(i,j) = 0.0_RKIND
-!!                    end if 
-!!                 endif
-!               end do
-!               print*, isum1
-!            end do
-!
-!
-!            call mpi_barrier(dminfo%comm,mpi_ierr)
-!            stop 
 
-
-
-
-
-!=== To read saved mat from ML
-
-!           prec_mat(:,:) = prec_ivmat(:,:)
-
-!           write(iname,('(A,i3.3,A)')) 'output/matp_',rank,'.csv'
-!           print*, trim(iname)
-!
-!           allocate(amat2d(121,121))
-!           allocate(bmat2d(121,121))
-
-!           open(11,file=trim(iname),action='read')
-!             do j = 1,121
-!               read(11,*) amat2d(j,:)
-!             end do
-!           close(11)
-!
-!           call mpi_barrier (dminfo%comm,mpi_ierr)
-
-!           ! ---- Distance 
-!           allocate(avec(nPrecVec))
-!           allocate(bvec(nPrecVec))
-!           allocate( idx(nPrecVec))
-!           allocate(idx2(nPrecVec))
-!
-!             do j = 1,nPrecVec
-!               avec(:) = prec_ivmat(j,:)
-!               do iCell = 1,nPrecVec
-!                 idx(i) = iCell
-!               end do
-!               call PIKSRTIDX(nPrecVec,avec,idx)
-
-!               do iCell = 1,nPrecVec
-!                 idx2(i) = iCell
-!               end do
-!               avec(1:nPrecVec) = amat2d(j,1:nPrecVec)
-!               call PIKSRTIDX(nPrecVec,avec,idx2)
-!                
-!               do iCell = 1,nPrecVec
-!                 prec_ivmat(j,idx(iCell)) = avec(nPrecVec-iCell+1)
-!               end do
-!             end do ! j
-
-!             deallocate(avec,bvec,idx,idx2)
-
-!           call mpi_barrier (dminfo%comm,mpi_ierr)
-!           stop
-
-
-           
-!=== To save prec_matrix
-!           ! If you want to reorder ----
-!           nDL = 220
-!           allocate(bmat2d(nDL,nDL))
-!           allocate(avec(nDL))
-!           bmat2d(:,:) = 0.d0
-!           do j = 1,nDL
-!              !avec(:) = prec_ivmat(j,1:nDL)
-!              avec(:) = prec_mat(j,1:nDL
-!              call PIKSRT(nDL,avec)
-!              bmat2d(:,j) = avec(:)
-!              !bmat(((j-1)*121+1):j*121) = avec(:)
-!           end do
 
 
 !           write(iname,('(A,i3.3,A)')) 'matb_',rank,'.bin'
 !           open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
-!                recl=220*220*8,convert='little_endian')
-!           !write(rank+1,rec=1) prec_ivmat(1:220,1:220)
-!           write(rank+1,rec=1) bmat2d
-!           close(rank+1)
-
-
-!           write(iname,('(A,i3.3,A)')) 'mata_',rank,'.bin'
-!           open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
-!                recl=220*220*8,convert='little_endian')
-!           write(rank+1,rec=1) prec_mat(1:220,1:220)
+!                recl=121*121*8,convert='little_endian')
+!           write(rank+1,rec=1) bmat
 !           close(rank+1)
 !  
 !           if ( rank == 0 ) then
@@ -4433,20 +4333,13 @@ module ocn_time_integration_si
 !                    
 !             end do
 !           endif
-
 !           call mpi_barrier (dminfo%comm,mpi_ierr)
 !           stop
 
             !-----------------------------------------------------------------------------------!
 
-
-!=====================================================================
-! mata and matb for ML -------------------------------------------
-
-            nDL = 220
-
-!           allocate(amat2d(nDL,nDL))
-!           allocate(bmat2d(nDL,nDL))
+!           allocate(amat2d(121,121))
+!           allocate(bmat2d(121,121))
 
 !           call mpi_barrier (dminfo%comm,mpi_ierr)
 !           stop
@@ -4461,16 +4354,13 @@ module ocn_time_integration_si
 !           if ( nCells == 120 ) then
 !             
 !           else
-!          endif
+!           endif
 
 !           if ( rank == 0 ) then
 !             print*, amat2d(1,:)
 !           endif 
 
-
-
-
-!           if ( nCells == nDL ) then
+!           if ( nCells == 120 ) then
 !             avec(:) = 0.d0
 !             avec(1:120) = prec_ivmat(1,:)
 !             call PIKSRT(121,avec)
@@ -4486,75 +4376,61 @@ module ocn_time_integration_si
 !             end do
 !           endif
 
+!           allocate(amat(121*121))
+!           allocate(bmat(121*121))
 
-!--- Normalization of prec mats
-          
-!           temp1 = maxval(dabs(prec_mat))
-!           temp2 = maxval(dabs(prec_ivmat))
+!           amat(:) = 0.d0
+!             do j = 1,nCells
+!                avec(:) = 0.d0
+!                if ( nCells == 120 ) then
+!                  avec(1:120) = prec_ivmat(j,:)
+!                else
+!                  avec(:) = prec_ivmat(j,:)
+!                endif
+!                call PIKSRT(121,avec)
+!                amat(((j-1)*121+1):j*121) = avec(:)
+!             end do
+!  
+!           write(iname,('(A,i3.3,A)')) 'mata_',rank,'.bin'
+!           open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
+!                recl=121*121*8,convert='little_endian')
+!           write(rank+1,rec=1) amat
+!           close(rank+1)
 
-!           do j = 1,nPrecVec
-!           do i = 1,nPrecVec
-!              if ( dabs(prec_mat(i,j)) > 0.d0 ) then
-!                 prec_mat(i,j) = dabs(prec_mat(i,j))/temp1
-!              endif
-!              if ( dabs(prec_ivmat(i,j)) > 0.d0 ) then
-!                 prec_ivmat(i,j) = dabs(prec_ivmat(i,j))/temp2
-!              endif
-!           end do
-!           end do
-
-!           print*, minval(prec_mat),maxval(prec_mat)
-!           print*, minval(prec_ivmat),maxval(prec_ivmat)
 !           call mpi_barrier (dminfo%comm,mpi_ierr)
-!           call mpi_barrier (dminfo%comm,mpi_ierr)
-!           stop
 
-            allocate(amat2d(nDL,nDL))
-            allocate(bmat2d(nDL,nDL))
-            allocate(amat(nDL*nDL))
-            allocate(bmat(nDL*nDL))
-            allocate(avec(nDL))
-            allocate(bvec(nDL))
+!           bmat2d(:,:) = 0.d0
+!           if ( nCells == 120 ) then
+!             do j = 1,nCells
+!                avec(:) = 0.d0
+!                avec(1:120) = prec_mat(j,:)
+!                call PIKSRT(121,avec)
+!                bmat2d(j,:) = avec(:)
+!                !bmat(((j-1)*121+1):j*121) = avec(:)
+!             end do
+!           else
+!             do j = 1,nCells
+!                avec(:) = 0.d0
+!                avec(:) = prec_mat(j,:)
+!                call PIKSRT(121,avec)
+!                bmat2d(j,:) = avec(:)
+!                !bmat(((j-1)*121+1):j*121) = avec(:)
+!             end do
+!           endif
 
-            amat(:) = 0.d0
-             
-     
-            do j = 1,nDL
-               avec(:) = 0.d0
-               avec(1:nDL) = prec_mat(j,1:nDL)
-               call PIKSRT(nDL,avec)
-               amat(((j-1)*nDL+1):j*nDL) = avec(:)
-            end do
-   
-            write(iname,('(A,i3.3,A)')) 'mata_',rank,'.bin'
-            open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
-                 recl=nDL*nDL*8,convert='little_endian')
-            write(rank+1,rec=1) amat
-            close(rank+1)
+!           do j = 1,nCells 
+!             avec(:) = bmat2d(j,:)
+!             bmat2d(j,:) = 0.d0
+!             isum1 = 0
 
-            call mpi_barrier (dminfo%comm,mpi_ierr)
-
-            bmat2d(:,:) = 0.d0
-            do j = 1,nDL
-               avec(:) = prec_ivmat(j,1:nDL)
-               call PIKSRT(nDL,avec)
-               bmat2d(j,:) = avec(:)
-               !bmat(((j-1)*121+1):j*121) = avec(:)
-            end do
-
-            do j = 1,nDL
-              avec(:) = bmat2d(j,:)
-              bmat2d(j,:) = 0.d0
-              isum1 = 0
-
-              do iCell = 1,nDL
-                if ( dabs(avec(iCell)) > 0.d0 ) then
-                   isum1 = isum1 + 1
-                   bmat2d(j,isum1) = avec(iCell)
-                end if
-              end do
-              bmat(((j-1)*nDL+1):j*nDL) = bmat2d(j,:)
-            end do
+!             do iCell = 1,nCells
+!               if ( dabs(avec(iCell)) > 0.d0 ) then
+!                 isum1 = isum1 + 1
+!                  bmat2d(j,isum1) = avec(iCell)
+!               end if
+!             end do
+!             bmat(((j-1)*121+1):j*121) = bmat2d(j,:)
+!           end do
           
 !           if ( rank == 0 ) then
 !             do iCell = 1,nCells
@@ -4562,14 +4438,14 @@ module ocn_time_integration_si
 !             end do
 !           endif
    
-            write(iname,('(A,i3.3,A)')) 'matb_',rank,'.bin'
-            open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
-                 recl=nDL*nDL*8,convert='little_endian')
-            write(rank+1,rec=1) bmat
-            close(rank+1)
-   
-            call mpi_barrier (dminfo%comm,mpi_ierr)
-            stop
+!           write(iname,('(A,i3.3,A)')) 'matb_',rank,'.bin'
+!           open(rank+1,file=iname,status='unknown',access='direct',form='unformatted', &
+!                recl=121*121*8,convert='little_endian')
+!           write(rank+1,rec=1) bmat
+!           close(rank+1)
+!  
+!           call mpi_barrier (dminfo%comm,mpi_ierr)
+!           stop
 
          ! Jacobi preconditioner ------------------------------------------------------------------!
          else if ( trim(config_btr_si_preconditioner) == 'jacobi' ) then
