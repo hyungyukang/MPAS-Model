@@ -4324,7 +4324,7 @@ module ocn_time_integration_si
             call inverse(nPrecVec,prec_ivmat)
 
            
-!           nDL = 220
+            nDL = 220
 
 !           print*,'before', minval(prec_ivmat(1:nDL,1:nDL)),maxval(prec_ivmat(1:nDL,1:nDL))
 !           print*,prec_mat(1,:)
@@ -4550,170 +4550,177 @@ module ocn_time_integration_si
 
 !=== To read ML weights and biases =================================================!
 
-!           nInput = 10
-!           nDL    = 220
-!           nDL2   = nDL * 2
+            nInput = 10
+            nDL    = 220
+            nDL2   = nDL * 2
 
-!           l0m = nInput ; l0n = nInput
-!           l1m = nDL    ; l1n = nInput
-!           l2m = nDL2   ; l2n = nDL
-!           l3m = nDL2   ; l3n = nDL2
-!           l4m = nDL    ; l4n = nDL2
-!           l5m = nDL    ; l5n = nDL
+            l0m = nInput ; l0n = nInput
+            l1m = nDL    ; l1n = nInput
+            l2m = nDL2   ; l2n = nDL
+            l3m = nDL2   ; l3n = nDL2
+            l4m = nDL    ; l4n = nDL2
+            l5m = nDL    ; l5n = nDL
 
-!           allocate(wgtl0(l0m,l0n))
-!           allocate(wgtl1(l1m,l1n))
-!           allocate(wgtl2(l2m,l2n))
-!           allocate(wgtl3(l3m,l3n))
-!           allocate(wgtl4(l4m,l4n))
-!           allocate(wgtl5(l5m,l5n))
+            allocate(wgtl0(l0m,l0n))
+            allocate(wgtl1(l1m,l1n))
+            allocate(wgtl2(l2m,l2n))
+            allocate(wgtl3(l3m,l3n))
+            allocate(wgtl4(l4m,l4n))
+            allocate(wgtl5(l5m,l5n))
 
-!           allocate(basl0(l0m))
-!           allocate(basl1(l1m))
-!           allocate(basl2(l2m))
-!           allocate(basl3(l3m))
-!           allocate(basl4(l4m))
-!           allocate(basl5(l5m))
+            allocate(basl0(l0m))
+            allocate(basl1(l1m))
+            allocate(basl2(l2m))
+            allocate(basl3(l3m))
+            allocate(basl4(l4m))
+            allocate(basl5(l5m))
 
-!           allocate(cvecl0(l0m))
-!           allocate(cvecl1(l1m))
-!           allocate(cvecl2(l2m))
-!           allocate(cvecl3(l3m))
-!           allocate(cvecl4(l4m))
-!           allocate(cvecl5(l5m))
+            allocate(cvecl0(l0m))
+            allocate(cvecl1(l1m))
+            allocate(cvecl2(l2m))
+            allocate(cvecl3(l3m))
+            allocate(cvecl4(l4m))
+            allocate(cvecl5(l5m))
 
-!           allocate(dvecl0(l0m))
-!           allocate(dvecl1(l1m))
-!           allocate(dvecl2(l2m))
-!           allocate(dvecl3(l3m))
-!           allocate(dvecl4(l4m))
-!           allocate(dvecl5(l5m))
+            allocate(dvecl0(l0m))
+            allocate(dvecl1(l1m))
+            allocate(dvecl2(l2m))
+            allocate(dvecl3(l3m))
+            allocate(dvecl4(l4m))
+            allocate(dvecl5(l5m))
 
-!           !-----------------------------------------------------------------
-!           open(11,file='layer0_wgts.txt')
-!           open(12,file='layer0_bias.txt')
-!           do i = 1,l0m
-!              do j = 1,l0n
-!                 read(11,*) wgtl0(i,j)
-!              end do
-!                 read(12,*) basl0(i)
-!           end do
+            !-----------------------------------------------------------------
+            open(11,file='layer0_wgts.txt')
+            open(12,file='layer0_bias.txt')
+            do i = 1,l0m
+               do j = 1,l0n
+                  read(11,*) wgtl0(i,j)
+               end do
+                  read(12,*) basl0(i)
+            end do
 
-!           !-----------------------------------------------------------------
-!           open(21,file='layer1_wgts.txt')
-!           open(22,file='layer1_bias.txt')
-!           do i = 1,l1m
-!              do j = 1,l1n
-!                 read(21,*) wgtl1(i,j)
-!              end do
-!                 read(22,*) basl1(i)
-!           end do
-!           
-!           !-----------------------------------------------------------------
-!           open(31,file='layer2_wgts.txt')
-!           open(32,file='layer2_bias.txt')
-!           do i = 1,l2m
-!              do j = 1,l2n
-!                 read(31,*) wgtl2(i,j)
-!              end do
-!                 read(32,*) basl2(i)
-!           end do
-!           
-!           !-----------------------------------------------------------------
-!           open(41,file='layer3_wgts.txt')
-!           open(42,file='layer3_bias.txt')
-!           do i = 1,l3m
-!              do j = 1,l3n
-!                 read(41,*) wgtl3(i,j)
-!              end do
-!                 read(42,*) basl3(i)
-!           end do
-!           
-!           !-----------------------------------------------------------------
-!           open(51,file='layer4_wgts.txt')
-!           open(52,file='layer4_bias.txt')
-!           do i = 1,l4m
-!              do j = 1,l4n
-!                 read(51,*) wgtl4(i,j)
-!              end do
-!                 read(52,*) basl4(i)
-!           end do
-!           
-!           !-----------------------------------------------------------------
-!           open(61,file='layer5_wgts.txt')
-!           open(62,file='layer5_bias.txt')
-!           do i = 1,l5m
-!              do j = 1,l5n
-!                 read(61,*) wgtl5(i,j)
-!              end do
-!                 read(62,*) basl5(i)
-!           end do
+            !-----------------------------------------------------------------
+            open(21,file='layer1_wgts.txt')
+            open(22,file='layer1_bias.txt')
+            do i = 1,l1m
+               do j = 1,l1n
+                  read(21,*) wgtl1(i,j)
+               end do
+                  read(22,*) basl1(i)
+            end do
+            
+            !-----------------------------------------------------------------
+            open(31,file='layer2_wgts.txt')
+            open(32,file='layer2_bias.txt')
+            do i = 1,l2m
+               do j = 1,l2n
+                  read(31,*) wgtl2(i,j)
+               end do
+                  read(32,*) basl2(i)
+            end do
+            
+            !-----------------------------------------------------------------
+            open(41,file='layer3_wgts.txt')
+            open(42,file='layer3_bias.txt')
+            do i = 1,l3m
+               do j = 1,l3n
+                  read(41,*) wgtl3(i,j)
+               end do
+                  read(42,*) basl3(i)
+            end do
+            
+            !-----------------------------------------------------------------
+            open(51,file='layer4_wgts.txt')
+            open(52,file='layer4_bias.txt')
+            do i = 1,l4m
+               do j = 1,l4n
+                  read(51,*) wgtl4(i,j)
+               end do
+                  read(52,*) basl4(i)
+            end do
+            
+            !-----------------------------------------------------------------
+            open(61,file='layer5_wgts.txt')
+            open(62,file='layer5_bias.txt')
+            do i = 1,l5m
+               do j = 1,l5n
+                  read(61,*) wgtl5(i,j)
+               end do
+                  read(62,*) basl5(i)
+            end do
 
-!           !-----------------------------------------------------------------
-!           close(11) 
-!           close(12) 
-!           close(21) 
-!           close(22) 
-!           close(31) 
-!           close(32) 
-!           close(41) 
-!           close(42) 
-!           close(51) 
-!           close(52) 
-!           close(61) 
-!           close(62) 
+            !-----------------------------------------------------------------
+            close(11) 
+            close(12) 
+            close(21) 
+            close(22) 
+            close(31) 
+            close(32) 
+            close(41) 
+            close(42) 
+            close(51) 
+            close(52) 
+            close(61) 
+            close(62) 
 
 
-!           ! Reorder & normalization before prediction ---------------------
-!           allocate(amat2d(nPrecVec,nPrecVec))
-!           allocate(avec(nPrecVec))
+            ! Reorder & normalization before prediction ---------------------
+            allocate(amat2d(nPrecVec,nPrecVec))
+            allocate(avec(nPrecVec))
 
-!           do i = 1,nPrecVec
-!              prec_mat(i,i) = -prec_mat(i,i)
-!           end do
-!    
-!           do j = 1,nPrecVec
-!              avec(:) = 0.d0
-!              avec(1:nPrecVec) = prec_mat(j,1:nPrecVec)
-!              call QIKSRT(nPrecVec,avec)
-!              avec(1) = -avec(1)
-!              prec_mat(j,1:nPrecVec) = avec(:)
-!           end do
+            do i = 1,nPrecVec
+               prec_mat(i,i) = -prec_mat(i,i)
+            end do
+     
+            do j = 1,nPrecVec
+               avec(:) = 0.d0
+               avec(1:nPrecVec) = prec_mat(j,1:nPrecVec)
+               call QIKSRT(nPrecVec,avec)
+               avec(1) = -avec(1)
+               prec_mat(j,1:nPrecVec) = avec(:)
+            end do
 
-!           xmax_local = maxval(dabs(prec_mat))
-!           ymax_local = maxval(dabs(prec_ivmat))
+            xmax_local = maxval(dabs(prec_mat))
+            ymax_local = maxval(dabs(prec_ivmat))
 
-!           call mpas_dmpar_max_real(dminfo, xmax_local, xmax_global)
-!           call mpas_dmpar_max_real(dminfo, ymax_local, ymax_global)
-!
-!           prec_mat(:,:) = -prec_mat(:,:) / xmax_global
+            call mpas_dmpar_max_real(dminfo, xmax_local, xmax_global)
+            call mpas_dmpar_max_real(dminfo, ymax_local, ymax_global)
+ 
+            prec_mat(:,:) = -prec_mat(:,:) / xmax_global
 
-!        
-!           ! Predictions
+         
+            ! Predictions
 
-!           ! ---  Layer 0
-!           do i = 1,nPrecVec
-!              cvecl0(:) = prec_mat(i,1:l0m)
-!              dvecl0(:) = basl0(:) 
-!              call dgemv('N',l0m,l0n,1.0_RKIND,wgtl0,l0m,cvecl0,1,1.0_RKIND,dvecl0,1)
-!              dvecl1(:) = basl1(:) 
-!              call dgemv('N',l1m,l1n,1.0_RKIND,wgtl1,l1m,dvecl0,1,1.0_RKIND,dvecl1,1)
-!              dvecl2(:) = basl2(:) 
-!              call dgemv('N',l2m,l2n,1.0_RKIND,wgtl2,l2m,dvecl1,1,1.0_RKIND,dvecl2,1)
-!              dvecl3(:) = basl3(:) 
-!              call dgemv('N',l3m,l3n,1.0_RKIND,wgtl3,l3m,dvecl2,1,1.0_RKIND,dvecl3,1)
-!              dvecl4(:) = basl4(:) 
-!              call dgemv('N',l4m,l4n,1.0_RKIND,wgtl4,l4m,dvecl3,1,1.0_RKIND,dvecl4,1)
-!              dvecl5(:) = basl5(:) 
-!              call dgemv('N',l5m,l5n,1.0_RKIND,wgtl5,l5m,dvecl4,1,1.0_RKIND,dvecl5,1)
-!           end do
-!       
+            ! ---  Layer 0
+            do i = 1,nPrecVec
+               cvecl0(:) = prec_mat(i,1:l0m)
+               dvecl0(:) = basl0(:) 
+               call dgemv('N',l0m,l0n,1.0_RKIND,wgtl0,l0m,cvecl0,1,1.0_RKIND,dvecl0,1)
+               dvecl1(:) = basl1(:) 
+               call dgemv('N',l1m,l1n,1.0_RKIND,wgtl1,l1m,dvecl0,1,1.0_RKIND,dvecl1,1)
+               dvecl2(:) = basl2(:) 
+               call dgemv('N',l2m,l2n,1.0_RKIND,wgtl2,l2m,dvecl1,1,1.0_RKIND,dvecl2,1)
+               dvecl3(:) = basl3(:) 
+               call dgemv('N',l3m,l3n,1.0_RKIND,wgtl3,l3m,dvecl2,1,1.0_RKIND,dvecl3,1)
+               dvecl4(:) = basl4(:) 
+               call dgemv('N',l4m,l4n,1.0_RKIND,wgtl4,l4m,dvecl3,1,1.0_RKIND,dvecl4,1)
+               dvecl5(:) = basl5(:) 
+               call dgemv('N',l5m,l5n,1.0_RKIND,wgtl5,l5m,dvecl4,1,1.0_RKIND,dvecl5,1)
+            end do
+        
+            if ( rank == 0 ) then
+               print*, dvecl5(:)
+            endif
+            
+!           print*, xmax_global,ymax_global
+
 !           if ( rank == 0 ) then
-!              print*, dvecl5(:)
+!              print*, prec_mat(1,:)
 !           endif
-!           
-!           call mpi_barrier (dminfo%comm,mpi_ierr)
-!           stop
+
+
+            call mpi_barrier (dminfo%comm,mpi_ierr)
+            stop
 
 
 !-----------------------------------------------------------------------------------!
