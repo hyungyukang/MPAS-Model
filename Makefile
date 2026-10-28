@@ -19,7 +19,7 @@ gnu:   # BUILDTARGET GNU Fortran, C, and C++ compilers
 	"FFLAGS_OPT = -std=f2008 -fimplicit-none -O3 -ffree-line-length-none -fconvert=big-endian -ffree-form" \
 	"CFLAGS_OPT = -O3" \
 	"CXXFLAGS_OPT = -O3" \
-	"LDFLAGS_OPT = -O3" \
+	"LDFLAGS_OPT = -O3 -lstdc++" \
 	"FFLAGS_DEBUG = -std=f2008 -fimplicit-none -g -ffree-line-length-none -fconvert=big-endian -ffree-form -fcheck=all -fbacktrace -ffpe-trap=invalid,zero,overflow" \
 	"CFLAGS_DEBUG = -g" \
 	"CXXFLAGS_DEBUG = -g" \
@@ -390,7 +390,7 @@ gfortran:   # BUILDTARGET GNU Fortran, C, and C++ compilers
 	"FFLAGS_OPT = -O3 -ffree-line-length-none -fconvert=big-endian -ffree-form" \
 	"CFLAGS_OPT = -O3" \
 	"CXXFLAGS_OPT = -O3" \
-	"LDFLAGS_OPT = -O3" \
+	"LDFLAGS_OPT = -O3 -lstdc++" \
 	"FFLAGS_DEBUG = -g -ffree-line-length-none -fconvert=big-endian -ffree-form -fcheck=all -fbacktrace -ffpe-trap=invalid,zero,overflow" \
 	"CFLAGS_DEBUG = -g" \
 	"CXXFLAGS_DEBUG = -g" \
@@ -1039,6 +1039,46 @@ endif
 ifdef MPAS_EXTERNAL_CPPFLAGS
 	override CPPFLAGS += $(MPAS_EXTERNAL_CPPFLAGS)
 endif
+
+
+# If user has indicated ADIOS isn't supported, define HAVE_ADIOS pre-processor macro
+#
+# Default is that we have ADIOS if a user hasn't said anything
+#ifeq "$(HAVE_ADIOS)" ""
+#	override CPPFLAGS += -DHAVE_ADIOS
+#endif
+#
+#ifeq "$(HAVE_ADIOS)" "true"
+#	override CPPFLAGS += -DHAVE_ADIOS
+#	LIBS += -L/lustre/typhoon/nwp501/scratch/hgkang/AF_Weather_Hackathon/programs/adios2/gnu_16.1.0/lib64 -ladios2_fortran_mpi
+#endif
+
+
+
+# ADIOS2 support (enabled by default)
+HAVE_ADIOS ?= true
+
+ifeq ($(HAVE_ADIOS),true)
+    override CPPFLAGS += -DHAVE_ADIOS
+
+    ADIOS2_DIR = /lustre/typhoon/nwp501/scratch/hgkang/AF_Weather_Hackathon/programs/adios2/gnu_16.1.0
+
+    override CPPINCLUDES += -I$(ADIOS2_DIR)/include
+    override FCINCLUDES += -I$(ADIOS2_DIR)/include
+
+    LIBS += -L$(ADIOS2_DIR)/lib64 \
+            -ladios2_fortran_mpi \
+            -ladios2_fortran \
+            -ladios2_cxx_mpi \
+            -ladios2_cxx \
+            -ladios2_c_mpi \
+            -ladios2_c \
+            -ladios2_core_mpi \
+            -ladios2_core \
+            -lstdc++
+
+endif
+
 ####################################################
 
 override CPPFLAGS += -DMPAS_BUILD_TARGET=$(BUILD_TARGET)
@@ -1318,6 +1358,7 @@ pio_test: openmp_test openacc_test pnetcdf_test
 ifneq "$(USE_PIO2)" ""
 	$(info *** Note: The USE_PIO2 option has been deprecated and will be ignored.)
 endif
+
 	$(eval PIO_VERS := $(shell $\
 		rm -f .piotest.log; $\
 		printf "program pio1\n$\

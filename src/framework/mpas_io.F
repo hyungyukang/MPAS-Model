@@ -228,7 +228,7 @@ module mpas_io
             end if
          end if
 #endif
-  
+
       end if
 
 #ifdef MPAS_PIO_SUPPORT
@@ -245,7 +245,7 @@ module mpas_io
 !> \brief   Set master PIO io type
 !> \author  Doug Jacobsen
 !> \date    10/18/2013
-!> \details 
+!> \details
 !>  This routine sets the master io type for use with PIO.
 !
 !-----------------------------------------------------------------------
@@ -273,7 +273,7 @@ module mpas_io
 !> \brief   Unset master PIO io type
 !> \author  Doug Jacobsen
 !> \date    10/18/2013
-!> \details 
+!> \details
 !>  This routine sets the master io type for use with PIO to it's default
 !>  "unset" value.
 !
@@ -293,7 +293,7 @@ module mpas_io
 
    end subroutine MPAS_io_unset_iotype
 
-   
+
    type (MPAS_IO_Handle_type) function MPAS_io_open(filename, mode, ioformat, ioContext, &
                                                     clobber_file, truncate_file, pio_file_desc, ierr)
 
@@ -339,18 +339,20 @@ module mpas_io
       if (mode /= MPAS_IO_READ .and. &
           mode /= MPAS_IO_WRITE) then
          if (present(ierr)) ierr = MPAS_IO_ERR_INVALID_MODE
-         return 
+         return
       end if
       if (ioformat /= MPAS_IO_NETCDF .and. &
           ioformat /= MPAS_IO_NETCDF4 .and. &
           ioformat /= MPAS_IO_PNETCDF .and. &
-          ioformat /= MPAS_IO_PNETCDF5) then
+          ioformat /= MPAS_IO_PNETCDF5  .and. &
+          ioformat /= MPAS_IO_ADIOS .and. &
+          ioformat /= MPAS_IO_ADIOSC) then
          if (present(ierr)) ierr = MPAS_IO_ERR_INVALID_FORMAT
-         return 
+         return
       end if
       if (len(filename) > 1024) then
          if (present(ierr)) ierr = MPAS_IO_ERR_LONG_FILENAME
-         return 
+         return
       end if
 
       MPAS_io_open % filename = filename
@@ -369,6 +371,24 @@ module mpas_io
          else if (ioformat == MPAS_IO_PNETCDF5) then
             pio_iotype = PIO_iotype_pnetcdf
             pio_mode = PIO_64BIT_DATA
+    else if (ioformat == MPAS_IO_ADIOS) then
+#ifdef HAVE_ADIOS
+            pio_iotype = PIO_iotype_adios
+            pio_mode = 0
+#else
+            call mpas_log_write( &
+               'ERROR Building with HAVE_ADIOS=false but ADIOS format was requested in a stream', &
+               MPAS_LOG_CRIT)
+#endif
+         else if (ioformat == MPAS_IO_ADIOSC) then
+#ifdef HAVE_ADIOS
+            pio_iotype = PIO_iotype_adiosc
+            pio_mode = 0
+#else
+            call mpas_log_write( &
+               'ERROR Building with HAVE_ADIOS=false but ADIOSC (ADIOS+Compression) format was requested in a stream', &
+               MPAS_LOG_CRIT)
+#endif
          else if (ioformat == MPAS_IO_NETCDF) then
             pio_iotype = PIO_iotype_netcdf
             pio_mode = PIO_64BIT_OFFSET
@@ -402,7 +422,7 @@ module mpas_io
                if (present(ierr)) ierr = MPAS_IO_ERR_WOULD_CLOBBER
                return
             end if
- 
+
             if (exists .and. (.not. local_truncate)) then
 #ifdef MPAS_PIO_SUPPORT
                pio_ierr = PIO_openfile(ioContext % pio_iosystem, MPAS_io_open % pio_file, pio_iotype, trim(filename), PIO_write)
@@ -524,7 +544,7 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
       if (handle % iomode /= MPAS_IO_READ) then       ! We could eventually handle this for write mode, too...
          if (present(ierr)) ierr = MPAS_IO_ERR_WRONG_MODE
@@ -532,7 +552,7 @@ module mpas_io
       end if
 
 #ifdef MPAS_PIO_SUPPORT
-      pio_ierr = PIO_inq_dimname(handle % pio_file, handle % pio_unlimited_dimid, dimname) 
+      pio_ierr = PIO_inq_dimname(handle % pio_file, handle % pio_unlimited_dimid, dimname)
       if (pio_ierr /= PIO_noerr) then
          if (present(ierr)) ierr = MPAS_IO_ERR_NO_UNLIMITED_DIM
          dimname = ' '
@@ -571,7 +591,7 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
 
@@ -633,7 +653,7 @@ module mpas_io
       end if
       new_dimlist_node % dimhandle % dimsize = local_dimsize
 #endif
-   
+
       ! Keep dimension information for future reference
       if (.not. associated(handle % dimlist_head)) then
          handle % dimlist_head => new_dimlist_node
@@ -674,15 +694,15 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
       if (handle % data_mode) then
          if (present(ierr)) ierr = MPAS_IO_ERR_DATA_MODE
-         return 
+         return
       end if
       if (handle % iomode /= MPAS_IO_WRITE) then
          if (present(ierr)) ierr = MPAS_IO_ERR_NOWRITE
-         return 
+         return
       end if
 
 
@@ -693,7 +713,7 @@ module mpas_io
       do while (associated(dim_cursor))
          if (trim(dimname) == trim(dim_cursor % dimhandle % dimname)) then
 
-            ! The second half of the test below avoids raising errors in the case where 
+            ! The second half of the test below avoids raising errors in the case where
             !    we are writing to an already existing file, in which case the dimlen for the
             !    unlimited dimension in the file will generally not be MPAS_IO_UNLIMITED_DIM
             if ((dimsize /= dim_cursor % dimhandle % dimsize) .and. &
@@ -834,7 +854,7 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
 
@@ -860,7 +880,7 @@ module mpas_io
          allocate(new_fieldlist_node)
          nullify(new_fieldlist_node % next)
          allocate(new_fieldlist_node % fieldhandle)
-      
+
          new_fieldlist_node % fieldhandle % fieldname = fieldname
 
          ! Get variable ID
@@ -1168,15 +1188,15 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
       if (handle % data_mode) then
          if (present(ierr)) ierr = MPAS_IO_ERR_DATA_MODE
-         return 
+         return
       end if
       if (handle % iomode /= MPAS_IO_WRITE) then
          if (present(ierr)) ierr = MPAS_IO_ERR_NOWRITE
-         return 
+         return
       end if
 
 
@@ -1252,9 +1272,9 @@ module mpas_io
                   return
                end if
             end do
-   
+
             ! TODO: Can we get the dimension sizes to see whether they match those from the file?
-   
+
          end if
 
          return
@@ -1425,11 +1445,11 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
 
-      !  
+      !
       ! Check whether the field has been defined
       !
       field_cursor => handle % fieldlist_head
@@ -1469,7 +1489,7 @@ module mpas_io
       integer :: pio_type
       integer :: ndims
       integer (kind=MPAS_IO_OFFSET_KIND) :: pd, indx
-      integer :: i 
+      integer :: i
       integer :: early_return, early_return_global
       integer (kind=MPAS_IO_OFFSET_KIND) :: i1, i2, i3, i4, i5
       integer, dimension(:), pointer :: dimlist
@@ -1487,11 +1507,11 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
 !      call mpas_log_write('Assigning $i indices for '//trim(fieldname), intArgs=(/size(indices)/) )
-      !  
+      !
       ! Check whether the field has been defined
       !
       field_cursor => handle % fieldlist_head
@@ -1572,10 +1592,10 @@ module mpas_io
                   decomp_cursor => decomp_cursor % next
                   cycle DECOMP_LOOP
                end if
-            end do 
-            
+            end do
+
             ! OK, we have a match... just use this decomposition for the field and return
-            field_cursor % fieldhandle % decomp => decomp_cursor % decomphandle 
+            field_cursor % fieldhandle % decomp => decomp_cursor % decomphandle
 !call mpas_log_write('Found a matching decomposition that we can use')
             early_return = 1
             exit DECOMP_LOOP
@@ -1606,10 +1626,10 @@ module mpas_io
                   decomp_cursor => decomp_cursor % next
                   cycle DECOMP_LOOP
                end if
-            end do 
-            
+            end do
+
             ! OK, we have a match... just use this decomposition for the field and return
-            field_cursor % fieldhandle % decomp => decomp_cursor % decomphandle 
+            field_cursor % fieldhandle % decomp => decomp_cursor % decomphandle
 !call mpas_log_write('Found a matching decomposition that we can use (aside from record dimension)')
             early_return = 1
             exit DECOMP_LOOP
@@ -1619,9 +1639,9 @@ module mpas_io
          decomp_cursor => decomp_cursor % next
       end do DECOMP_LOOP
 
-      ! 
+      !
       ! If all tasks have set early_return to 1, then we have a usable decomposition and can return
-      ! 
+      !
       call mpas_dmpar_min_int(handle % ioContext % dminfo, early_return, early_return_global)
       if (early_return_global == 1) then
          return
@@ -1636,7 +1656,7 @@ module mpas_io
       !
       ndims = field_cursor % fieldhandle % ndims
       if (field_cursor % fieldhandle % has_unlimited_dim) ndims = ndims - 1
-      
+
 
       allocate(new_decomp)
       nullify(new_decomp % next)
@@ -1672,7 +1692,7 @@ module mpas_io
       dimlist(ndims) = size(indices)
       pd = pd * int(dimlist(ndims),MPAS_IO_OFFSET_KIND)
 
-      allocate(compdof(pd)) 
+      allocate(compdof(pd))
 
       indx = 1
       if (ndims == 5) then
@@ -1870,7 +1890,7 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
 !      call mpas_log_write('Reading '// trim(fieldname))
@@ -1921,7 +1941,7 @@ module mpas_io
 
          start1(1) = handle % frame_number
          count1(1) = 1
-     
+
          start2(1) = 1
          start2(2) = handle % frame_number
          count2(2) = 1
@@ -3073,7 +3093,7 @@ module mpas_io
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
          MPAS_io_would_clobber_records = .false.
-         return 
+         return
       end if
 
       if (handle % frame_number <= handle % preexisting_records) then
@@ -3168,7 +3188,7 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
       if (.not. handle % data_mode) then
@@ -3234,7 +3254,7 @@ module mpas_io
 
          start1(1) = handle % frame_number
          count1(1) = 1
-     
+
          start2(1) = 1
          start2(2) = handle % frame_number
          count2(2) = 1
@@ -4354,7 +4374,7 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
 
@@ -4517,7 +4537,7 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
 #ifdef MPAS_SMIOL_SUPPORT
@@ -4682,7 +4702,7 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
 
@@ -4929,7 +4949,7 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
 #ifdef MPAS_SMIOL_SUPPORT
@@ -5126,7 +5146,7 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
 
@@ -5288,19 +5308,19 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
       if (handle % data_mode) then
          if (present(ierr)) ierr = MPAS_IO_ERR_DATA_MODE
-         return 
+         return
       end if
       if (handle % iomode /= MPAS_IO_WRITE) then
          if (present(ierr)) ierr = MPAS_IO_ERR_NOWRITE
-         return 
+         return
       end if
 
 
-      allocate(new_attlist_node) 
+      allocate(new_attlist_node)
       nullify(new_attlist_node % next)
       allocate(new_attlist_node % attHandle)
       new_attlist_node % attHandle % attName = attName
@@ -5325,7 +5345,7 @@ module mpas_io
                          attlist_cursor % atthandle % attValueInt /= attValue) then
                         if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
                         deallocate(new_attlist_node % attHandle)
-                        deallocate(new_attlist_node) 
+                        deallocate(new_attlist_node)
                      end if
                      return
                   end if
@@ -5340,7 +5360,7 @@ module mpas_io
          if (.not. associated(field_cursor)) then
             if (present(ierr)) ierr = MPAS_IO_ERR_UNDEFINED_VAR
             deallocate(new_attlist_node % attHandle)
-            deallocate(new_attlist_node) 
+            deallocate(new_attlist_node)
             return
          end if
 
@@ -5369,7 +5389,7 @@ module mpas_io
                    attlist_cursor % atthandle % attValueInt /= attValue) then
                   if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
                   deallocate(new_attlist_node % attHandle)
-                  deallocate(new_attlist_node) 
+                  deallocate(new_attlist_node)
                end if
                return
             end if
@@ -5402,7 +5422,7 @@ module mpas_io
       end if
 
 #ifdef MPAS_PIO_SUPPORT
-      pio_ierr = PIO_put_att(handle % pio_file, varid, attName, attValueLocal) 
+      pio_ierr = PIO_put_att(handle % pio_file, varid, attName, attValueLocal)
       if (pio_ierr /= PIO_noerr) then
          io_global_err = pio_ierr
          if (present(ierr)) ierr = MPAS_IO_ERR_BACKEND
@@ -5461,22 +5481,22 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
       if (handle % data_mode) then
          if (present(ierr)) ierr = MPAS_IO_ERR_DATA_MODE
-         return 
+         return
       end if
       if (handle % iomode /= MPAS_IO_WRITE) then
          if (present(ierr)) ierr = MPAS_IO_ERR_NOWRITE
-         return 
+         return
       end if
 
 #ifdef MPAS_SMIOL_SUPPORT
       call mpas_log_write('1-d integer attributes not yet implemented in SMIOL: '//trim(attName), messageType=MPAS_LOG_ERR)
 #endif
 
-      allocate(new_attlist_node) 
+      allocate(new_attlist_node)
       nullify(new_attlist_node % next)
       allocate(new_attlist_node % attHandle)
       new_attlist_node % attHandle % attName = attName
@@ -5502,11 +5522,11 @@ module mpas_io
                          size(attlist_cursor % atthandle % attValueIntA) /= size(attValue)) then
                         if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
                         deallocate(new_attlist_node % attHandle)
-                        deallocate(new_attlist_node) 
+                        deallocate(new_attlist_node)
 !                     else if (attlist_cursor % atthandle % attValueIntA(:) /= attValue(:)) then   ! array sizes should match based on previous if-test
 !                        if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
 !                        deallocate(new_attlist_node % attHandle)
-!                        deallocate(new_attlist_node) 
+!                        deallocate(new_attlist_node)
                      end if
                      return
                   end if
@@ -5521,7 +5541,7 @@ module mpas_io
          if (.not. associated(field_cursor)) then
             if (present(ierr)) ierr = MPAS_IO_ERR_UNDEFINED_VAR
             deallocate(new_attlist_node % attHandle)
-            deallocate(new_attlist_node) 
+            deallocate(new_attlist_node)
             return
          end if
 
@@ -5550,7 +5570,7 @@ module mpas_io
                    size(attlist_cursor % atthandle % attValueIntA) /= size(attValue)) then
                   if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
                   deallocate(new_attlist_node % attHandle)
-                  deallocate(new_attlist_node) 
+                  deallocate(new_attlist_node)
 !               else if (attlist_cursor % atthandle % attValueIntA /= attValue) then
 !               else if (attlist_cursor % atthandle % attValueIntA /= attValue) then
 !               else if (attlist_cursor % atthandle % attValueIntA /= attValue) then
@@ -5587,7 +5607,7 @@ module mpas_io
       end if
 
 #ifdef MPAS_PIO_SUPPORT
-      pio_ierr = PIO_put_att(handle % pio_file, varid, attName, attValueLocal) 
+      pio_ierr = PIO_put_att(handle % pio_file, varid, attName, attValueLocal)
       if (pio_ierr /= PIO_noerr) then
          io_global_err = pio_ierr
          if (present(ierr)) ierr = MPAS_IO_ERR_BACKEND
@@ -5631,19 +5651,19 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
       if (handle % data_mode) then
          if (present(ierr)) ierr = MPAS_IO_ERR_DATA_MODE
-         return 
+         return
       end if
       if (handle % iomode /= MPAS_IO_WRITE) then
          if (present(ierr)) ierr = MPAS_IO_ERR_NOWRITE
-         return 
+         return
       end if
 
 
-      allocate(new_attlist_node) 
+      allocate(new_attlist_node)
       nullify(new_attlist_node % next)
       allocate(new_attlist_node % attHandle)
       new_attlist_node % attHandle % attName = attName
@@ -5673,7 +5693,7 @@ module mpas_io
                          attlist_cursor % atthandle % attValueReal /= attValue) then
                         if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
                         deallocate(new_attlist_node % attHandle)
-                        deallocate(new_attlist_node) 
+                        deallocate(new_attlist_node)
                      end if
                      return
                   end if
@@ -5688,7 +5708,7 @@ module mpas_io
          if (.not. associated(field_cursor)) then
             if (present(ierr)) ierr = MPAS_IO_ERR_UNDEFINED_VAR
             deallocate(new_attlist_node % attHandle)
-            deallocate(new_attlist_node) 
+            deallocate(new_attlist_node)
             return
          end if
 
@@ -5717,7 +5737,7 @@ module mpas_io
                    attlist_cursor % atthandle % attValueReal /= attValue) then
                   if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
                   deallocate(new_attlist_node % attHandle)
-                  deallocate(new_attlist_node) 
+                  deallocate(new_attlist_node)
                end if
                return
             end if
@@ -5753,7 +5773,7 @@ module mpas_io
           (MPAS_IO_NATIVE_PRECISION /= MPAS_IO_SINGLE_PRECISION)) then
          singleVal = real(attValueLocal,R4KIND)
 #ifdef MPAS_PIO_SUPPORT
-         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, singleVal) 
+         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, singleVal)
 #endif
 
 #ifdef MPAS_SMIOL_SUPPORT
@@ -5767,7 +5787,7 @@ module mpas_io
           (MPAS_IO_NATIVE_PRECISION /= MPAS_IO_DOUBLE_PRECISION)) then
          doubleVal = real(attValueLocal,R8KIND)
 #ifdef MPAS_PIO_SUPPORT
-         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, doubleVal) 
+         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, doubleVal)
 #endif
 
 #ifdef MPAS_SMIOL_SUPPORT
@@ -5779,7 +5799,7 @@ module mpas_io
 #endif
       else
 #ifdef MPAS_PIO_SUPPORT
-         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, attValueLocal) 
+         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, attValueLocal)
 #endif
 
 #ifdef MPAS_SMIOL_SUPPORT
@@ -5848,22 +5868,22 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
       if (handle % data_mode) then
          if (present(ierr)) ierr = MPAS_IO_ERR_DATA_MODE
-         return 
+         return
       end if
       if (handle % iomode /= MPAS_IO_WRITE) then
          if (present(ierr)) ierr = MPAS_IO_ERR_NOWRITE
-         return 
+         return
       end if
 
 #ifdef MPAS_SMIOL_SUPPORT
       call mpas_log_write('1-d real attributes not yet implemented in SMIOL: '//trim(attName), messageType=MPAS_LOG_ERR)
 #endif
 
-      allocate(new_attlist_node) 
+      allocate(new_attlist_node)
       nullify(new_attlist_node % next)
       allocate(new_attlist_node % attHandle)
       new_attlist_node % attHandle % attName = attName
@@ -5894,11 +5914,11 @@ module mpas_io
                          size(attlist_cursor % atthandle % attValueRealA) /= size(attValue)) then
                         if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
                         deallocate(new_attlist_node % attHandle)
-                        deallocate(new_attlist_node) 
+                        deallocate(new_attlist_node)
 !                     else if (attlist_cursor % atthandle % attValueIntA(:) /= attValue(:)) then   ! array sizes should match based on previous if-test
 !                        if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
 !                        deallocate(new_attlist_node % attHandle)
-!                        deallocate(new_attlist_node) 
+!                        deallocate(new_attlist_node)
                      end if
                      return
                   end if
@@ -5913,7 +5933,7 @@ module mpas_io
          if (.not. associated(field_cursor)) then
             if (present(ierr)) ierr = MPAS_IO_ERR_UNDEFINED_VAR
             deallocate(new_attlist_node % attHandle)
-            deallocate(new_attlist_node) 
+            deallocate(new_attlist_node)
             return
          end if
 
@@ -5942,7 +5962,7 @@ module mpas_io
                    size(attlist_cursor % atthandle % attValueRealA) /= size(attValue)) then
                   if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
                   deallocate(new_attlist_node % attHandle)
-                  deallocate(new_attlist_node) 
+                  deallocate(new_attlist_node)
 !               else if (attlist_cursor % atthandle % attValueIntA /= attValue) then
 !               else if (attlist_cursor % atthandle % attValueIntA /= attValue) then
 !               else if (attlist_cursor % atthandle % attValueIntA /= attValue) then
@@ -5983,7 +6003,7 @@ module mpas_io
          allocate(singleVal(size(attValueLocal)))
          singleVal(:) = real(attValueLocal(:),R4KIND)
 #ifdef MPAS_PIO_SUPPORT
-         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, singleVal) 
+         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, singleVal)
 #endif
          deallocate(singleVal)
       else if ((new_attlist_node % attHandle % precision == MPAS_IO_DOUBLE_PRECISION) .and. &
@@ -5991,12 +6011,12 @@ module mpas_io
          allocate(doubleVal(size(attValueLocal)))
          doubleVal(:) = real(attValueLocal(:),R8KIND)
 #ifdef MPAS_PIO_SUPPORT
-         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, doubleVal) 
+         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, doubleVal)
 #endif
          deallocate(doubleVal)
       else
 #ifdef MPAS_PIO_SUPPORT
-         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, attValueLocal) 
+         pio_ierr = PIO_put_att(handle % pio_file, varid, attName, attValueLocal)
 #endif
       end if
 #ifdef MPAS_PIO_SUPPORT
@@ -6050,19 +6070,19 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
       if (handle % data_mode) then
          if (present(ierr)) ierr = MPAS_IO_ERR_DATA_MODE
-         return 
+         return
       end if
       if (handle % iomode /= MPAS_IO_WRITE) then
          if (present(ierr)) ierr = MPAS_IO_ERR_NOWRITE
-         return 
+         return
       end if
 
 
-      allocate(new_attlist_node) 
+      allocate(new_attlist_node)
       nullify(new_attlist_node % next)
       allocate(new_attlist_node % attHandle)
       new_attlist_node % attHandle % attName = attName
@@ -6087,7 +6107,7 @@ module mpas_io
                          trim(attlist_cursor % atthandle % attValueText) /= trim(attValue)) then
                         if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
                         deallocate(new_attlist_node % attHandle)
-                        deallocate(new_attlist_node) 
+                        deallocate(new_attlist_node)
                      end if
                      return
                   end if
@@ -6102,7 +6122,7 @@ module mpas_io
          if (.not. associated(field_cursor)) then
             if (present(ierr)) ierr = MPAS_IO_ERR_UNDEFINED_VAR
             deallocate(new_attlist_node % attHandle)
-            deallocate(new_attlist_node) 
+            deallocate(new_attlist_node)
             return
          end if
 
@@ -6131,7 +6151,7 @@ module mpas_io
                    trim(attlist_cursor % atthandle % attValueText) /= trim(attValue)) then
                   if (present(ierr)) ierr = MPAS_IO_ERR_REDEF_ATT
                   deallocate(new_attlist_node % attHandle)
-                  deallocate(new_attlist_node) 
+                  deallocate(new_attlist_node)
                end if
                return
             end if
@@ -6164,16 +6184,16 @@ module mpas_io
       end if
 
 #ifdef MPAS_PIO_SUPPORT
-      pio_ierr = PIO_put_att(handle % pio_file, varid, attName, trim(attValueLocal)) 
+      pio_ierr = PIO_put_att(handle % pio_file, varid, attName, trim(attValueLocal))
       if (pio_ierr /= PIO_noerr) then
 
          io_global_err = pio_ierr
          if (present(ierr)) ierr = MPAS_IO_ERR_BACKEND
 
          !
-         ! If we are working with a pre-existing file and the text attribute is larger than in the file, we need 
+         ! If we are working with a pre-existing file and the text attribute is larger than in the file, we need
          ! to enter define mode before writing the attribute. Note the PIO_redef documentation:
-         !     'Entering and leaving netcdf define mode causes a file sync operation to occur, 
+         !     'Entering and leaving netcdf define mode causes a file sync operation to occur,
          !      these operations can be very expensive in parallel systems.'
          !
          if (handle % preexisting_file .and. .not. handle % data_mode) then
@@ -6183,7 +6203,7 @@ module mpas_io
                return
             end if
 
-            pio_ierr = PIO_put_att(handle % pio_file, varid, attName, trim(attValueLocal)) 
+            pio_ierr = PIO_put_att(handle % pio_file, varid, attName, trim(attValueLocal))
             if (pio_ierr /= PIO_noerr) then
                io_global_err = pio_ierr
                return
@@ -6274,7 +6294,7 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
 #ifdef MPAS_PIO_SUPPORT
@@ -6319,18 +6339,18 @@ module mpas_io
       ! Sanity checks
       if (.not. handle % initialized) then
          if (present(ierr)) ierr = MPAS_IO_ERR_UNINIT_HANDLE
-         return 
+         return
       end if
 
       ! Deallocate memory associated with the file
       fieldlist_ptr => handle % fieldlist_head
       do while (associated(fieldlist_ptr))
-         fieldlist_del => fieldlist_ptr 
+         fieldlist_del => fieldlist_ptr
          fieldlist_ptr => fieldlist_ptr % next
 
          attlist_ptr => fieldlist_del % fieldhandle % attlist_head
          do while (associated(attlist_ptr))
-            attlist_del => attlist_ptr 
+            attlist_del => attlist_ptr
             attlist_ptr => attlist_ptr % next
             if (attlist_del % atthandle % attType == MPAS_ATT_INTA) deallocate(attlist_del % atthandle % attValueIntA)
             if (attlist_del % atthandle % attType == MPAS_ATT_REALA) deallocate(attlist_del % atthandle % attValueRealA)
@@ -6348,7 +6368,7 @@ module mpas_io
 
       dimlist_ptr => handle % dimlist_head
       do while (associated(dimlist_ptr))
-         dimlist_del => dimlist_ptr 
+         dimlist_del => dimlist_ptr
          dimlist_ptr => dimlist_ptr % next
          deallocate(dimlist_del % dimhandle)
       end do
@@ -6357,7 +6377,7 @@ module mpas_io
 
       attlist_ptr => handle % attlist_head
       do while (associated(attlist_ptr))
-         attlist_del => attlist_ptr 
+         attlist_del => attlist_ptr
          attlist_ptr => attlist_ptr % next
          if (attlist_del % atthandle % attType == MPAS_ATT_INTA) deallocate(attlist_del % atthandle % attValueIntA)
          if (attlist_del % atthandle % attType == MPAS_ATT_REALA) deallocate(attlist_del % atthandle % attValueRealA)
@@ -6546,5 +6566,5 @@ module mpas_io
       if (fatal .and. (ierr /= MPAS_IO_NOERR)) call mpas_log_write('ERROR In MPAS_IO', MPAS_LOG_CRIT)
 
    end subroutine MPAS_io_err_mesg
- 
+
 end module mpas_io
